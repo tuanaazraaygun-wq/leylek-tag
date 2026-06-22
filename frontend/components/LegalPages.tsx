@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { API_BASE_URL } from '../lib/backendConfig';
+import { getLegalRegistryDocument } from '../lib/legal/documents';
+import { LEGAL_COMPANY_META, LEGAL_DOC_LAST_UPDATED } from '../lib/legalUxCopy';
 import { useSettingsTheme } from '../lib/theme/useSettingsTheme';
 
 const COLORS = {
@@ -20,33 +21,66 @@ interface LegalPageProps {
   onClose: () => void;
 }
 
+type LocalLegalContent = {
+  title: string;
+  company: string;
+  last_updated: string;
+  content: string;
+};
+
+const MODAL_DRAFT_NOTICE =
+  'Bu özet bilgilendirme amaçlıdır. Taslak veya ayrı sürüm metinler için uygulama içi yasal sayfalar geçerlidir.';
+
+function sectionsToPlainText(sections: { title: string; body: string }[]): string {
+  return sections.map((section) => `${section.title}\n\n${section.body}`).join('\n\n');
+}
+
+/** Local SSOT fallback — backend /api/legal fetch intentionally disabled. */
+function getLocalLegalContent(type: LegalPageProps['type']): LocalLegalContent {
+  if (type === 'terms') {
+    const doc = getLegalRegistryDocument('terms-user');
+    return {
+      title: doc.title,
+      company: doc.company,
+      last_updated: `${doc.lastUpdated} · ${doc.version}`,
+      content: `${MODAL_DRAFT_NOTICE}\n\n${sectionsToPlainText(doc.sections)}`,
+    };
+  }
+
+  if (type === 'privacy') {
+    return {
+      title: 'Gizlilik Politikası',
+      company: LEGAL_COMPANY_META.companyName,
+      last_updated: LEGAL_DOC_LAST_UPDATED,
+      content:
+        `${MODAL_DRAFT_NOTICE}\n\n` +
+        'LeylekTAG, kişisel verileri gönüllü yol paylaşımı, eşleşme, iletişim ve güvenlik amaçlarıyla işler.\n\n' +
+        'Konum verisi yalnızca talep ve yol paylaşımı akışı sırasında kullanılır. Muhabbet mesajları ürün ve güvenlik operasyonları kapsamında sınırlı süre saklanabilir.\n\n' +
+        `Tam metin: uygulama içi Gizlilik Politikası sayfası.\n\nİletişim: ${LEGAL_COMPANY_META.email} · ${LEGAL_COMPANY_META.phone}`,
+    };
+  }
+
+  return {
+    title: 'KVKK Aydınlatma Metni',
+    company: LEGAL_COMPANY_META.companyName,
+    last_updated: LEGAL_DOC_LAST_UPDATED,
+    content:
+      `${MODAL_DRAFT_NOTICE}\n\n` +
+      `Veri sorumlusu: ${LEGAL_COMPANY_META.companyName}\n` +
+      `${LEGAL_COMPANY_META.address}\n\n` +
+      'Kişisel veriler; kayıt, eşleşme, teklif, iletişim, sürücü doğrulama, güvenlik ve yasal yükümlülükler kapsamında işlenir.\n\n' +
+      'IBAN bilgisi yalnızca taraflar arası katkı payı iletimi için kullanılabilir; LeylekTAG platform tahsilatı yapmaz.\n\n' +
+      `Tam metin: uygulama içi KVKK Aydınlatma Metni sayfası.\n\nBaşvuru: ${LEGAL_COMPANY_META.email}`,
+  };
+}
+
 export function LegalPage({ type, visible, onClose }: LegalPageProps) {
   const { legalModalSurfaces: lt, legalUi } = useSettingsTheme('legal');
-  const [content, setContent] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const content = useMemo(() => getLocalLegalContent(type), [type]);
   const headerGradient = lt?.headerGradient ?? [COLORS.primaryDark, COLORS.background] as const;
-  
-  useEffect(() => {
-    if (visible) {
-      loadContent();
-    }
-  }, [visible, type]);
-  
-  const loadContent = async () => {
-    setLoading(true);
-    try {
-      const endpoint = type === 'privacy' ? 'privacy' : type === 'terms' ? 'terms' : 'kvkk';
-      const res = await fetch(`${API_BASE_URL}/legal/${endpoint}`);
-      const data = await res.json();
-      if (data.success) setContent(data);
-    } catch (e) {
-      console.error('Legal content load error:', e);
-    }
-    setLoading(false);
-  };
-  
+
   if (!visible) return null;
-  
+
   return (
     <Modal visible={visible} animationType="slide">
       <View style={[styles.container, lt?.container]}>
@@ -54,22 +88,16 @@ export function LegalPage({ type, visible, onClose }: LegalPageProps) {
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={28} color={legalUi.headerIcon} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, lt?.headerTitle]}>{content?.title || 'Yükleniyor...'}</Text>
+          <Text style={[styles.headerTitle, lt?.headerTitle]}>{content.title}</Text>
           <View style={{ width: 28 }} />
         </LinearGradient>
-        
-        {loading ? (
-          <ActivityIndicator size="large" color={legalUi.activity} style={{ marginTop: 50 }} />
-        ) : (
-          <ScrollView style={styles.content}>
-            <Text style={[styles.companyName, lt?.companyName]}>{content?.company}</Text>
-            {content?.last_updated && (
-              <Text style={[styles.lastUpdated, lt?.lastUpdated]}>Son güncelleme: {content.last_updated}</Text>
-            )}
-            <Text style={[styles.contentText, lt?.contentText]}>{content?.content}</Text>
-            <View style={{ height: 50 }} />
-          </ScrollView>
-        )}
+
+        <ScrollView style={styles.content}>
+          <Text style={[styles.companyName, lt?.companyName]}>{content.company}</Text>
+          <Text style={[styles.lastUpdated, lt?.lastUpdated]}>Son güncelleme: {content.last_updated}</Text>
+          <Text style={[styles.contentText, lt?.contentText]}>{content.content}</Text>
+          <View style={{ height: 50 }} />
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -105,7 +133,7 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
         <View style={[styles.consentModal, lt?.consentModal]}>
           <LinearGradient colors={consentHeaderGradient} style={styles.consentHeader}>
             <Ionicons name="shield-checkmark" size={40} color={legalUi.accent} />
-            <Text style={[styles.consentTitle, lt?.consentTitle]}>Kullanım Onayı</Text>
+            <Text style={[styles.consentTitle, lt?.consentTitle]}>Yasal Onay</Text>
             <Text style={[styles.consentSubtitle, lt?.consentSubtitle]}>
               Devam etmek için aşağıdaki metinleri okumanız ve gerekli beyan/onayları vermeniz gerekmektedir.
             </Text>
@@ -128,7 +156,7 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               </View>
             </TouchableOpacity>
             
-            {/* Kullanım Şartları */}
+            {/* Kullanıcı Sözleşmesi */}
             <TouchableOpacity 
               style={styles.consentItem}
               onPress={() => setTermsChecked(!termsChecked)}
@@ -138,8 +166,8 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               </View>
               <View style={styles.consentTextContainer}>
                 <Text style={[styles.consentText, lt?.consentText]}>
-                  <Text style={[styles.linkText, lt?.linkText]} onPress={() => setShowTerms(true)}>Kullanım Şartları</Text>
-                  {"'nı okudum ve kabul ediyorum."}
+                  <Text style={[styles.linkText, lt?.linkText]} onPress={() => setShowTerms(true)}>Kullanıcı Sözleşmesi</Text>
+                  {"'ni okudum ve kabul ediyorum."}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -179,7 +207,7 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
             <View style={[styles.disclaimerBox, lt?.disclaimerBox]}>
               <Ionicons name="warning" size={24} color="#F59E0B" />
               <Text style={styles.disclaimerText}>
-                ⚠️ UYARI: Leylek TAG sadece bir aracılık platformudur. Kullanıcılar arası anlaşmazlıklardan, yolculuk sırasında oluşabilecek kaza, hasar veya kayıplardan sorumlu değildir.
+                LeylekTAG topluluk odaklı gönüllü yol paylaşımı ve kişi eşleştirme platformudur; taşıma şirketi veya ödeme kuruluşu değildir. Platform tahsilat yapmaz; katkı payı mutabakatı taraflar arasındadır. Yol paylaşımı sırasındaki uyuşmazlıklardan platform sorumlu tutulamaz.
               </Text>
             </View>
           </ScrollView>
@@ -238,7 +266,7 @@ export function LocationWarningModal({ visible, onAccept, onDecline }: LocationW
           <Text style={[styles.warningTitle, lt?.warningTitle]}>Konum Paylaşımı</Text>
           
           <Text style={[styles.warningText, lt?.warningText]}>
-            Leylek TAG, yolculuk sırasında konumunuzu şoför/yolcu ile paylaşır. Bu bilgi:
+            LeylekTAG, yol paylaşımı sırasında konumunuzu sürücü/yolcu ile paylaşır. Bu bilgi:
           </Text>
           
           <View style={[styles.warningList, lt?.warningList]}>

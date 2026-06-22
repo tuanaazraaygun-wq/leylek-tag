@@ -9,7 +9,7 @@ export type LegalRegistryDocumentId =
   | 'community-guidelines';
 
 /** Legacy in-app legal routes kept unchanged in Phase 1. */
-export type LegalLegacyRouteId = 'privacy' | 'terms' | 'kvkk' | 'delete-account';
+export type LegalLegacyRouteId = 'privacy' | 'terms' | 'kvkk' | 'delete-account' | 'support';
 
 export type LegalHubLinkId = LegalRegistryDocumentId | LegalLegacyRouteId;
 

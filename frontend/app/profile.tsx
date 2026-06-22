@@ -262,19 +262,10 @@ export default function ProfileScreen() {
           
           <TouchableOpacity
             style={[styles.linkItem, lt?.linkItem]}
-            onPress={() => router.push('/privacy' as any)}
-          >
-            <Ionicons name="lock-closed-outline" size={24} color={ui.accent} />
-            <Text style={[styles.linkText, lt?.linkText]}>Gizlilik Politikası</Text>
-            <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.linkItem, lt?.linkItem]}
-            onPress={() => router.push('/terms' as any)}
+            onPress={() => router.push('/terms-user' as any)}
           >
             <Ionicons name="document-text-outline" size={24} color={ui.accent} />
-            <Text style={[styles.linkText, lt?.linkText]}>Hizmet Şartları</Text>
+            <Text style={[styles.linkText, lt?.linkText]}>Kullanıcı Sözleşmesi</Text>
             <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
           </TouchableOpacity>
 
@@ -284,6 +275,24 @@ export default function ProfileScreen() {
           >
             <Ionicons name="information-circle-outline" size={24} color={ui.accent} />
             <Text style={[styles.linkText, lt?.linkText]}>KVKK Aydınlatma Metni</Text>
+            <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.linkItem, lt?.linkItem]}
+            onPress={() => router.push('/privacy' as any)}
+          >
+            <Ionicons name="lock-closed-outline" size={24} color={ui.accent} />
+            <Text style={[styles.linkText, lt?.linkText]}>Gizlilik Politikası</Text>
+            <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.linkItem, lt?.linkItem]}
+            onPress={() => router.push('/delete-account' as any)}
+          >
+            <Ionicons name="trash-outline" size={24} color={ui.accent} />
+            <Text style={[styles.linkText, lt?.linkText]}>Hesap Silme</Text>
             <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
           </TouchableOpacity>
         </View>

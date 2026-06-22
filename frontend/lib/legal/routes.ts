@@ -12,6 +12,7 @@ export const LEGAL_ROUTES = {
   terms: '/terms',
   kvkk: '/kvkk',
   deleteAccount: '/delete-account',
+  support: '/support',
 } as const;
 
 const REGISTRY_ROUTE_MAP: Record<LegalRegistryDocumentId, string> = {
@@ -28,6 +29,7 @@ const HUB_ROUTE_MAP: Record<LegalHubLinkId, string> = {
   terms: LEGAL_ROUTES.terms,
   kvkk: LEGAL_ROUTES.kvkk,
   'delete-account': LEGAL_ROUTES.deleteAccount,
+  support: LEGAL_ROUTES.support,
 };
 
 export function getLegalRoute(id: LegalHubLinkId): string {

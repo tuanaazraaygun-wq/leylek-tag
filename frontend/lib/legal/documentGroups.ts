@@ -38,16 +38,8 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
         isLegacy: true,
       },
       {
-        id: 'terms',
-        title: 'Kullanım Şartları (mevcut)',
-        description: 'Önceki sürüm — yeni Kullanıcı Sözleşmesi ile değiştirilecek',
-        route: LEGAL_ROUTES.terms,
-        icon: 'time-outline',
-        isLegacy: true,
-      },
-      {
         id: 'delete-account',
-        title: 'Hesap Silme Bilgilendirmesi',
+        title: 'Hesap Silme',
         description: 'Hesap ve veri silme süreci',
         route: LEGAL_ROUTES.deleteAccount,
         icon: 'trash-outline',
@@ -105,6 +97,20 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
         route: LEGAL_ROUTES.communityGuidelines,
         icon: 'people-outline',
         isDraft: true,
+      },
+    ],
+  },
+  {
+    id: 'support',
+    title: 'İletişim ve destek',
+    description: 'Destek kanalları ve başvuru',
+    links: [
+      {
+        id: 'support',
+        title: 'İletişim / Destek',
+        description: 'E-posta, telefon ve başvuru kanalları',
+        route: LEGAL_ROUTES.support,
+        icon: 'headset-outline',
       },
     ],
   },

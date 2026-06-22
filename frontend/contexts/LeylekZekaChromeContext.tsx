@@ -163,6 +163,7 @@ const STANDALONE_ROUTE_PREFIXES = [
   '/kvkk',
   '/driver-verify',
   '/delete-account',
+  '/support',
 ] as const;
 
 /** pathname ile aynı liste — segment ilk parça (örn. `profile`) */

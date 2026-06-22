@@ -264,13 +264,6 @@ export default function SettingsHubScreen() {
               hubSurfaces={hubSurfaces}
             />
             <SettingsHubRow
-              icon="lock-closed-outline"
-              label="Gizlilik Politikası"
-              onPress={() => router.push('/privacy' as any)}
-              ui={ui}
-              hubSurfaces={hubSurfaces}
-            />
-            <SettingsHubRow
               icon="document-text-outline"
               label="Kullanıcı Sözleşmesi"
               onPress={() => router.push('/terms-user' as any)}
@@ -279,15 +272,22 @@ export default function SettingsHubScreen() {
             />
             <SettingsHubRow
               icon="information-circle-outline"
-              label="KVKK"
+              label="KVKK Aydınlatma Metni"
               onPress={() => router.push('/kvkk' as any)}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
+            />
+            <SettingsHubRow
+              icon="lock-closed-outline"
+              label="Gizlilik Politikası"
+              onPress={() => router.push('/privacy' as any)}
               ui={ui}
               hubSurfaces={hubSurfaces}
             />
             <SettingsHubRow
               danger
               icon="trash-outline"
-              label="Hesap Silme Bilgilendirmesi"
+              label="Hesap Silme"
               onPress={() => router.push('/delete-account' as any)}
               ui={ui}
               hubSurfaces={hubSurfaces}

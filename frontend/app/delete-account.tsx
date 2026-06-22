@@ -341,8 +341,8 @@ export default function DeleteAccountScreen() {
             />
             <SettingsHubRow
               icon="document-text-outline"
-              label="Hizmet Şartları"
-              onPress={() => router.push('/terms' as any)}
+              label="Kullanıcı Sözleşmesi"
+              onPress={() => router.push('/terms-user' as any)}
               ui={ui}
               hubSurfaces={hubSurfaces}
             />
