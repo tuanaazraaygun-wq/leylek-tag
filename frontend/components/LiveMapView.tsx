@@ -2842,7 +2842,14 @@ export default function LiveMapView({
   }, []);
 
   const [mapTilesReady, setMapTilesReady] = useState(false);
-  const mapReadyHandledRef = useRef(false);
+  const [mapEngineReady, setMapEngineReady] = useState(false);
+  const [mapRemountKey, setMapRemountKey] = useState(0);
+  const [mapAutoRetryCount, setMapAutoRetryCount] = useState(0);
+  const [mapSelfHealVisible, setMapSelfHealVisible] = useState(false);
+  const [mapManualRefreshVisible, setMapManualRefreshVisible] = useState(false);
+  const mapEngineReadyRef = useRef(false);
+  const mapAutoRetryRef = useRef(0);
+  const mapSelfHealRemountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** RC-MAP-SLOW-DEVICE-LOAD-1B — matched-trip map load diagnostics (log-only). */
   const mapInstrMountAtRef = useRef(Date.now());
   const mapInstrFirstCoordsLoggedRef = useRef(false);
@@ -2860,15 +2867,113 @@ export default function LiveMapView({
     },
     [mapInstrElapsedMs],
   );
-  /** Matched/in_progress — onMapReady gecikmesi; overlay süresiz kalmamalı (QA-2B). */
+  /** Loading overlay dismiss — does not imply tiles painted (self-heal watches engine ready). */
   const MAP_TILES_READY_FALLBACK_MS = 1200;
-  useEffect(() => {
+  /** Engine (onMapReady/onMapLoaded) yoksa otomatik remount. */
+  const MAP_SELF_HEAL_CHECK_MS = 4500;
+  const MAP_SELF_HEAL_REMOUNT_MS = 800;
+  const MAP_SELF_HEAL_MAX_AUTO_RETRIES = 2;
+
+  const logMapSelfHeal = useCallback(
+    (event: string, extra?: Record<string, unknown>) => {
+      console.log('[LiveMapView] self-heal', {
+        event,
+        platform: Platform.OS,
+        role: isDriver ? 'driver' : 'passenger',
+        tagId: tagId ?? null,
+        mapRemountKey,
+        autoRetryCount: mapAutoRetryRef.current,
+        mapEngineReady: mapEngineReadyRef.current,
+        userCoordsValid: !!(userLocation && isValidMapCoord(userLocation)),
+        otherCoordsValid: isValidRouteEndpoint(otherLocation),
+        elapsedMs: mapInstrElapsedMs(),
+        ...extra,
+      });
+    },
+    [isDriver, tagId, mapRemountKey, userLocation, otherLocation, mapInstrElapsedMs],
+  );
+
+  const resetMapMountState = useCallback(() => {
+    mapEngineReadyRef.current = false;
     mapInstrMountAtRef.current = Date.now();
     mapInstrFirstCoordsLoggedRef.current = false;
     mapInstrRouteMetricsLoggedRef.current = false;
+    setMapEngineReady(false);
     setMapTilesReady(false);
-    mapReadyHandledRef.current = false;
-  }, [tagId]);
+    setMapSelfHealVisible(false);
+    setMapManualRefreshVisible(false);
+    if (mapSelfHealRemountTimerRef.current) {
+      clearTimeout(mapSelfHealRemountTimerRef.current);
+      mapSelfHealRemountTimerRef.current = null;
+    }
+  }, []);
+
+  const remountMapView = useCallback(
+    (reason: 'auto' | 'manual') => {
+      if (reason === 'auto') {
+        mapAutoRetryRef.current += 1;
+        setMapAutoRetryCount(mapAutoRetryRef.current);
+      } else {
+        mapAutoRetryRef.current = 0;
+        setMapAutoRetryCount(0);
+      }
+      logMapSelfHeal('remount', { reason, nextAutoRetryCount: mapAutoRetryRef.current });
+      resetMapMountState();
+      setMapRemountKey((k) => k + 1);
+    },
+    [logMapSelfHeal, resetMapMountState],
+  );
+
+  useEffect(() => {
+    mapAutoRetryRef.current = 0;
+    setMapAutoRetryCount(0);
+    setMapRemountKey(0);
+    resetMapMountState();
+  }, [tagId, resetMapMountState]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || !MapView) return;
+
+    logMapSelfHeal('mount_cycle_start');
+
+    const overlayFallbackTimer = setTimeout(() => {
+      setMapTilesReady(true);
+      logMapSelfHeal('overlay_fallback');
+    }, MAP_TILES_READY_FALLBACK_MS);
+
+    const selfHealCheckTimer = setTimeout(() => {
+      if (mapEngineReadyRef.current) {
+        logMapSelfHeal('check_ok');
+        return;
+      }
+      if (mapAutoRetryRef.current < MAP_SELF_HEAL_MAX_AUTO_RETRIES) {
+        setMapSelfHealVisible(true);
+        logMapSelfHeal('auto_retry_scheduled');
+        mapSelfHealRemountTimerRef.current = setTimeout(() => {
+          mapSelfHealRemountTimerRef.current = null;
+          remountMapView('auto');
+        }, MAP_SELF_HEAL_REMOUNT_MS);
+      } else {
+        setMapManualRefreshVisible(true);
+        logMapSelfHeal('manual_refresh_offered');
+      }
+    }, MAP_SELF_HEAL_CHECK_MS);
+
+    return () => {
+      clearTimeout(overlayFallbackTimer);
+      clearTimeout(selfHealCheckTimer);
+      if (mapSelfHealRemountTimerRef.current) {
+        clearTimeout(mapSelfHealRemountTimerRef.current);
+        mapSelfHealRemountTimerRef.current = null;
+      }
+    };
+  }, [mapRemountKey, tagId, logMapSelfHeal, remountMapView]);
+
+  useEffect(() => {
+    if (!mapEngineReady) return;
+    setMapSelfHealVisible(false);
+    setMapManualRefreshVisible(false);
+  }, [mapEngineReady]);
 
   /** Güven AL — kalkan, yumuşak nabız (sürücü + yolcu) */
   const guvenShieldPulse = useRef(new Animated.Value(1)).current;
@@ -6135,39 +6240,54 @@ export default function LiveMapView({
     applyDriverActiveFollowViewport,
   ]);
 
-  const markMapReady = useCallback(
-    (source: 'onMapReady' | 'onMapLoaded' | 'fallback') => {
-      if (mapReadyHandledRef.current) return;
-      mapReadyHandledRef.current = true;
+  const markMapEngineReady = useCallback(
+    (source: 'onMapReady' | 'onMapLoaded') => {
+      if (mapEngineReadyRef.current) return;
+      mapEngineReadyRef.current = true;
+      setMapEngineReady(true);
+      setMapTilesReady(true);
+      setMapSelfHealVisible(false);
+      setMapManualRefreshVisible(false);
+      if (mapSelfHealRemountTimerRef.current) {
+        clearTimeout(mapSelfHealRemountTimerRef.current);
+        mapSelfHealRemountTimerRef.current = null;
+      }
       console.log('[LiveMapView] map ready', {
         source,
+        platform: Platform.OS,
+        role: isDriver ? 'driver' : 'passenger',
+        tagId: tagId ?? null,
+        mapRemountKey,
+        autoRetryCount: mapAutoRetryRef.current,
+        userCoordsValid: !!(userLocation && isValidMapCoord(userLocation)),
+        otherCoordsValid: isValidRouteEndpoint(otherLocation),
         elapsedMs: mapInstrElapsedMs(),
       });
-      setMapTilesReady(true);
       onDriverNavMapReady();
     },
-    [onDriverNavMapReady, mapInstrElapsedMs],
+    [
+      onDriverNavMapReady,
+      mapInstrElapsedMs,
+      isDriver,
+      tagId,
+      mapRemountKey,
+      userLocation,
+      otherLocation,
+    ],
   );
 
   const handleMapReadyFromReady = useCallback(() => {
-    markMapReady('onMapReady');
-  }, [markMapReady]);
+    markMapEngineReady('onMapReady');
+  }, [markMapEngineReady]);
 
   const handleMapReadyFromLoaded = useCallback(() => {
-    markMapReady('onMapLoaded');
-  }, [markMapReady]);
+    markMapEngineReady('onMapLoaded');
+  }, [markMapEngineReady]);
 
-  useEffect(() => {
-    if (!tagId) return;
-    const st = String(tagStatus || '').toLowerCase();
-    if (st !== 'matched' && st !== 'in_progress') return;
-
-    const timer = setTimeout(() => {
-      markMapReady('fallback');
-    }, MAP_TILES_READY_FALLBACK_MS);
-
-    return () => clearTimeout(timer);
-  }, [tagId, tagStatus, markMapReady]);
+  const handleManualMapRefresh = useCallback(() => {
+    void tapButtonHaptic();
+    remountMapView('manual');
+  }, [remountMapView]);
 
   // Yolcu: tüm noktaları göster; sürücüde fit yok (merkez araçta)
   useEffect(() => {
@@ -6586,7 +6706,10 @@ export default function LiveMapView({
   const driverNavImmersiveMapPaddingTopPx = Math.max(insets.top, 12) + 118;
 
   const showMapLoadingOverlay =
-    !driverRideUiModern && !driverNavImmersive && !mapTilesReady;
+    !driverRideUiModern && !driverNavImmersive && !mapTilesReady && !mapSelfHealVisible;
+
+  const showMapSelfHealUi =
+    !driverRideUiModern && !driverNavImmersive && !mapEngineReady && (mapSelfHealVisible || mapManualRefreshVisible);
 
   const routeValueStyle = [
     styles.routeValueModern,
@@ -6788,7 +6911,7 @@ export default function LiveMapView({
         <View
           style={[
             styles.mapSlot,
-            showMapLoadingOverlay
+            !mapEngineReady && (showMapLoadingOverlay || showMapSelfHealUi)
               ? isScopeLight
                 ? styles.mapSlotLoadingLight
                 : styles.mapSlotLoadingDark
@@ -6797,7 +6920,11 @@ export default function LiveMapView({
           pointerEvents="box-none"
         >
         <MapView
-          key={isDriver ? `driver-map-${String(tagId ?? 'active')}` : 'map-default'}
+          key={
+            isDriver
+              ? `driver-map-${String(tagId ?? 'active')}-${mapRemountKey}`
+              : `pax-map-${String(tagId ?? 'default')}-${mapRemountKey}`
+          }
           ref={mapRef}
           style={styles.map}
           provider={PROVIDER_GOOGLE}
@@ -6853,7 +6980,7 @@ export default function LiveMapView({
           minZoomLevel={4}
           maxZoomLevel={22}
           customMapStyle={isScopeLight ? undefined : DARK_MAP_STYLE}
-          showsTraffic
+          showsTraffic={mapEngineReady}
         >
           {isDriver &&
             navigationMode &&
@@ -7120,6 +7247,45 @@ export default function LiveMapView({
                 ]}
               />
             </View>
+          </View>
+        ) : null}
+        {showMapSelfHealUi ? (
+          <View
+            style={[
+              styles.mapSelfHealOverlay,
+              isScopeLight ? styles.mapSelfHealOverlayLight : styles.mapSelfHealOverlayDark,
+            ]}
+            pointerEvents="box-none"
+          >
+            <GlassSurface
+              variant="plain"
+              borderRadius={LDS_RADIUS.lg}
+              style={[
+                styles.mapSelfHealCard,
+                isScopeLight ? styles.mapLoadingCardLight : styles.mapLoadingCardDark,
+              ]}
+            >
+              <ActivityIndicator size="small" color={ui.activity} />
+              <Text style={[styles.mapSelfHealText, jLt?.mapLoadingText]}>
+                {mapSelfHealVisible
+                  ? 'Erişim devam ediyor, harita yenileniyor…'
+                  : 'Harita yükleniyor…'}
+              </Text>
+              {mapManualRefreshVisible ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.mapSelfHealRefreshBtn,
+                    pressed ? { opacity: 0.88 } : null,
+                  ]}
+                  onPress={handleManualMapRefresh}
+                  accessibilityRole="button"
+                  accessibilityLabel="Haritayı yenile"
+                >
+                  <Ionicons name="refresh-outline" size={16} color={ui.ctaIcon} />
+                  <Text style={styles.mapSelfHealRefreshBtnText}>Haritayı yenile</Text>
+                </Pressable>
+              ) : null}
+            </GlassSurface>
           </View>
         ) : null}
         </View>
@@ -8803,7 +8969,55 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(248, 250, 252, 0.96)',
   },
   mapSlotLoadingDark: {
-    backgroundColor: 'rgba(8, 17, 31, 0.88)',
+    backgroundColor: 'rgba(8, 17, 31, 0.96)',
+  },
+  mapSelfHealOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+    paddingHorizontal: LDS_SPACING.lg,
+  },
+  mapSelfHealOverlayDark: {
+    backgroundColor: 'rgba(8, 17, 31, 0.52)',
+  },
+  mapSelfHealOverlayLight: {
+    backgroundColor: 'rgba(15, 23, 42, 0.28)',
+  },
+  mapSelfHealCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.lg,
+    gap: LDS_SPACING.sm,
+    minWidth: 240,
+    maxWidth: 320,
+    ...LDS_ELEVATION.chip,
+  },
+  mapSelfHealText: {
+    color: 'rgba(186, 201, 222, 0.92)',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  mapSelfHealRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 2,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(34, 211, 238, 0.14)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+  },
+  mapSelfHealRefreshBtnText: {
+    color: PREMIUM_AUTH_CYAN,
+    fontSize: 13,
+    fontWeight: '700',
   },
   mapLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
