@@ -10644,6 +10644,8 @@ OTP_SUCCESS_COOLDOWN_SECONDS = 60
 OTP_MIN_ATTEMPT_INTERVAL = 12
 # OTP TTL: 3 minutes
 OTP_TTL_SECONDS = 180
+# Admin SMS bypass: verify_otp ile eşleşir; yalnız ADMIN_PHONE_NUMBERS (PIN verify-pin'de zorunlu)
+ADMIN_OTP_BYPASS_CODE = "000000"
 
 def normalize_turkish_phone(phone: str) -> str:
     """
@@ -10743,6 +10745,11 @@ def _normalize_admin_phone_10(phone: str) -> str:
 def _is_admin_phone(phone: str) -> bool:
     normalized = _normalize_admin_phone_10(phone)
     return normalized in ADMIN_PHONE_NUMBERS
+
+
+def _is_admin_otp_bypass_phone(canonical_905: str) -> bool:
+    """ADMIN_PHONE_NUMBERS: SMS OTP atlanır; şifresiz giriş yok — verify-pin zorunlu."""
+    return _phone_10_for_admin_check(canonical_905) in ADMIN_PHONE_NUMBERS
 
 
 def normalize_phone_e164(phone: str, default_country_code: str = "90") -> str:
@@ -11100,6 +11107,26 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
         logger.warning("TEST_LINE send_otp: SMS atlandı, kod=000000 %s", cleaned_phone)
         return {"success": True, "message": "OTP gönderildi"}
 
+    # Admin hatları: SMS atlanır; OTP ekranı ADMIN_OTP_BYPASS_CODE ile geçilir, PIN verify-pin'de kalır
+    if _is_admin_otp_bypass_phone(cleaned_phone):
+        current_time = time.time()
+        otp_storage[cleaned_phone] = {
+            "code": ADMIN_OTP_BYPASS_CODE,
+            "expires": current_time + OTP_TTL_SECONDS,
+            "last_sms_ok": current_time,
+            "last_api_attempt": current_time,
+            "admin_otp_bypass": True,
+        }
+        logger.info(
+            "ADMIN_OTP_BYPASS send_otp sms_skipped phone=%s",
+            _reviewer_mask_phone(cleaned_phone),
+        )
+        return {
+            "success": True,
+            "message": "OTP gönderildi",
+            "otp_bypassed_for_admin": True,
+        }
+
     sender = os.getenv("NETGSM_MSGHEADER")
     logger.info(f"📱 OTP sender env NETGSM_MSGHEADER: {sender!r}")
     
@@ -11235,6 +11262,11 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
                 status_code=400,
                 detail="Geçersiz OTP veya önce doğrulama kodu istenmedi. Kod gelmediyse tekrar 'Kod gönder' deneyin.",
             )
+        if _is_admin_otp_bypass_phone(phone_number):
+            raise HTTPException(
+                status_code=400,
+                detail="Geçersiz OTP veya önce doğrulama kodu istenmedi. Kod gelmediyse tekrar 'Kod gönder' deneyin.",
+            )
         # Fallback: Test modu için 123456 kabul et
         if otp_code != "123456":
             raise HTTPException(
@@ -11256,7 +11288,8 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
     if result and result.data:
         user = result.data[0]
         has_pin = bool(user.get("pin_hash"))
-        
+        is_admin_user = _is_admin_otp_bypass_phone(phone_number)
+
         # Bu cihazı numaraya bağla (bir numara–bir cihaz)
         try:
             upd = {"last_login": datetime.utcnow().isoformat()}
@@ -11265,28 +11298,34 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
             supabase.table("users").update(upd).eq("id", user["id"]).execute()
         except Exception as upd_err:
             logger.warning(f"verify_otp device update (ignored): {upd_err}")
-        
-        return _finalize_auth_response_payload(
-            {
-                "success": True,
-                "message": "OTP doğrulandı",
-                "user_exists": True,
-                "has_pin": has_pin,
-                "access_token": issue_access_token(user["id"]),
-                "user": {
-                    "id": user["id"],
-                    "phone": user["phone"],
-                    "name": user.get("name", ""),
-                    "role": user.get("role", "passenger"),
-                    "rating": float(user.get("rating", 4.0)),
-                    "total_ratings": user.get("total_ratings", 0),
-                    "is_admin": user.get("is_admin", False),
-                    "city": user.get("city"),
-                    "gender": user.get("gender"),
-                    "first_name": user.get("first_name"),
-                    "last_name": user.get("last_name"),
-                },
+
+        auth_body: dict = {
+            "success": True,
+            "message": "OTP doğrulandı",
+            "user_exists": True,
+            "has_pin": has_pin,
+            "user": {
+                "id": user["id"],
+                "phone": user["phone"],
+                "name": user.get("name", ""),
+                "role": user.get("role", "passenger"),
+                "rating": float(user.get("rating", 4.0)),
+                "total_ratings": user.get("total_ratings", 0),
+                "is_admin": is_admin_user or bool(user.get("is_admin", False)),
+                "city": user.get("city"),
+                "gender": user.get("gender"),
+                "first_name": user.get("first_name"),
+                "last_name": user.get("last_name"),
             },
+        }
+        # Admin + PIN: OTP yalnızca cihaz doğrulama; oturum token'ı verify-pin'de verilir
+        if is_admin_user and has_pin:
+            auth_body["otp_verified_for_admin"] = True
+        else:
+            auth_body["access_token"] = issue_access_token(user["id"])
+
+        return _finalize_auth_response_payload(
+            auth_body,
             str(user["id"]),
             path="/auth/verify-otp",
         )
