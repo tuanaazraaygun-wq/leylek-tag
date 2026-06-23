@@ -42,6 +42,11 @@ import MuhabbetTripCallScreen from './MuhabbetTripCallScreen';
 import MuhabbetTripQrCodeModal from './MuhabbetTripQrCodeModal';
 import MuhabbetTripQrScanModal from './MuhabbetTripQrScanModal';
 import { appAlert } from '../contexts/AppAlertContext';
+import {
+  isMockLocationFromExpo,
+  maybeAlertMockLocationBlocked,
+  mockLocationJsonField,
+} from '../lib/locationMock';
 
 type LeylekTripScreenProps = {
   apiBaseUrl: string;
@@ -2109,6 +2114,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         return false;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const isMockLocation = isMockLocationFromExpo(pos);
       const next = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       setDeviceLocation(next);
       const sid = getActiveMuhabbetSessionId();
@@ -2125,9 +2131,16 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           const res = await fetch(url, {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: next.latitude, lng: next.longitude }),
+            body: JSON.stringify({
+              lat: next.latitude,
+              lng: next.longitude,
+              ...mockLocationJsonField(isMockLocation),
+            }),
           });
           const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+          if (maybeAlertMockLocationBlocked(appAlert, res, j)) {
+            return false;
+          }
           console.log(
             '[leylek_location_rest]',
             JSON.stringify({ session_id: sid, ok: res.ok, status: res.status, body_keys: Object.keys(j) })

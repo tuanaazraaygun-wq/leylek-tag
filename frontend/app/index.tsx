@@ -188,6 +188,12 @@ import { getSupabase } from '../lib/supabase';
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
+import {
+  buildUpdateLocationUrl,
+  isMockLocationFromExpo,
+  maybeAlertMockLocationBlocked,
+  setMockLocationQueryParam,
+} from '../lib/locationMock';
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
 import { usePassengerTheme } from '../lib/theme/usePassengerTheme';
@@ -2852,10 +2858,13 @@ export default function App() {
       
       setUserLocation(coords);
       
-      // Backend'e gönder
-      await fetch(`${API_URL}/user/update-location?user_id=${user.id}&latitude=${coords.latitude}&longitude=${coords.longitude}`, {
-        method: 'POST'
-      });
+      const isMockLocation = isMockLocationFromExpo(location);
+      const res = await fetch(
+        buildUpdateLocationUrl(API_URL, user.id, coords, isMockLocation),
+        { method: 'POST' },
+      );
+      const { data } = await parseApiJson(res);
+      maybeAlertMockLocationBlocked(appAlert, res, data);
       
     } catch (error) {
       console.error('Konum alınamadı:', error);
@@ -15370,6 +15379,8 @@ function DriverDashboard({
   }, []);
 
   const driverPollOrderedIdsForSoundRef = useRef<string[]>([]);
+  /** Son GPS fix mocked (Android Fake GPS) — driver/requests query için */
+  const lastGpsIsMockRef = useRef(false);
 
   const stopDriverOfferAlarmLoop = useCallback((reason: string) => {
     offerSoundController.stopAllOfferLoops(reason);
@@ -17608,6 +17619,7 @@ function DriverDashboard({
         }
       }
       lastApplyRef.current = { ...coords, t: now };
+      lastGpsIsMockRef.current = isMockLocationFromExpo(location);
       setUserLocation(coords);
       if (emitDriverLocationUpdate) {
         emitDriverLocationUpdate({
@@ -17617,10 +17629,12 @@ function DriverDashboard({
         });
       }
       try {
-        await fetch(
-          `${API_URL}/user/update-location?user_id=${user.id}&latitude=${coords.latitude}&longitude=${coords.longitude}`,
+        const res = await fetch(
+          buildUpdateLocationUrl(API_URL, user.id, coords, lastGpsIsMockRef.current),
           { method: 'POST' },
         );
+        const { data } = await parseApiJson(res);
+        maybeAlertMockLocationBlocked(appAlert, res, data);
       } catch (e) {
         console.error('Konum backend güncellemesi başarısız:', e);
       }
@@ -18504,8 +18518,12 @@ function DriverDashboard({
         q.set('latitude', String(lat));
         q.set('longitude', String(lng));
       }
+      setMockLocationQueryParam(q, lastGpsIsMockRef.current);
       const res = await fetch(`${API_URL}/driver/requests?${q.toString()}`);
       const data = await res.json();
+      if (maybeAlertMockLocationBlocked(appAlert, res, data)) {
+        return;
+      }
       if (!data?.success || !Array.isArray(data.requests)) return;
 
       setRequests((prev) => {
