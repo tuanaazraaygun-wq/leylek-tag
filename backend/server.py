@@ -127,6 +127,10 @@ from services.match_location_freshness import (
     is_driver_location_fresh,
     location_age_seconds,
 )
+from services.location_mock_policy import (
+    parse_is_mock_location_flag,
+    reject_mock_location_if_forbidden,
+)
 from services.relationship_match_engine import (
     RmeDriverBusyError,
     RmeDriverInvitePendingError,
@@ -7636,10 +7640,10 @@ async def observe_optional_auth_for_user_action(
         )
 
 
-async def get_authenticated_user_id_from_authorization(
+async def _resolve_bearer_user_row(
     authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
-) -> str:
-    """Authorization: Bearer <JWT> zorunlu; sub alanı kullanıcı id."""
+) -> dict:
+    """Bearer JWT → users satırı (id, phone, is_active). Tek users sorgusu."""
     if not authorization or not str(authorization).strip():
         raise HTTPException(status_code=401, detail="Authorization header gerekli")
     parts = str(authorization).strip().split(None, 1)
@@ -7657,7 +7661,7 @@ async def get_authenticated_user_id_from_authorization(
         except Exception as resolve_err:
             logger.exception(
                 "event=[500_traceback] auth_dependency_unexpected_error "
-                "function=get_authenticated_user_id_from_authorization "
+                "function=_resolve_bearer_user_row "
                 "phase=resolve_user_id_lookup user_id=%s supabase_is_none=%s "
                 "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
                 _mask_log_id(uid),
@@ -7675,7 +7679,7 @@ async def get_authenticated_user_id_from_authorization(
         try:
             user_row = (
                 supabase.table("users")
-                .select("id, is_active")
+                .select("id, is_active, phone")
                 .eq("id", canonical_uid)
                 .limit(1)
                 .execute()
@@ -7683,7 +7687,7 @@ async def get_authenticated_user_id_from_authorization(
         except Exception as user_fetch_err:
             logger.exception(
                 "event=[500_traceback] auth_dependency_unexpected_error "
-                "function=get_authenticated_user_id_from_authorization "
+                "function=_resolve_bearer_user_row "
                 "phase=users_lookup user_id=%s supabase_is_none=%s "
                 "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
                 _mask_log_id(canonical_uid),
@@ -7697,18 +7701,23 @@ async def get_authenticated_user_id_from_authorization(
         if not user_row.data:
             raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
 
-        is_active = bool((user_row.data[0] or {}).get("is_active", True))
+        data = user_row.data[0] or {}
+        is_active = bool(data.get("is_active", True))
         if not is_active:
             logger.info("AUTH_GUARD_ACCOUNT_DISABLED user_id=%s", _mask_log_id(canonical_uid))
             raise HTTPException(status_code=403, detail="Hesabınız devre dışı bırakılmıştır.")
 
-        return canonical_uid
+        return {
+            "id": canonical_uid,
+            "phone": str(data.get("phone") or ""),
+            "is_active": is_active,
+        }
     except HTTPException:
         raise
     except Exception as unexpected_err:
         logger.exception(
             "event=[500_traceback] auth_dependency_unexpected_error "
-            "function=get_authenticated_user_id_from_authorization "
+            "function=_resolve_bearer_user_row "
             "phase=unexpected endpoint_hint=auth_dependency "
             "supabase_is_none=%s SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
             supabase is None,
@@ -7717,6 +7726,22 @@ async def get_authenticated_user_id_from_authorization(
             unexpected_err,
         )
         raise
+
+
+async def get_authenticated_user_id_from_authorization(
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+) -> str:
+    """Authorization: Bearer <JWT> zorunlu; sub alanı kullanıcı id."""
+    row = await _resolve_bearer_user_row(authorization)
+    return row["id"]
+
+
+async def get_authenticated_user_id_and_phone_from_authorization(
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+) -> tuple[str, str]:
+    """Bearer JWT → (users.id, phone). Muhabbet konum endpoint'i için."""
+    row = await _resolve_bearer_user_row(authorization)
+    return row["id"], row["phone"]
 
 
 async def resolve_user_id(user_id: str) -> str:
@@ -12337,6 +12362,7 @@ async def update_location(
     user_id: str,
     latitude: float,
     longitude: float,
+    is_mock_location: Optional[bool] = Query(None),
     request: Request = None,
 ):
     """Kullanıcı konumunu güncelle"""
@@ -12349,11 +12375,22 @@ async def update_location(
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(user_id)
 
+        mock_flag = parse_is_mock_location_flag(is_mock_location)
+        if not mock_flag and request is not None:
+            try:
+                ct = (request.headers.get("content-type") or "").lower()
+                if "application/json" in ct:
+                    raw = await request.json()
+                    if isinstance(raw, dict):
+                        mock_flag = parse_is_mock_location_flag(raw.get("is_mock_location"))
+            except Exception:
+                pass
+
         before_row = None
         try:
             br = (
                 supabase.table("users")
-                .select("driver_online, latitude, longitude, driver_details")
+                .select("driver_online, latitude, longitude, driver_details, phone")
                 .eq("id", resolved_id)
                 .limit(1)
                 .execute()
@@ -12362,6 +12399,11 @@ async def update_location(
                 before_row = br.data[0]
         except Exception:
             before_row = None
+
+        reject_mock_location_if_forbidden(
+            (before_row or {}).get("phone") if before_row else None,
+            mock_flag,
+        )
 
         location_updated_at = datetime.utcnow().isoformat()
         supabase.table("users").update({
@@ -12406,6 +12448,8 @@ async def update_location(
                     pass
 
         return {"success": True}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Update location error: {e}")
         return {"success": False, "detail": str(e)}
@@ -15957,9 +16001,16 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
 # ==================== DRIVER ENDPOINTS ====================
 
 @api_router.get("/driver/requests")
-async def get_driver_requests(driver_id: str = None, user_id: str = None, latitude: float = None, longitude: float = None):
+async def get_driver_requests(
+    driver_id: str = None,
+    user_id: str = None,
+    latitude: float = None,
+    longitude: float = None,
+    is_mock_location: Optional[bool] = Query(None),
+):
     """Şoför için yakındaki istekleri getir — yalnızca mesafe (DISPATCH_RADIUS_KM), durum, engel ve araç tipi."""
     try:
+        mock_flag = parse_is_mock_location_flag(is_mock_location)
         # driver_id veya user_id kabul et
         did = driver_id or user_id
         if not did:
@@ -15988,7 +16039,7 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         if raw_did:
             driver_result = (
                 supabase.table("users")
-                .select("id, latitude, longitude, driver_details")
+                .select("id, latitude, longitude, driver_details, phone")
                 .eq("id", raw_did)
                 .limit(1)
                 .execute()
@@ -15996,13 +16047,20 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             if not driver_result.data:
                 driver_result = (
                     supabase.table("users")
-                    .select("id, latitude, longitude, driver_details")
+                    .select("id, latitude, longitude, driver_details, phone")
                     .eq("auth_id", raw_did)
                     .limit(1)
                     .execute()
                 )
             if driver_result.data:
                 resolved_id = str(driver_result.data[0].get("id", "")).strip().lower() or None
+                if mock_flag:
+                    reject_mock_location_if_forbidden(
+                        driver_result.data[0].get("phone"),
+                        mock_flag,
+                    )
+            elif mock_flag:
+                reject_mock_location_if_forbidden(None, True)
         driver_lat = latitude
         driver_lng = longitude
         
@@ -16222,6 +16280,8 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             )
 
         return {"success": True, "requests": requests}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Get driver requests error: {e}")
         return {"success": False, "requests": []}
@@ -39819,14 +39879,20 @@ class MuhabbetTripLocationRestBody(BaseModel):
     lng: float
     heading: Optional[float] = None
     speed: Optional[float] = None
+    is_mock_location: Optional[bool] = None
 
 
 @api_router.post("/muhabbet/trip-sessions/{session_id}/location")
 async def muhabbet_trip_location_rest_post(
     session_id: str,
     body: MuhabbetTripLocationRestBody,
-    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+    auth_user: tuple[str, str] = Depends(get_authenticated_user_id_and_phone_from_authorization),
 ):
+    authenticated_user_id, auth_phone = auth_user
+    reject_mock_location_if_forbidden(
+        auth_phone,
+        parse_is_mock_location_flag(body.is_mock_location),
+    )
     uid = await _muhabbet_listing_uid(authenticated_user_id)
     sid_lo = str(session_id or "").strip().lower()
     t0 = time.perf_counter()
