@@ -57,7 +57,7 @@ export function LoginScreen({
   onPressSupport,
   styles,
 }: LoginScreenProps) {
-  const { tokens, lightSurfaces } = useAuthTheme();
+  const { tokens, lightSurfaces, isAuthLight } = useAuthTheme();
   const { height: winH, width: winW } = useWindowDimensions();
   const isShort = winH < 560;
   const isCompact = winH < 660;
@@ -190,8 +190,8 @@ export function LoginScreen({
           <Text style={[pa.supportLabel, lightSurfaces?.supportLabel]}>Destek</Text>
         </TouchableOpacity>
 
-        <View style={trustStyles.wrap} accessibilityRole="summary">
-          <PremiumText variant="caption" muted style={trustStyles.stripLabel}>
+        <View style={[trustStyles.wrap, isAuthLight && trustStyles.wrapLight]} accessibilityRole="summary">
+          <PremiumText variant="caption" muted style={[trustStyles.stripLabel, isAuthLight && trustStyles.stripLabelLight]}>
             LeylekTAG güven katmanı
           </PremiumText>
           <View style={trustStyles.chipRow}>
@@ -291,12 +291,18 @@ const trustStyles = StyleSheet.create({
     marginTop: LDS_SPACING.xs,
     opacity: 0.92,
   },
+  wrapLight: {
+    opacity: 1,
+  },
   stripLabel: {
     textAlign: 'center',
     letterSpacing: 0.04,
     fontSize: 10,
     marginBottom: LDS_SPACING.xs,
     opacity: 0.82,
+  },
+  stripLabelLight: {
+    opacity: 1,
   },
   chipRow: {
     flexDirection: 'row',

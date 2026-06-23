@@ -1,12 +1,13 @@
 import React from 'react';
-import { Image, Text, View, StyleSheet, ViewStyle } from 'react-native';
+import { Image, Text, View, StyleSheet, ViewStyle, type TextStyle } from 'react-native';
+import { useAuthTheme } from './premiumAuthChrome';
 
 export type LoginBrandHeaderProps = {
   usableWidth: number;
   isCompact: boolean;
   isShort: boolean;
   subtitle?: string;
-  /** Varsayılan klasik görünüm; `premium` = giriş ekranı (kokpit marka + koyu tema metinleri). */
+  /** Varsayılan klasik görünüm; `premium` = giriş ekranı kokpit marka başlığı. */
   theme?: 'default' | 'premium';
   /** Premium: isteğe bağlı ana başlık (Kayıt Ol, Şifremi Unuttum vb.). */
   premiumHeadline?: string;
@@ -25,12 +26,29 @@ export function LoginBrandHeader({
   premiumHeadline,
   subtitleVariant = 'brand',
 }: LoginBrandHeaderProps) {
+  const { isAuthLight, tokens } = useAuthTheme();
   const clusterStyle: ViewStyle = {
     width: usableWidth,
     maxWidth: usableWidth,
   };
 
   const isPremium = theme === 'premium';
+  const premiumLightText = isPremium && isAuthLight;
+
+  const leylekColorStyle: TextStyle = isPremium
+    ? premiumLightText
+      ? { color: tokens.text.primary }
+      : styles.wordmarkLeylekPremium
+    : styles.wordmarkLeylekDefault;
+
+  const tagColorStyle: TextStyle = isPremium
+    ? premiumLightText
+      ? { color: tokens.accent.primary }
+      : styles.wordmarkTagPremium
+    : styles.wordmarkTagDefault;
+
+  const premiumSubtitleColorStyle: TextStyle | null = premiumLightText ? { color: tokens.text.muted } : null;
+  const premiumHeadlineColorStyle: TextStyle | null = premiumLightText ? { color: tokens.text.primary } : null;
 
   const useBodySubtitle = subtitleVariant === 'body' && !!subtitle?.trim();
 
@@ -46,10 +64,10 @@ export function LoginBrandHeader({
       accessibilityRole="header"
       accessibilityLabel="LeylekTAG"
     >
-      <Text style={[styles.wordmarkLeylek, isPremium ? styles.wordmarkLeylekPremium : styles.wordmarkLeylekDefault, isCompact && styles.wordmarkLeylekCompact]}>
+      <Text style={[styles.wordmarkLeylek, leylekColorStyle, isCompact && styles.wordmarkLeylekCompact]}>
         Leylek
       </Text>
-      <Text style={[styles.wordmarkTag, isPremium ? styles.wordmarkTagPremium : styles.wordmarkTagDefault, isCompact && styles.wordmarkTagCompact]}>
+      <Text style={[styles.wordmarkTag, tagColorStyle, isCompact && styles.wordmarkTagCompact]}>
         TAG
       </Text>
     </Text>
@@ -64,7 +82,14 @@ export function LoginBrandHeader({
     ).filter(Boolean) as object[];
 
     const titleBlock = premiumHeadline?.trim() ? (
-      <Text style={[styles.premiumAlternateHeadline, isCompact && styles.premiumAlternateHeadlineCompact]} numberOfLines={2}>
+      <Text
+        style={[
+          styles.premiumAlternateHeadline,
+          premiumHeadlineColorStyle,
+          isCompact && styles.premiumAlternateHeadlineCompact,
+        ]}
+        numberOfLines={2}
+      >
         {premiumHeadline.trim()}
       </Text>
     ) : null;
@@ -83,6 +108,7 @@ export function LoginBrandHeader({
         <Text
           style={[
             subtitleBase,
+            premiumSubtitleColorStyle,
             showWordmark ? styles.taglineAfterWordmark : styles.taglineAfterHeadline,
             ...subtitleExtras,
           ]}
