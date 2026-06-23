@@ -12720,41 +12720,110 @@ async def get_driver_kyc_status(user_id: str):
             "pending_vehicle_kind": None,
         }
 
+_ADMIN_KYC_SCAN_BATCH = 1000
+
+
+def _admin_user_matches_kyc_search(user: dict, search: Optional[str]) -> bool:
+    if not search or not str(search).strip():
+        return True
+    q = str(search).strip().lower()
+    q_digits = re.sub(r"\D", "", q)
+    phone = str(user.get("phone") or "")
+    phone_digits = re.sub(r"\D", "", phone)
+    name = str(user.get("name") or "").lower()
+    if q in name:
+        return True
+    if q in phone.lower():
+        return True
+    if q_digits and q_digits in phone_digits:
+        return True
+    return False
+
+
+def _pending_kyc_request_from_user(user: dict) -> Optional[dict]:
+    driver_details = user.get("driver_details") or {}
+    if driver_details.get("kyc_status") != "pending":
+        return None
+    return {
+        "user_id": user["id"],
+        "name": user.get("name"),
+        "phone": user.get("phone"),
+        "plate_number": driver_details.get("plate_number"),
+        "vehicle_brand": driver_details.get("vehicle_brand"),
+        "vehicle_model": driver_details.get("vehicle_model"),
+        "vehicle_year": driver_details.get("vehicle_year"),
+        "vehicle_color": driver_details.get("vehicle_color"),
+        "vehicle_kind": driver_details.get("vehicle_kind"),
+        "vehicle_photo_url": driver_details.get("vehicle_photo_url"),
+        "motorcycle_photo_url": driver_details.get("motorcycle_photo_url"),
+        "license_photo_url": driver_details.get("license_photo_url"),
+        "selfie_url": driver_details.get("selfie_url"),
+        "submitted_at": driver_details.get("kyc_submitted_at"),
+        "ai_status": driver_details.get("ai_status"),
+        "ai_warnings": driver_details.get("ai_warnings"),
+    }
+
+
+def _admin_scan_pending_kyc_requests(search: Optional[str] = None) -> List[dict]:
+    """Scan all driver rows in PostgREST batches (1000) — pending lives in driver_details JSON."""
+    pending_kycs: List[dict] = []
+    offset = 0
+    while True:
+        result = (
+            supabase.table("users")
+            .select("id, name, phone, driver_details, created_at")
+            .not_.is_("driver_details", "null")
+            .order("created_at", desc=True)
+            .range(offset, offset + _ADMIN_KYC_SCAN_BATCH - 1)
+            .execute()
+        )
+        rows = result.data or []
+        for user in rows:
+            if not _admin_user_matches_kyc_search(user, search):
+                continue
+            row = _pending_kyc_request_from_user(user)
+            if row:
+                pending_kycs.append(row)
+        if len(rows) < _ADMIN_KYC_SCAN_BATCH:
+            break
+        offset += _ADMIN_KYC_SCAN_BATCH
+    return pending_kycs
+
+
+def _admin_count_pending_kyc_requests() -> int:
+    return len(_admin_scan_pending_kyc_requests())
+
+
 @api_router.get("/admin/kyc/pending")
-async def get_pending_kyc_requests(admin_phone: str):
-    """Admin: Bekleyen KYC başvurularını getir"""
-    # Admin kontrolü
+async def get_pending_kyc_requests(
+    admin_phone: str,
+    page: int = 1,
+    limit: int = 50,
+    search: Optional[str] = None,
+):
+    """Admin: Bekleyen KYC başvurularını getir (sayfalı; 1000+ sürücü satırını tarar)."""
     if not _is_admin_phone(admin_phone):
         raise HTTPException(status_code=403, detail="Yetkisiz erişim")
-    
+
     try:
-        # Bekleyen KYC'leri getir
-        result = supabase.table("users").select("id, name, phone, driver_details, created_at").not_.is_("driver_details", "null").execute()
-        
-        pending_kycs = []
-        for user in result.data:
-            driver_details = user.get("driver_details") or {}
-            if driver_details.get("kyc_status") == "pending":
-                pending_kycs.append({
-                    "user_id": user["id"],
-                    "name": user["name"],
-                    "phone": user["phone"],
-                    "plate_number": driver_details.get("plate_number"),
-                    "vehicle_brand": driver_details.get("vehicle_brand"),
-                    "vehicle_model": driver_details.get("vehicle_model"),
-                    "vehicle_year": driver_details.get("vehicle_year"),
-                    "vehicle_color": driver_details.get("vehicle_color"),
-                    "vehicle_kind": driver_details.get("vehicle_kind"),
-                    "vehicle_photo_url": driver_details.get("vehicle_photo_url"),
-                    "motorcycle_photo_url": driver_details.get("motorcycle_photo_url"),
-                    "license_photo_url": driver_details.get("license_photo_url"),
-                    "selfie_url": driver_details.get("selfie_url"),
-                    "submitted_at": driver_details.get("kyc_submitted_at"),
-                    "ai_status": driver_details.get("ai_status"),
-                    "ai_warnings": driver_details.get("ai_warnings"),
-                })
-        
-        return {"success": True, "pending_count": len(pending_kycs), "requests": pending_kycs}
+        page = max(1, int(page))
+        limit = max(1, min(int(limit), 100))
+        all_pending = _admin_scan_pending_kyc_requests(search)
+        total = len(all_pending)
+        start = (page - 1) * limit
+        end = start + limit
+        page_rows = all_pending[start:end]
+        has_more = end < total
+
+        return {
+            "success": True,
+            "requests": page_rows,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "has_more": has_more,
+            "pending_count": total,
+        }
     except Exception as e:
         logger.error(f"Get pending KYC error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -26074,30 +26143,52 @@ async def admin_full_dashboard(admin_phone: str):
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         week_start = (now - timedelta(days=7)).isoformat()
         
-        # Kullanıcı istatistikleri - push_token ve driver_active_until da al
-        users_result = supabase.table("users").select(
-            "id, driver_details, driver_online, driver_active_until, created_at, push_token"
-        ).execute()
-        
-        total_users = len(users_result.data) if users_result.data else 0
-        
-        drivers = []
-        online_drivers = 0
+        # Kullanıcı istatistikleri — count="exact" (PostgREST 1000 satır tavanından kaçın)
+        total_users = 0
+        total_drivers = 0
         push_token_count = 0
-        
-        for u in users_result.data or []:
-            # Push token sayısı
-            if u.get("push_token"):
-                push_token_count += 1
-            
-            # Sürücü kontrolü
-            if u.get("driver_details"):
-                drivers.append(u)
-                # driver_online VE driver_active_until geçerli mi?
-                if u.get("driver_online"):
-                    active_until = u.get("driver_active_until")
-                    if DRIVER_UNLIMITED_FREE_PERIOD or (active_until and active_until > now_iso):
-                        online_drivers += 1
+        online_drivers = 0
+        try:
+            total_users = supabase.table("users").select("id", count="exact").execute().count or 0
+        except Exception as _tu:
+            logger.warning(f"admin dashboard total_users count: {_tu}")
+        try:
+            total_drivers = (
+                supabase.table("users")
+                .select("id", count="exact")
+                .not_.is_("driver_details", "null")
+                .execute()
+                .count
+                or 0
+            )
+        except Exception as _td:
+            logger.warning(f"admin dashboard total_drivers count: {_td}")
+        try:
+            push_token_count = (
+                supabase.table("users")
+                .select("id", count="exact")
+                .not_.is_("push_token", "null")
+                .neq("push_token", "")
+                .execute()
+                .count
+                or 0
+            )
+        except Exception as _pt:
+            logger.warning(f"admin dashboard push_token count: {_pt}")
+        try:
+            online_query = (
+                supabase.table("users")
+                .select("id", count="exact")
+                .eq("driver_online", True)
+                .not_.is_("driver_details", "null")
+            )
+            if not DRIVER_UNLIMITED_FREE_PERIOD:
+                online_query = online_query.gt("driver_active_until", now_iso)
+            online_drivers = online_query.execute().count or 0
+        except Exception as _od:
+            logger.warning(f"admin dashboard online_drivers count: {_od}")
+
+        passengers = max(0, total_users - total_drivers)
 
         new_users_today = 0
         try:
@@ -26143,13 +26234,12 @@ async def admin_full_dashboard(admin_phone: str):
             .execute()
         )
         
-        # KYC istatistikleri
+        # KYC istatistikleri (users.driver_details — driver_kyc tablosu değil)
         kyc_pending_count = 0
         try:
-            kyc_pending = supabase.table("driver_kyc").select("id", count="exact").eq("status", "pending").execute()
-            kyc_pending_count = kyc_pending.count or 0
-        except:
-            pass
+            kyc_pending_count = _admin_count_pending_kyc_requests()
+        except Exception as _kyc:
+            logger.warning(f"admin dashboard kyc pending count: {_kyc}")
         
         # Promosyon istatistikleri
         active_promos_count = 0
@@ -26164,8 +26254,8 @@ async def admin_full_dashboard(admin_phone: str):
             "stats": {
                 "users": {
                     "total": total_users,
-                    "drivers": len(drivers),
-                    "passengers": total_users - len(drivers),
+                    "drivers": total_drivers,
+                    "passengers": passengers,
                     "online_drivers": online_drivers,
                     "new_today": new_users_today,
                     "with_push_token": push_token_count

@@ -4,7 +4,7 @@
  * Tüm Android cihazlarla uyumlu
  */
 
-import React, { useState, useEffect, useMemo, useCallback, Component } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Component } from 'react';
 import {
   View,
   Text,
@@ -415,6 +415,56 @@ class ErrorBoundary extends Component<{children: React.ReactNode}, {hasError: bo
   }
 }
 
+const ADMIN_LIST_LIMIT = 50;
+
+type AdminPaginationProps = {
+  page: number;
+  total: number | null;
+  limit: number;
+  hasMore?: boolean;
+  loading?: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+};
+
+function AdminPaginationBar({
+  page,
+  total,
+  limit,
+  hasMore,
+  loading,
+  onPrev,
+  onNext,
+}: AdminPaginationProps) {
+  const canPrev = page > 1;
+  const canNext =
+    typeof hasMore === 'boolean' ? hasMore : total != null ? page * limit < total : false;
+
+  return (
+    <View style={styles.paginationRow}>
+      <TouchableOpacity
+        style={[styles.paginationBtn, !canPrev && styles.paginationBtnDisabled]}
+        onPress={onPrev}
+        disabled={!canPrev || loading}
+      >
+        <Text style={styles.paginationBtnText}>‹ Önceki</Text>
+      </TouchableOpacity>
+      <Text style={styles.paginationMeta}>
+        Sayfa {page}
+        {total != null ? ` · ${total} toplam` : ''}
+        {loading ? ' …' : ''}
+      </Text>
+      <TouchableOpacity
+        style={[styles.paginationBtn, !canNext && styles.paginationBtnDisabled]}
+        onPress={onNext}
+        disabled={!canNext || loading}
+      >
+        <Text style={styles.paginationBtnText}>Sonraki ›</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 interface Props {
   adminPhone: string;
   onClose: () => void;
@@ -432,7 +482,17 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const [trips, setTrips] = useState<any[]>([]);
   const [userTotal, setUserTotal] = useState<number | null>(null);
   const [tripTotal, setTripTotal] = useState<number | null>(null);
-  const [search, setSearch] = useState('');
+  const [userPage, setUserPage] = useState(1);
+  const [tripPage, setTripPage] = useState(1);
+  const [kycPage, setKycPage] = useState(1);
+  const [userSearch, setUserSearch] = useState('');
+  const [kycSearch, setKycSearch] = useState('');
+  const [usersTabLoading, setUsersTabLoading] = useState(false);
+  const [tripsTabLoading, setTripsTabLoading] = useState(false);
+  const [kycTabLoading, setKycTabLoading] = useState(false);
+  const [kycTotal, setKycTotal] = useState<number | null>(null);
+  const [kycHasMore, setKycHasMore] = useState(false);
+  const skipTabFetchRef = useRef(true);
   
   // Notification states
   const [notifTitle, setNotifTitle] = useState('');
@@ -479,21 +539,166 @@ function AdminContent({ adminPhone, onClose }: Props) {
   };
 
   useEffect(() => {
-    loadAll();
+    skipTabFetchRef.current = true;
+    void loadAll();
   }, [adminPhoneNorm]);
-  
-  const loadKYC = async () => {
+
+  const loadDashboardCore = async (): Promise<string[]> => {
+    const errs: string[] = [];
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/admin/kyc/pending?admin_phone=${encodeURIComponent(adminPhoneNorm)}`);
+      const dashRes = await fetch(
+        `${ADMIN_API_BASE}/admin/dashboard/full?admin_phone=${encodeURIComponent(adminPhoneNorm)}`,
+      );
+      const dashData = await dashRes.json().catch(() => ({}));
+      if (!dashRes.ok) errs.push(`Panel HTTP ${dashRes.status}`);
+      else if (!dashData.success) {
+        errs.push(formatApiDetail(dashData.detail) || 'Panel verisi alınamadı');
+      } else {
+        setStats(dashData.stats);
+      }
+    } catch (e: unknown) {
+      errs.push(e instanceof Error ? e.message : 'Panel yüklenemedi');
+    }
+    return errs;
+  };
+
+  const loadUsers = async (page: number, searchTerm: string) => {
+    if (!adminPhoneNorm || adminPhoneNorm.length < 10) return;
+    setUsersTabLoading(true);
+    try {
+      const params = new URLSearchParams({
+        admin_phone: adminPhoneNorm,
+        page: String(page),
+        limit: String(ADMIN_LIST_LIMIT),
+      });
+      const q = searchTerm.trim();
+      if (q) params.set('search', q);
+      const res = await fetch(`${ADMIN_API_BASE}/admin/users/full?${params}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setUsers(Array.isArray(data.users) ? data.users : []);
+        setUserTotal(typeof data.total === 'number' ? data.total : null);
+      }
+    } catch (e) {
+      console.log('Kullanıcılar yüklenemedi:', e);
+    } finally {
+      setUsersTabLoading(false);
+    }
+  };
+
+  const loadTrips = async (page: number) => {
+    if (!adminPhoneNorm || adminPhoneNorm.length < 10) return;
+    setTripsTabLoading(true);
+    try {
+      const params = new URLSearchParams({
+        admin_phone: adminPhoneNorm,
+        page: String(page),
+        limit: String(ADMIN_LIST_LIMIT),
+      });
+      const res = await fetch(`${ADMIN_API_BASE}/admin/trips?${params}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setTrips(Array.isArray(data.trips) ? data.trips : []);
+        setTripTotal(typeof data.total === 'number' ? data.total : null);
+      }
+    } catch (e) {
+      console.log('Yolculuklar yüklenemedi:', e);
+    } finally {
+      setTripsTabLoading(false);
+    }
+  };
+
+  const loadKYC = async (page: number, searchTerm: string) => {
+    if (!adminPhoneNorm || adminPhoneNorm.length < 10) return;
+    setKycTabLoading(true);
+    try {
+      const params = new URLSearchParams({
+        admin_phone: adminPhoneNorm,
+        page: String(page),
+        limit: String(ADMIN_LIST_LIMIT),
+      });
+      const q = searchTerm.trim();
+      if (q) params.set('search', q);
+      const res = await fetch(`${ADMIN_API_BASE}/admin/kyc/pending?${params}`);
       const data = await res.json();
       if (data.success) {
         const raw = Array.isArray(data.requests) ? data.requests : [];
         setPendingKYC(raw as PendingKycRequest[]);
+        setKycTotal(typeof data.total === 'number' ? data.total : null);
+        setKycHasMore(Boolean(data.has_more));
       }
     } catch (e) {
       console.log('KYC yüklenemedi:', e);
+    } finally {
+      setKycTabLoading(false);
     }
   };
+
+  const loadAuxData = async () => {
+    try {
+      const ccRes = await fetch(
+        `${ADMIN_API_BASE}/admin/community-city-requests?admin_phone=${encodeURIComponent(adminPhoneNorm)}&limit=100`,
+      );
+      const ccData = await ccRes.json().catch(() => ({}));
+      if (ccRes.ok && ccData.success) {
+        setCommunityCityRequests(ccData.requests || []);
+      } else {
+        setCommunityCityRequests([]);
+      }
+    } catch {
+      setCommunityCityRequests([]);
+    }
+
+    try {
+      const pgRes = await fetch(
+        `${ADMIN_API_BASE}/admin/muhabbet/groups/pending?admin_phone=${encodeURIComponent(adminPhoneNorm)}&limit=100`,
+      );
+      const pgData = await pgRes.json().catch(() => ({}));
+      if (pgRes.ok && pgData.success) {
+        setPendingMuhabbetGroups(pgData.groups || []);
+      } else {
+        setPendingMuhabbetGroups([]);
+      }
+    } catch {
+      setPendingMuhabbetGroups([]);
+    }
+
+    try {
+      const lzRepRes = await fetch(`${ADMIN_API_BASE}/admin/reports?limit=100`);
+      const lzRepData = await lzRepRes.json().catch(() => ({}));
+      if (lzRepRes.ok && lzRepData.success) {
+        const rows = (Array.isArray(lzRepData.reports) ? lzRepData.reports : []) as LeylekZekaReportRow[];
+        const filtered = rows.filter(isLeylekZekaAdminReport);
+        filtered.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+        setLeylekZekaReports(filtered);
+      } else {
+        setLeylekZekaReports([]);
+      }
+    } catch {
+      setLeylekZekaReports([]);
+    }
+  };
+
+  useEffect(() => {
+    if (skipTabFetchRef.current || loading || tab !== 'users') return;
+    const timer = setTimeout(() => {
+      void loadUsers(userPage, userSearch);
+    }, userSearch.trim() ? 350 : 0);
+    return () => clearTimeout(timer);
+  }, [userPage, userSearch, tab, loading, adminPhoneNorm]);
+
+  useEffect(() => {
+    if (skipTabFetchRef.current || loading || tab !== 'trips') return;
+    void loadTrips(tripPage);
+  }, [tripPage, tab, loading, adminPhoneNorm]);
+
+  useEffect(() => {
+    if (skipTabFetchRef.current || loading || tab !== 'kyc') return;
+    const timer = setTimeout(() => {
+      void loadKYC(kycPage, kycSearch);
+    }, kycSearch.trim() ? 350 : 0);
+    return () => clearTimeout(timer);
+  }, [kycPage, kycSearch, tab, loading, adminPhoneNorm]);
   
   const approveKYC = async (userId: string) => {
     setApprovingKYC(userId);
@@ -504,7 +709,8 @@ function AdminContent({ adminPhone, onClose }: Props) {
       const data = await res.json();
       if (data.success) {
         Alert.alert('Başarılı', 'Sürücü onaylandı!');
-        loadKYC();
+        void loadKYC(kycPage, kycSearch);
+        void loadDashboardCore();
       } else {
         Alert.alert('Hata', data.detail || 'Onay başarısız');
       }
@@ -522,7 +728,8 @@ function AdminContent({ adminPhone, onClose }: Props) {
       const data = await res.json();
       if (data.success) {
         Alert.alert('Başarılı', 'Başvuru reddedildi');
-        loadKYC();
+        void loadKYC(kycPage, kycSearch);
+        void loadDashboardCore();
         return true;
       }
       Alert.alert('Hata', data.detail || 'Red başarısız');
@@ -543,7 +750,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
       const data = await res.json();
       if (data.success) {
         Alert.alert('Başarılı', 'Kullanıcı engellendi');
-        loadAll();
+        void loadUsers(userPage, userSearch);
       } else {
         Alert.alert('Hata', data.detail || 'Engelleme başarısız');
       }
@@ -562,7 +769,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
       const data = await res.json();
       if (data.success) {
         Alert.alert('Başarılı', 'Kullanıcı silindi');
-        loadAll();
+        void loadUsers(userPage, userSearch);
       } else {
         Alert.alert('Hata', data.detail || 'Silme başarısız');
       }
@@ -578,94 +785,56 @@ function AdminContent({ adminPhone, onClose }: Props) {
       setLoadError('Geçerli admin telefonu bulunamadı (10 hane).');
       setLoading(false);
       setRefreshing(false);
+      skipTabFetchRef.current = false;
       return;
     }
+    setUserPage(1);
+    setTripPage(1);
+    setKycPage(1);
     const errs: string[] = [];
     try {
-      const [dashRes, usersRes, tripsRes] = await Promise.all([
-        fetch(`${ADMIN_API_BASE}/admin/dashboard/full?admin_phone=${encodeURIComponent(adminPhoneNorm)}`),
-        fetch(`${ADMIN_API_BASE}/admin/users/full?admin_phone=${encodeURIComponent(adminPhoneNorm)}&page=1&limit=50`),
-        fetch(`${ADMIN_API_BASE}/admin/trips?admin_phone=${encodeURIComponent(adminPhoneNorm)}&page=1&limit=50`),
+      errs.push(...(await loadDashboardCore()));
+      await Promise.all([
+        loadUsers(1, userSearch),
+        loadTrips(1),
+        loadKYC(1, kycSearch),
+        loadAuxData(),
       ]);
-
-      const dashData = await dashRes.json().catch(() => ({}));
-      if (!dashRes.ok) errs.push(`Panel HTTP ${dashRes.status}`);
-      else if (!dashData.success) {
-        errs.push(formatApiDetail(dashData.detail) || 'Panel verisi alınamadı');
-      }
-      else setStats(dashData.stats);
-
-      const usersData = await usersRes.json().catch(() => ({}));
-      if (!usersRes.ok) errs.push(`Kullanıcılar HTTP ${usersRes.status}`);
-      else if (!usersData.success) errs.push('Kullanıcı listesi alınamadı');
-      else {
-        setUsers(usersData.users || []);
-        setUserTotal(typeof usersData.total === 'number' ? usersData.total : null);
-      }
-
-      const tripsData = await tripsRes.json().catch(() => ({}));
-      if (!tripsRes.ok) errs.push(`Yolculuklar HTTP ${tripsRes.status}`);
-      else if (!tripsData.success) errs.push('Yolculuk listesi alınamadı');
-      else {
-        setTrips(tripsData.trips || []);
-        setTripTotal(typeof tripsData.total === 'number' ? tripsData.total : null);
-      }
-
-      await loadKYC();
-
-      try {
-        const ccRes = await fetch(
-          `${ADMIN_API_BASE}/admin/community-city-requests?admin_phone=${encodeURIComponent(adminPhoneNorm)}&limit=100`
-        );
-        const ccData = await ccRes.json().catch(() => ({}));
-        if (ccRes.ok && ccData.success) {
-          setCommunityCityRequests(ccData.requests || []);
-        } else {
-          setCommunityCityRequests([]);
-        }
-      } catch {
-        setCommunityCityRequests([]);
-      }
-
-      try {
-        const pgRes = await fetch(
-          `${ADMIN_API_BASE}/admin/muhabbet/groups/pending?admin_phone=${encodeURIComponent(adminPhoneNorm)}&limit=100`
-        );
-        const pgData = await pgRes.json().catch(() => ({}));
-        if (pgRes.ok && pgData.success) {
-          setPendingMuhabbetGroups(pgData.groups || []);
-        } else {
-          setPendingMuhabbetGroups([]);
-        }
-      } catch {
-        setPendingMuhabbetGroups([]);
-      }
-
-      try {
-        const lzRepRes = await fetch(`${ADMIN_API_BASE}/admin/reports?limit=100`);
-        const lzRepData = await lzRepRes.json().catch(() => ({}));
-        if (lzRepRes.ok && lzRepData.success) {
-          const rows = (Array.isArray(lzRepData.reports) ? lzRepData.reports : []) as LeylekZekaReportRow[];
-          const filtered = rows.filter(isLeylekZekaAdminReport);
-          filtered.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
-          setLeylekZekaReports(filtered);
-        } else {
-          setLeylekZekaReports([]);
-        }
-      } catch {
-        setLeylekZekaReports([]);
-      }
     } catch (e: any) {
       errs.push(e?.message || 'Yükleme hatası');
     }
     setLoadError(errs.filter(Boolean).join(' · '));
     setLoading(false);
     setRefreshing(false);
+    skipTabFetchRef.current = false;
   };
 
-  const refresh = () => {
+  const refresh = async () => {
+    if (!adminPhoneNorm || adminPhoneNorm.length < 10) return;
     setRefreshing(true);
-    loadAll();
+    setLoadError('');
+    const errs: string[] = [];
+    try {
+      errs.push(...(await loadDashboardCore()));
+      if (tab === 'users') {
+        await loadUsers(userPage, userSearch);
+      } else if (tab === 'trips') {
+        await loadTrips(tripPage);
+      } else if (tab === 'kyc') {
+        await loadKYC(kycPage, kycSearch);
+      } else {
+        await Promise.all([
+          loadUsers(userPage, userSearch),
+          loadTrips(tripPage),
+          loadKYC(kycPage, kycSearch),
+        ]);
+      }
+      await loadAuxData();
+    } catch (e: unknown) {
+      errs.push(e instanceof Error ? e.message : 'Yenileme hatası');
+    }
+    setLoadError(errs.filter(Boolean).join(' · '));
+    setRefreshing(false);
   };
 
   const markLeylekZekaReportReviewed = async (reportId: string) => {
@@ -933,13 +1102,6 @@ function AdminContent({ adminPhone, onClose }: Props) {
       setKbChatLoading(false);
     }
   }, [kbChatInput, kbChatLoading]);
-
-  const filteredUsers = search
-    ? users.filter(u => 
-        String(u.name || '').toLowerCase().includes(search.toLowerCase()) ||
-        String(u.phone || '').includes(search)
-      )
-    : users;
 
   if (loading) {
     return (
@@ -1240,16 +1402,27 @@ function AdminContent({ adminPhone, onClose }: Props) {
           <View style={styles.section}>
             <TextInput
               style={styles.searchInput}
-              placeholder="Ara..."
+              placeholder="Telefon veya isim ara..."
               placeholderTextColor="#888"
-              value={search}
-              onChangeText={setSearch}
+              value={userSearch}
+              onChangeText={(text) => {
+                setUserSearch(text);
+                if (userPage !== 1) setUserPage(1);
+              }}
             />
             <Text style={styles.countText}>
-              {filteredUsers.length} listeleniyor
-              {userTotal != null ? ` · ${userTotal} toplam` : ''}
+              {users.length} listeleniyor
+              {userTotal != null ? ` / ${userTotal} toplam` : ''}
             </Text>
-            {filteredUsers.slice(0, 50).map((u, i) => (
+            <AdminPaginationBar
+              page={userPage}
+              total={userTotal}
+              limit={ADMIN_LIST_LIMIT}
+              loading={usersTabLoading}
+              onPrev={() => setUserPage((p) => Math.max(1, p - 1))}
+              onNext={() => setUserPage((p) => p + 1)}
+            />
+            {users.map((u, i) => (
               <View key={u.id || i} style={styles.card}>
                 <View style={styles.cardRow}>
                   <View style={styles.cardLeft}>
@@ -1300,6 +1473,14 @@ function AdminContent({ adminPhone, onClose }: Props) {
                 </View>
               </View>
             ))}
+            <AdminPaginationBar
+              page={userPage}
+              total={userTotal}
+              limit={ADMIN_LIST_LIMIT}
+              loading={usersTabLoading}
+              onPrev={() => setUserPage((p) => Math.max(1, p - 1))}
+              onNext={() => setUserPage((p) => p + 1)}
+            />
           </View>
         )}
 
@@ -1308,9 +1489,17 @@ function AdminContent({ adminPhone, onClose }: Props) {
           <View style={styles.section}>
             <Text style={styles.countText}>
               {trips.length} listeleniyor
-              {tripTotal != null ? ` · ${tripTotal} toplam` : ''}
+              {tripTotal != null ? ` / ${tripTotal} toplam` : ''}
             </Text>
-            {trips.slice(0, 50).map((t, i) => {
+            <AdminPaginationBar
+              page={tripPage}
+              total={tripTotal}
+              limit={ADMIN_LIST_LIMIT}
+              loading={tripsTabLoading}
+              onPrev={() => setTripPage((p) => Math.max(1, p - 1))}
+              onNext={() => setTripPage((p) => p + 1)}
+            />
+            {trips.map((t, i) => {
               const detailChips = getTripDetailChips(t);
               return (
               <View key={t.id || i} style={styles.card}>
@@ -1349,6 +1538,14 @@ function AdminContent({ adminPhone, onClose }: Props) {
               </View>
               );
             })}
+            <AdminPaginationBar
+              page={tripPage}
+              total={tripTotal}
+              limit={ADMIN_LIST_LIMIT}
+              loading={tripsTabLoading}
+              onPrev={() => setTripPage((p) => Math.max(1, p - 1))}
+              onNext={() => setTripPage((p) => p + 1)}
+            />
           </View>
         )}
 
@@ -1356,9 +1553,31 @@ function AdminContent({ adminPhone, onClose }: Props) {
         {tab === 'kyc' && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Bekleyen Sürücü Başvuruları</Text>
-            <Text style={styles.countText}>{pendingKYC.length} başvuru bekliyor</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Telefon veya isim ara..."
+              placeholderTextColor="#888"
+              value={kycSearch}
+              onChangeText={(text) => {
+                setKycSearch(text);
+                if (kycPage !== 1) setKycPage(1);
+              }}
+            />
+            <Text style={styles.countText}>
+              {pendingKYC.length} listeleniyor
+              {kycTotal != null ? ` / ${kycTotal} toplam` : ''}
+            </Text>
+            <AdminPaginationBar
+              page={kycPage}
+              total={kycTotal}
+              limit={ADMIN_LIST_LIMIT}
+              hasMore={kycHasMore}
+              loading={kycTabLoading}
+              onPrev={() => setKycPage((p) => Math.max(1, p - 1))}
+              onNext={() => setKycPage((p) => p + 1)}
+            />
             
-            {pendingKYC.length === 0 ? (
+            {pendingKYC.length === 0 && !kycTabLoading ? (
               <View style={styles.emptyBox}>
                 <Text style={styles.emptyText}>Bekleyen başvuru yok</Text>
               </View>
@@ -1549,6 +1768,15 @@ function AdminContent({ adminPhone, onClose }: Props) {
                 );
               })
             )}
+            <AdminPaginationBar
+              page={kycPage}
+              total={kycTotal}
+              limit={ADMIN_LIST_LIMIT}
+              hasMore={kycHasMore}
+              loading={kycTabLoading}
+              onPrev={() => setKycPage((p) => Math.max(1, p - 1))}
+              onNext={() => setKycPage((p) => p + 1)}
+            />
           </View>
         )}
 
@@ -2181,6 +2409,35 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 14,
     marginBottom: 10,
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 8,
+  },
+  paginationBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    minWidth: 92,
+    alignItems: 'center',
+  },
+  paginationBtnDisabled: {
+    opacity: 0.45,
+  },
+  paginationBtnText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  paginationMeta: {
+    flex: 1,
+    color: '#CBD5E1',
+    fontSize: 13,
+    textAlign: 'center',
   },
   card: {
     backgroundColor: '#1E293B',
