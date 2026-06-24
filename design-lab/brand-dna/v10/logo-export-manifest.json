@@ -1,0 +1,178 @@
+{
+  "masterVersion": "v2.0.0",
+  "generatedAt": "2026-06-24T16:49:43.779493+00:00",
+  "spec": {
+    "ringScale": 0.94,
+    "glowAlpha": 0.5,
+    "metalBoost": 1.1
+  },
+  "vectorSource": "design-lab/brand-dna/v10/exports/leylek-symbol-lc2-master.svg",
+  "microSource": "design-lab/brand-dna/v10/exports/leylek-symbol-lc3-micro.svg",
+  "exports": [
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/hero-dark-1254.png",
+      "px": 1254,
+      "ladder": "LC-2",
+      "variant": "logo.symbol.dark",
+      "sha256": "b7524eeb27f29969ac42f53eb8b46658339ad2c2a2787dc68ad4682fdbe1616e",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/hero-dark-1024.png",
+      "px": 1024,
+      "ladder": "LC-2",
+      "variant": "logo.symbol.dark",
+      "sha256": "b77138c4d1d122dfc731cd6ffa048e2533dc9f6f15e57e88406920a0b2406404",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/hero-dark-512.png",
+      "px": 512,
+      "ladder": "LC-2",
+      "variant": "logo.symbol.dark",
+      "sha256": "344f226386258985cd69e2ea67123c9b025952fa81b63e77515046d486be5736",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/hero-dark-256.png",
+      "px": 256,
+      "ladder": "LC-2",
+      "variant": "logo.symbol.dark",
+      "sha256": "45f7f768e5d98e3308bf6469e72146e2b672b67fbc42362d33d43533bdc2efab",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/hero-dark-192.png",
+      "px": 192,
+      "ladder": "LC-2",
+      "variant": "logo.symbol.dark",
+      "sha256": "4f7e14a64508b0c8dadc8aac87ddd7b20e7119cd5049718ad4f48021e1299481",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/hero-dark-128.png",
+      "px": 128,
+      "ladder": "LC-2",
+      "variant": "logo.symbol.dark",
+      "sha256": "cb5865c996b3d1120ab4d814197a3593d272efef52d41ed64dde584da0ed25d4",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/variants/symbol-transparent-1024.png",
+      "px": 1024,
+      "ladder": "LC-2",
+      "variant": "logo.symbol.dark.transparent",
+      "sha256": "dc8d649913f024da189d0d2a18f444789e3e964a437073f7903b9c452a859959",
+      "surfaces": [
+        "adaptive-fg"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/variants/symbol-light-1024.png",
+      "px": 1024,
+      "ladder": "LC-2",
+      "variant": "logo.symbol.light",
+      "sha256": "2b158778588573eb3c58a00a90f53360353cf9878b9a722dc8f0116f5be7a48a",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/micro-dark-96.png",
+      "px": 96,
+      "ladder": "LC-3",
+      "variant": "logo.symbol.dark",
+      "sha256": "eadd53000dcf5938ebfbb511ee0a89f409f3988741d97bcce7b958c8738fefc5",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/micro-dark-64.png",
+      "px": 64,
+      "ladder": "LC-3",
+      "variant": "logo.symbol.dark",
+      "sha256": "6e5b224f7c741792d3ee2f1c50461472f41f182e62a60b59d163970c1d335c91",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/micro-dark-48.png",
+      "px": 48,
+      "ladder": "LC-3",
+      "variant": "logo.symbol.dark",
+      "sha256": "f32ec2fdf077e6bb842fe8ebd06085f4902d01a147ffa91c946294d9b4fef7fc",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/micro-dark-32.png",
+      "px": 32,
+      "ladder": "LC-3",
+      "variant": "logo.symbol.dark",
+      "sha256": "3c7e00cc6543258dcc8aed8eb280ac80f00d06625a17ae993e8e5b4c21f3ff61",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "design-lab/brand-dna/v10/production-output/sizes/micro-dark-24.png",
+      "px": 24,
+      "ladder": "LC-3",
+      "variant": "logo.symbol.dark",
+      "sha256": "66928bc457329133b3fbafeffc0b7c295b6179685a1299d928706a5803b22134",
+      "surfaces": [
+        "lab"
+      ]
+    },
+    {
+      "path": "frontend/assets/images/leylek-logo-premium.png",
+      "px": 260582,
+      "ladder": "production",
+      "variant": "logo.symbol.dark",
+      "sha256": "b7524eeb27f29969ac42f53eb8b46658339ad2c2a2787dc68ad4682fdbe1616e",
+      "surfaces": [
+        "login",
+        "splash",
+        "theme",
+        "zeka",
+        "expo"
+      ]
+    },
+    {
+      "path": "frontend/assets/images/adaptive-icon-foreground.png",
+      "px": 467338,
+      "ladder": "production",
+      "variant": "logo.symbol.dark",
+      "sha256": "dc8d649913f024da189d0d2a18f444789e3e964a437073f7903b9c452a859959",
+      "surfaces": [
+        "android-adaptive-fg"
+      ]
+    },
+    {
+      "path": "frontend/assets/ios.premium.logo.png",
+      "px": 560742,
+      "ladder": "production",
+      "variant": "logo.symbol.dark",
+      "sha256": "b77138c4d1d122dfc731cd6ffa048e2533dc9f6f15e57e88406920a0b2406404",
+      "surfaces": [
+        "ios-icon"
+      ]
+    }
+  ],
+  "removedObsolete": []
+}

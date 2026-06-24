@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LeylekTAG Premium Master V2  LC-3 Micro
+  Sprint: RC-BRAND-V11
+  Bold arc + eye for 2448 px display. Same gap bearing as LC-2.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="LeylekTAG symbol micro">
+  <g id="layer.orbitalArc" transform="translate(268 278) scale(0.94) translate(-268 -278)">
+    <path id="orbitalArc.micro"
+      d="M 146 196 C 112 246, 102 318, 128 374 C 164 422, 228 432, 288 412 C 348 392, 394 338, 404 276"
+      stroke="#22D3EE" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g id="layer.storkBody">
+    <path id="stork.silhouette.micro" fill="#F5F7FA"
+      d="M 236 168 C 248 162 262 158 278 162 L 312 168 C 322 170 328 176 326 184
+         C 324 192 314 196 302 194 L 268 188 C 252 186 242 192 236 206
+         C 228 224 224 248 226 272 C 228 296 234 316 244 334 L 248 348
+         C 250 356 246 362 238 362 C 230 362 224 356 222 348 L 214 320
+         C 208 300 206 278 208 256 C 210 234 216 214 224 198 C 228 188 232 178 236 168 Z
+         M 238 362 L 236 396 C 235 404 240 410 248 410 C 256 410 261 404 260 396 L 258 362 Z
+         M 252 334 C 262 328 272 332 276 342 C 280 352 274 362 264 364 C 254 366 246 358 248 348 C 250 340 252 334 252 334 Z"/>
+  </g>
+
+  <g id="layer.accentDot">
+    <circle id="eye.accent.micro" cx="286" cy="178" r="6" fill="#00D4AA"/>
+  </g>
+</svg>
