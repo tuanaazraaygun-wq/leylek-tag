@@ -8027,7 +8027,7 @@ export default function LiveMapView({
                               onPress: () => onForceEnd?.(),
                             },
                           ],
-                          { tone: 'warning' },
+                          { tone: 'warning', emphasisScrim: true },
                         );
                       }}
                       accessibilityRole="button"
@@ -8126,7 +8126,7 @@ export default function LiveMapView({
                               onPress: () => onForceEnd?.(),
                             },
                           ],
-                          { tone: 'warning' },
+                          { tone: 'warning', emphasisScrim: true },
                         );
                       }}
                       accessibilityRole="button"
@@ -8367,7 +8367,7 @@ export default function LiveMapView({
                           onPress: () => onForceEnd?.(),
                         },
                       ],
-                      { tone: 'warning' },
+                      { tone: 'warning', emphasisScrim: true },
                     );
                   }}
                   activeOpacity={0.7}
@@ -8603,7 +8603,7 @@ export default function LiveMapView({
                           onPress: () => onForceEnd?.(),
                         },
                       ],
-                      { tone: 'warning' },
+                      { tone: 'warning', emphasisScrim: true },
                     );
                   }}
                   activeOpacity={0.82}
@@ -8896,7 +8896,7 @@ export default function LiveMapView({
                   onPress: () => onForceEnd?.(),
                 },
               ],
-              { tone: 'warning' },
+              { tone: 'warning', emphasisScrim: true },
             );
           }}
         />

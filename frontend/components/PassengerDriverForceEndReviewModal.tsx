@@ -50,7 +50,12 @@ export default function PassengerDriverForceEndReviewModal({
     if (!isModalLight) return null;
     const t = tokens;
     return {
-      backdrop: { backgroundColor: t.shadow.modal },
+      backdrop: { backgroundColor: 'rgba(15,23,42,0.44)' },
+      panel: {
+        backgroundColor: t.bg.elevated,
+        borderColor: t.border.default,
+        borderTopColor: t.borderColors.cardTopCyan,
+      },
       iconOrb: {
         backgroundColor: t.bg.glassMuted,
         borderColor: 'rgba(217,119,6,0.32)',
@@ -64,6 +69,8 @@ export default function PassengerDriverForceEndReviewModal({
       },
       chipIconColor: t.accent.secondary,
       guardianChipText: { color: t.text.primary },
+      eventLine: { color: t.text.primary },
+      questionTitle: { color: t.text.primary },
       primaryBtn: {
         backgroundColor: t.accent.primary,
         borderColor: t.borderColors.selected,
@@ -123,7 +130,7 @@ export default function PassengerDriverForceEndReviewModal({
         if (informationalOnly) void onConfirm();
       }}
     >
-      <View style={styles.overlay}>
+      <View style={styles.overlay} pointerEvents="box-none">
         <View style={[StyleSheet.absoluteFill, styles.backdrop, lightStyles?.backdrop]} />
         <Animated.View
           style={[
@@ -134,7 +141,11 @@ export default function PassengerDriverForceEndReviewModal({
             },
           ]}
         >
-          <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.modalContainer}>
+          <GlassSurface
+            variant="panel"
+            borderRadius={LDS_RADIUS.xl}
+            style={[styles.modalContainer, lightStyles?.panel]}
+          >
             <View style={styles.iconContainer}>
               <View style={[styles.iconOrb, lightStyles?.iconOrb]}>
                 <Ionicons
@@ -163,7 +174,7 @@ export default function PassengerDriverForceEndReviewModal({
               </PremiumText>
             </GlassSurface>
 
-            <PremiumText variant="body" muted style={styles.eventLine}>
+            <PremiumText variant="body" muted={!isModalLight} style={[styles.eventLine, lightStyles?.eventLine]}>
               {eventLine}
             </PremiumText>
 
@@ -175,7 +186,7 @@ export default function PassengerDriverForceEndReviewModal({
 
             {!informationalOnly ? (
               <>
-                <PremiumText variant="title" style={styles.questionTitle}>
+                <PremiumText variant="title" style={[styles.questionTitle, lightStyles?.questionTitle]}>
                   Bu bitişi onaylıyor musunuz?
                 </PremiumText>
 
@@ -229,11 +240,13 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     backgroundColor: 'rgba(8,17,31,0.72)',
+    zIndex: 1,
   },
   modalWrap: {
     width: SCREEN_WIDTH * 0.88,
     maxWidth: 380,
     alignSelf: 'center',
+    zIndex: 2,
   },
   modalContainer: {
     width: '100%',

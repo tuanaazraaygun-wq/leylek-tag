@@ -1,7 +1,7 @@
 /**
  * Yolculuk sırasında (biniş / in_progress) "Zorla Bitir" için güvenli iki adımlı modal.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -11,9 +11,12 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { useTheme } from '../hooks/useTheme';
+import { lightThemeEnabled } from '../lib/featureFlags';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_COLOR_ERROR } from '../design-system/tokens/color';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -57,6 +60,63 @@ export default function InRideSaferForceEndModal({
 }: InRideSaferForceEndModalProps) {
   const [reasonKey, setReasonKey] = useState<string>(IN_RIDE_FORCE_END_REASONS[0].key);
   const [details, setDetails] = useState('');
+  const { isLight, tokens } = useTheme();
+  const isModalLight = lightThemeEnabled && isLight;
+
+  const lightStyles = useMemo(() => {
+    if (!isModalLight) return null;
+    const t = tokens;
+    return {
+      backdrop: { backgroundColor: 'rgba(15,23,42,0.44)' },
+      closeIconColor: t.text.muted,
+      phaseStep: { color: t.accent.secondary },
+      guardianChip: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+        borderTopColor: t.borderColors.cardTopCyan,
+      },
+      chipIconColor: t.accent.secondary,
+      guardianChipText: { color: t.text.primary },
+      title: { color: t.text.primary },
+      primaryBtn: {
+        backgroundColor: t.accent.primary,
+        borderColor: t.borderColors.selected,
+        borderTopColor: t.borderColors.selectedTop,
+      },
+      primaryBtnText: { color: t.text.inverse },
+      primaryIconColor: t.text.inverse,
+      secondaryBtn: {
+        backgroundColor: 'rgba(220,38,38,0.08)',
+        borderColor: 'rgba(220,38,38,0.28)',
+        borderTopColor: 'rgba(220,38,38,0.18)',
+      },
+      secondaryBtnText: { color: t.status.error },
+      secondaryIconColor: t.status.error,
+      chip: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+      },
+      chipSel: {
+        backgroundColor: t.bg.elevated,
+        borderColor: t.borderColors.selected,
+        borderTopColor: t.borderColors.selectedTop,
+      },
+      chipTextSel: { color: t.text.primary },
+      input: {
+        color: t.text.primary,
+        backgroundColor: t.bg.elevated,
+        borderColor: t.border.default,
+        borderTopColor: t.borderColors.cardTopCyan,
+      },
+      inputPlaceholder: t.text.muted,
+      destructiveBtn: {
+        backgroundColor: 'rgba(220,38,38,0.08)',
+        borderColor: 'rgba(220,38,38,0.28)',
+        borderTopColor: 'rgba(220,38,38,0.18)',
+      },
+      destructiveBtnText: { color: t.status.error },
+    };
+  }, [isModalLight, tokens]);
 
   useEffect(() => {
     if (!visible) {
@@ -68,64 +128,109 @@ export default function InRideSaferForceEndModal({
   if (!visible) return null;
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <KeyboardAvoidingView
-        style={styles.backdrop}
+        style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
-        <View style={styles.cardWrap}>
+        <Pressable
+          style={[StyleSheet.absoluteFill, styles.backdrop, lightStyles?.backdrop]}
+          onPress={onClose}
+        />
+        <Pressable style={styles.cardWrap} onPress={(e) => e.stopPropagation()}>
           <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.card}>
             <TouchableOpacity style={styles.closeFab} onPress={onClose} hitSlop={12}>
-              <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
+              <Ionicons
+                name="close"
+                size={22}
+                color={lightStyles?.closeIconColor ?? 'rgba(186,201,222,0.82)'}
+              />
             </TouchableOpacity>
 
             <View style={styles.phaseBlock}>
-              <PremiumText variant="step" style={styles.phaseStep}>
+              <PremiumText variant="step" style={[styles.phaseStep, lightStyles?.phaseStep]}>
                 Güvenli sonlandırma
               </PremiumText>
             </View>
 
             {step === 'choice' ? (
               <>
-                <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
-                  <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.82)" />
-                  <PremiumText variant="caption" style={styles.guardianChipText}>
+                <GlassSurface
+                  variant="plain"
+                  style={[styles.guardianChip, lightStyles?.guardianChip]}
+                  borderRadius={LDS_RADIUS.full}
+                >
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={14}
+                    color={lightStyles?.chipIconColor ?? 'rgba(34,211,238,0.82)'}
+                  />
+                  <PremiumText
+                    variant="caption"
+                    style={[styles.guardianChipText, lightStyles?.guardianChipText]}
+                  >
                     Önce güvenli seçenekler
                   </PremiumText>
                 </GlassSurface>
 
-                <PremiumText variant="title" style={styles.title}>
+                <PremiumText variant="title" style={[styles.title, lightStyles?.title]}>
                   Yolculuğu nasıl sonlandırmak istersiniz?
                 </PremiumText>
                 <PremiumText variant="body" muted style={styles.sub}>
                   Zorla bitirmek puan kaybına yol açabilir. Mümkünse karekod ile tamamlayın.
                 </PremiumText>
 
-                <TouchableOpacity style={styles.primaryBtn} onPress={onChooseQr} activeOpacity={0.88}>
-                  <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
-                  <PremiumText variant="body" style={styles.primaryBtnText}>
+                <TouchableOpacity
+                  style={[styles.primaryBtn, lightStyles?.primaryBtn]}
+                  onPress={onChooseQr}
+                  activeOpacity={0.88}
+                >
+                  <Ionicons
+                    name="qr-code"
+                    size={20}
+                    color={lightStyles?.primaryIconColor ?? 'rgba(243,248,255,0.94)'}
+                  />
+                  <PremiumText variant="body" style={[styles.primaryBtnText, lightStyles?.primaryBtnText]}>
                     Sürücü yanınızdaysa karekodu okutun
                   </PremiumText>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.secondaryBtn} onPress={onChooseIssue} activeOpacity={0.88}>
-                  <Ionicons name="alert-circle-outline" size={20} color="rgba(248,113,113,0.88)" />
-                  <PremiumText variant="body" style={styles.secondaryBtnText}>
+                <TouchableOpacity
+                  style={[styles.secondaryBtn, lightStyles?.secondaryBtn]}
+                  onPress={onChooseIssue}
+                  activeOpacity={0.88}
+                >
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={20}
+                    color={lightStyles?.secondaryIconColor ?? 'rgba(248,113,113,0.88)'}
+                  />
+                  <PremiumText variant="body" style={[styles.secondaryBtnText, lightStyles?.secondaryBtnText]}>
                     Sorun var
                   </PremiumText>
                 </TouchableOpacity>
               </>
             ) : (
               <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
-                  <Ionicons name="document-text-outline" size={14} color="rgba(34,211,238,0.78)" />
-                  <PremiumText variant="caption" style={styles.guardianChipText}>
+                <GlassSurface
+                  variant="plain"
+                  style={[styles.guardianChip, lightStyles?.guardianChip]}
+                  borderRadius={LDS_RADIUS.full}
+                >
+                  <Ionicons
+                    name="document-text-outline"
+                    size={14}
+                    color={lightStyles?.chipIconColor ?? 'rgba(34,211,238,0.78)'}
+                  />
+                  <PremiumText
+                    variant="caption"
+                    style={[styles.guardianChipText, lightStyles?.guardianChipText]}
+                  >
                     Şikayet kaydı
                   </PremiumText>
                 </GlassSurface>
 
-                <PremiumText variant="title" style={styles.title}>
+                <PremiumText variant="title" style={[styles.title, lightStyles?.title]}>
                   Kısaca belirtin
                 </PremiumText>
                 <PremiumText variant="body" muted style={styles.sub}>
@@ -138,14 +243,19 @@ export default function InRideSaferForceEndModal({
                     return (
                       <TouchableOpacity
                         key={r.key}
-                        style={[styles.chip, sel && styles.chipSel]}
+                        style={[
+                          styles.chip,
+                          lightStyles?.chip,
+                          sel && styles.chipSel,
+                          sel && lightStyles?.chipSel,
+                        ]}
                         onPress={() => setReasonKey(r.key)}
                         activeOpacity={0.85}
                       >
                         <PremiumText
                           variant="caption"
-                          muted={!sel}
-                          style={[styles.chipText, sel && styles.chipTextSel]}
+                          muted={!sel && !isModalLight}
+                          style={[styles.chipText, sel && styles.chipTextSel, sel && lightStyles?.chipTextSel]}
                         >
                           {r.label}
                         </PremiumText>
@@ -158,9 +268,9 @@ export default function InRideSaferForceEndModal({
                   Kısaca belirtin
                 </PremiumText>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, lightStyles?.input]}
                   placeholder="İsteğe bağlı açıklama"
-                  placeholderTextColor="rgba(186,201,222,0.45)"
+                  placeholderTextColor={lightStyles?.inputPlaceholder ?? 'rgba(186,201,222,0.45)'}
                   value={details}
                   onChangeText={setDetails}
                   multiline
@@ -169,48 +279,55 @@ export default function InRideSaferForceEndModal({
                 />
 
                 <TouchableOpacity
-                  style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+                  style={[styles.primaryBtn, lightStyles?.primaryBtn, submitting && styles.btnDisabled]}
                   disabled={submitting}
                   onPress={() => onSubmitComplaintAndEnd(reasonKey, details.trim())}
                   activeOpacity={0.88}
                 >
-                  <Ionicons name="send" size={18} color="rgba(243,248,255,0.94)" />
-                  <PremiumText variant="body" style={styles.primaryBtnText}>
+                  <Ionicons
+                    name="send"
+                    size={18}
+                    color={lightStyles?.primaryIconColor ?? 'rgba(243,248,255,0.94)'}
+                  />
+                  <PremiumText variant="body" style={[styles.primaryBtnText, lightStyles?.primaryBtnText]}>
                     Şikayet et ve bitir
                   </PremiumText>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.destructiveBtn, submitting && styles.btnDisabled]}
+                  style={[styles.destructiveBtn, lightStyles?.destructiveBtn, submitting && styles.btnDisabled]}
                   disabled={submitting}
                   onPress={onBluntForceEnd}
                   activeOpacity={0.88}
                 >
-                  <PremiumText variant="body" style={styles.destructiveBtnText}>
+                  <PremiumText variant="body" style={[styles.destructiveBtnText, lightStyles?.destructiveBtnText]}>
                     Yine de zorla bitir (-5 puan)
                   </PremiumText>
                 </TouchableOpacity>
               </ScrollView>
             )}
           </GlassSurface>
-        </View>
+        </Pressable>
       </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  overlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(8,17,31,0.72)',
     padding: LDS_SPACING.lg,
+  },
+  backdrop: {
+    backgroundColor: 'rgba(8,17,31,0.72)',
   },
   cardWrap: {
     width: '100%',
     maxWidth: 400,
     alignSelf: 'center',
+    zIndex: 2,
   },
   card: {
     width: '100%',
@@ -223,7 +340,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: LDS_SPACING.sm,
     top: LDS_SPACING.sm,
-    zIndex: 2,
+    zIndex: 3,
   },
   phaseBlock: {
     marginBottom: LDS_SPACING.sm,

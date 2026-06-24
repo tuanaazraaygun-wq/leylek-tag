@@ -28,6 +28,75 @@ export function apiErrMsg(data: unknown, fallback: string): string {
   return fallback;
 }
 
+export type TagMemberRole = 'passenger' | 'driver';
+
+export type TagMembershipSlice = {
+  id?: string;
+  passenger_id?: string;
+  driver_id?: string;
+};
+
+function normTripUserId(id: unknown): string {
+  return String(id ?? '').trim().toLowerCase();
+}
+
+/** Tag üyeliğinden kullanıcının yolcu mu sürücü mü olduğunu çıkarır (user.role kullanmaz). */
+export function inferTagRoleForUser(
+  activeTag: TagMembershipSlice | null | undefined,
+  userId: string | null | undefined,
+): TagMemberRole | null {
+  const uid = normTripUserId(userId);
+  if (!uid || !activeTag) return null;
+  const pid = normTripUserId(activeTag.passenger_id);
+  const did = normTripUserId(activeTag.driver_id);
+  if (pid && uid === pid) return 'passenger';
+  if (did && uid === did) return 'driver';
+  return null;
+}
+
+/**
+ * Force-end için ender_type — tag üyeliğinden; dashboard ipucu yalnızca __DEV__ uyarısı için.
+ */
+export function resolveForceEndEnderType(
+  activeTag: TagMembershipSlice | null | undefined,
+  userId: string | null | undefined,
+  dashboardHint?: TagMemberRole,
+): TagMemberRole | null {
+  const inferred = inferTagRoleForUser(activeTag, userId);
+  if (
+    typeof __DEV__ !== 'undefined' &&
+    __DEV__ &&
+    dashboardHint &&
+    inferred &&
+    dashboardHint !== inferred
+  ) {
+    console.warn('FORCE_END_ENDER_TYPE_MISMATCH', {
+      dashboardHint,
+      inferredFromTag: inferred,
+      tagId: activeTag?.id ?? null,
+      userId: userId ?? null,
+    });
+  }
+  return inferred;
+}
+
+/** inferred null ise ender_type gönderilmez — backend tag'den çıkarır. */
+export function buildForceEndTripUrl(
+  apiUrl: string,
+  tagId: string,
+  userId: string,
+  enderType: TagMemberRole | null,
+): string {
+  const q = new URLSearchParams({
+    tag_id: String(tagId),
+    user_id: String(userId),
+  });
+  if (enderType) {
+    q.set('ender_type', enderType);
+  }
+  return `${apiUrl}/trip/force-end?${q.toString()}`;
+}
+
 /** Türkiye cep: 10 hane (başında 0 veya +90 olabilir). */
 export function normalizeTrMobile10(raw?: string | null): string {
   if (!raw) return '';

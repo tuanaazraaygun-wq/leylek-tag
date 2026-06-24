@@ -46,6 +46,8 @@ type ShowOptions = {
    * >0 ise kart bu süre sonra kendiliğinden kapanır; `buttons` boş bırakılabilir (Tamam zorunlu değil).
    */
   autoDismissMs?: number;
+  /** Light theme: daha koyu scrim (zorla bitir onayı vb.) */
+  emphasisScrim?: boolean;
 };
 
 type AlertQueueItem = {
@@ -166,6 +168,7 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
 
   const cancelable = current?.options?.cancelable !== false;
   const autoDismissMs = current?.options?.autoDismissMs;
+  const emphasisScrim = current?.options?.emphasisScrim === true;
 
   const effectiveTone = useMemo(
     () => (current ? resolveTone(current.options) : 'info'),
@@ -180,7 +183,9 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
     if (!isAlertLight) return null;
     const t = tokens;
     return {
-      overlay: { backgroundColor: t.shadow.modal },
+      overlay: {
+        backgroundColor: emphasisScrim ? 'rgba(15,23,42,0.44)' : t.shadow.modal,
+      },
       toneIconOrb: { backgroundColor: t.bg.glassMuted },
       guardianChip: {
         backgroundColor: t.bg.glassMuted,
@@ -207,7 +212,7 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
       },
       btnDestructiveText: { color: t.status.error },
     };
-  }, [isAlertLight, tokens]);
+  }, [isAlertLight, tokens, emphasisScrim]);
 
   const displayToneMeta = useMemo(() => {
     if (!isAlertLight) return toneMeta;
