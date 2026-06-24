@@ -23,6 +23,7 @@ import { setSocketRegisterScheduler } from '../lib/socketRegisterScheduler';
 import { publishSocketSessionRefresh } from '../lib/socketSessionRefresh';
 import { emitConversationUpdated, emitTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
 import { normalizeRemotePushRoutingData, useNotifications } from './NotificationContext';
+import { perfLog, perfWarn } from '../utils/perfDiagLog';
 
 const SOCKET_URL = BACKEND_BASE_URL;
 
@@ -59,7 +60,7 @@ function logSocketProdDiag(
   details: Record<string, boolean | number | string | null | undefined> = {},
 ): void {
   try {
-    console.log(
+    perfLog(
       '[socket_diag]',
       JSON.stringify({
         event,
@@ -69,7 +70,7 @@ function logSocketProdDiag(
       }),
     );
   } catch {
-    console.log('[socket_diag]', event);
+    perfLog('[socket_diag]', event);
   }
 }
 
@@ -81,13 +82,11 @@ function getSocketIoTransports(): ('polling' | 'websocket')[] {
 // EMIT WITH LOG - Debug için tüm emit'lerde kullanılabilir
 // ═══════════════════════════════════════════════════════════════════
 export const emitWithLog = (socket: Socket, event: string, payload: any) => {
-  if (__DEV__) {
-    console.log('SOCKET_EMIT_DEBUG', {
-      event,
-      has_payload: payload != null,
-      payload_keys: payload && typeof payload === 'object' ? Object.keys(payload) : null,
-    });
-  }
+  perfLog('SOCKET_EMIT_DEBUG', {
+    event,
+    has_payload: payload != null,
+    payload_keys: payload && typeof payload === 'object' ? Object.keys(payload) : null,
+  });
   socket.emit(event, payload);
 };
 
@@ -135,7 +134,7 @@ function logSocketRegisterDiag(detail: {
   note?: string;
 }): void {
   try {
-    console.log(
+    perfLog(
       '[socket_register_diag]',
       JSON.stringify({
         reason: detail.reason,
@@ -178,7 +177,7 @@ export function getOrCreateSocket(): Socket {
   }
 
   if (__DEV__) {
-    console.log('SOCKET_INIT_CONFIG', {
+    perfLog('SOCKET_INIT_CONFIG', {
       has_socket_url: !!SOCKET_URL,
       has_api_url: !!API_BASE_URL,
       dev_build: typeof __DEV__ !== 'undefined' && !!__DEV__,
@@ -207,8 +206,8 @@ export function getOrCreateSocket(): Socket {
   singletonSocket.on('connect', () => {
     const id = singletonSocket?.id;
     logSocketProdDiag('connect', { connected: true, hasSocketId: !!id });
-    console.log('[socket] connected', id);
-    console.log(`[socket] connect sid=${id || 'null'}`);
+    perfLog('[socket] connected', id);
+    perfLog(`[socket] connect sid=${id || 'null'}`);
     if (pingInterval) clearInterval(pingInterval);
     pingInterval = setInterval(() => {
       if (singletonSocket?.connected) {
@@ -232,8 +231,8 @@ export function getOrCreateSocket(): Socket {
   });
 
   singletonSocket.on('disconnect', (reason) => {
-    console.log('[socket] disconnect', reason);
-    console.log(`[socket] disconnect sid=${singletonSocket?.id || 'null'} reason=${String(reason || '')}`);
+    perfLog('[socket] disconnect', reason);
+    perfLog(`[socket] disconnect sid=${singletonSocket?.id || 'null'} reason=${String(reason || '')}`);
     lastRegisteredSocketSid = null;
     lastRegisteredSocketUserId = null;
     if (pingInterval) {
@@ -248,8 +247,8 @@ export function getOrCreateSocket(): Socket {
   try {
     const mgr = singletonSocket.io;
     mgr.on('reconnect_attempt', (attempt: number) => {
-      console.log('[socket] reconnect_attempt', attempt);
-      console.log(`[socket] reconnect_attempt n=${attempt}`);
+      perfLog('[socket] reconnect_attempt', attempt);
+      perfLog(`[socket] reconnect_attempt n=${attempt}`);
     });
     mgr.on('reconnect_error', (err: Error) => {
       logSocketProdDiag('reconnect_error', {
@@ -268,8 +267,8 @@ export function getOrCreateSocket(): Socket {
   }
 
   singletonSocket.on('reconnect', (attempt?: number) => {
-    console.log('[socket] reconnect', { id: singletonSocket?.id, attempt });
-    console.log(`[socket] reconnect sid=${singletonSocket?.id || 'null'}`);
+    perfLog('[socket] reconnect', { id: singletonSocket?.id, attempt });
+    perfLog(`[socket] reconnect sid=${singletonSocket?.id || 'null'}`);
     publishSocketSessionRefresh('socket_reconnect');
   });
 
@@ -435,7 +434,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       opts?.force === true ||
       REGISTER_EMIT_FORCE_REASONS.has(reason) ||
       isCriticalActionReason(reason);
-    console.log(
+    perfLog(
       'SOCKET_REGISTER_ENSURE',
       JSON.stringify({
         schedule_reason: reason,
@@ -446,7 +445,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
         ts: new Date().toISOString(),
       }),
     );
-    console.log('SCHEDULE_REGISTER_START', {
+    perfLog('SCHEDULE_REGISTER_START', {
       reason,
       force: forceFlag,
       connected: socketRef.current?.connected ?? false,
@@ -464,7 +463,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const tryOnce = (attempt: number) => {
       void (async () => {
         if (myGen !== registerGenRef.current) {
-          console.log(
+          perfLog(
             'SOCKET_REGISTER_SKIP_REASON',
             JSON.stringify({
               kind: 'stale_schedule_generation',
@@ -555,14 +554,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
           return;
         }
         if (attempt === 0) {
-          console.log('FRONTEND_SOCKET_REGISTER_USER', {
+          perfLog('FRONTEND_SOCKET_REGISTER_USER', {
             user_id: maskIdForLog(uid),
             role,
             reason,
             attempt,
           });
         } else {
-          console.log('FRONTEND_SOCKET_REGISTER_RETRY', {
+          perfLog('FRONTEND_SOCKET_REGISTER_RETRY', {
             user_id: maskIdForLog(uid),
             role,
             reason,
@@ -601,7 +600,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
         registerAckOkRef.current = false;
         const registerPayload = { user_id: uid, token, role };
         lastRegisterEmitAtMsRef.current = Date.now();
-        console.log(
+        perfLog(
           'SOCKET_REGISTER_SENT',
           JSON.stringify({
             user_id: maskIdForLog(uid),
@@ -693,8 +692,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
       success: ack?.success === true,
       hasRoom: !!(ack?.room != null && String(ack.room).trim()),
     });
-    if (__DEV__) console.log('FRONTEND_SOCKET_REGISTER_ACK', data);
-    console.log(
+    perfLog('FRONTEND_SOCKET_REGISTER_ACK', data);
+    perfLog(
       'SOCKET_REGISTER_ACK',
       JSON.stringify({
         success: ack?.success === true,
@@ -756,8 +755,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const myNorm = String(myId ?? '').trim().toLowerCase();
     const targetNorm = targetId.trim().toLowerCase();
     if (targetId && myNorm && myNorm !== targetNorm) {
-      console.log(`🔕 [SocketProvider] ${source}: incoming_call hedef dışı (target_user_id)`);
-      console.log('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
+      perfLog(`🔕 [SocketProvider] ${source}: incoming_call hedef dışı (target_user_id)`);
+      perfLog('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
         call_id: data?.call_id != null ? String(data.call_id) : null,
         session_id: sessionId,
         reason: 'target_user_mismatch',
@@ -767,8 +766,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
     }
     const callerId = data.caller_id != null ? String(data.caller_id) : '';
     if (!callerId || (myNorm && callerId.trim().toLowerCase() === myNorm)) {
-      console.log(`🔕 [SocketProvider] ${source}: incoming_call yok sayıldı (kendi araması)`);
-      console.log('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
+      perfLog(`🔕 [SocketProvider] ${source}: incoming_call yok sayıldı (kendi araması)`);
+      perfLog('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
         call_id: data?.call_id != null ? String(data.call_id) : null,
         session_id: sessionId,
         reason: !callerId ? 'missing_caller_id' : 'self_call',
@@ -780,7 +779,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const channelName = data.channel_name != null ? String(data.channel_name) : '';
     if (!callId || !channelName) {
       console.warn(`⚠️ [SocketProvider] ${source}: call_id / channel_name eksik`);
-      console.log('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
+      perfLog('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
         call_id: callId || null,
         session_id: sessionId,
         reason: 'missing_call_or_channel',
@@ -790,7 +789,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     }
     const prev = incomingCallDataRef.current;
     if (prev?.callId === callId && prev?.callerId === callerId) {
-      console.log('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
+      perfLog('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
         call_id: callId,
         session_id: sessionId,
         reason: 'duplicate_incoming_payload',
@@ -810,21 +809,21 @@ export function SocketProvider({ children }: SocketProviderProps) {
       agoraToken: data.agora_token != null ? String(data.agora_token) : '',
       tagId: data.tag_id != null ? String(data.tag_id) : '',
     };
-    console.log('SOCKET_CALL_RECEIVE', JSON.stringify({
+    perfLog('SOCKET_CALL_RECEIVE', JSON.stringify({
       call_id: callId || null,
       session_id: sessionId,
       receiver_user: myNorm || null,
       source: 'global',
       ts: new Date().toISOString(),
     }));
-    console.log('SOCKET_CALL_UI_OPENED', JSON.stringify({
+    perfLog('SOCKET_CALL_UI_OPENED', JSON.stringify({
       call_id: callId || null,
       session_id: sessionId,
       screen: 'global_incoming_call_state',
       opened_via: `global_${source}`,
       ts: new Date().toISOString(),
     }));
-    console.log(`🔔 [SocketProvider] Gelen arama state güncellendi (${source})`, callId);
+    perfLog(`🔔 [SocketProvider] Gelen arama state güncellendi (${source})`, callId);
     setIncomingCallData(newCallData);
     incomingCallDataRef.current = newCallData;
     setIncomingCallPresentToken((n) => n + 1);
@@ -911,14 +910,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     // Bağlantı durumu listener'ları
     const handleConnect = () => {
-      if (__DEV__) console.log('HANDLE_CONNECT_START', {
+      perfLog('HANDLE_CONNECT_START', {
         connected: socket.connected,
         hasUserIdRef: !!userIdRef.current,
         userId: maskIdForLog(userIdRef.current),
         role: userRoleRef.current,
       });
       const sid = socket.id ?? null;
-      if (__DEV__) console.log('[socket_health]', JSON.stringify({
+      perfLog('[socket_health]', JSON.stringify({
         tag: 'provider_connect',
         baseUrl: !!BACKEND_BASE_URL,
         connected: true,
@@ -926,12 +925,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
         userId: maskIdForLog(userIdRef.current),
         registered: false,
       }));
-      console.log('✅ [SocketProvider] Socket bağlandı:', sid);
+      perfLog('✅ [SocketProvider] Socket bağlandı:', sid);
       setIsConnected(true);
       setIsRegistered(false);
       registerAckOkRef.current = false;
       if (sid && lastSocketIdRef.current !== sid) {
-        console.log('FRONTEND_SOCKET_ID_CHANGED', { socket_id: sid, prev: lastSocketIdRef.current });
+        perfLog('FRONTEND_SOCKET_ID_CHANGED', { socket_id: sid, prev: lastSocketIdRef.current });
         lastSocketIdRef.current = sid;
       } else if (sid) {
         lastSocketIdRef.current = sid;
@@ -940,14 +939,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
     };
 
     const handleDisconnect = (reason: string) => {
-      console.log('⚠️ [SocketProvider] Socket koptu:', reason);
+      perfLog('⚠️ [SocketProvider] Socket koptu:', reason);
       setIsConnected(false);
       setIsRegistered(false);
       lastSocketIdRef.current = null;
     };
 
     const handleReconnect = (attemptNumber: number) => {
-      console.log('🔄 [SocketProvider] Reconnect başarılı, attempt:', attemptNumber);
+      perfLog('🔄 [SocketProvider] Reconnect başarılı, attempt:', attemptNumber);
       setIsRegistered(false);
       registerAckOkRef.current = false;
       scheduleSocketRegister('socket_reconnect', { force: true });
@@ -962,7 +961,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       const callId = data?.call_id != null ? String(data.call_id) : null;
       const sessionId = data?.session_id != null ? String(data.session_id) : null;
       if (__DEV__) {
-        console.log(
+        perfLog(
           '[incoming_call]',
           JSON.stringify({
             call_id: callId,
@@ -983,8 +982,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
       const targetId = data?.target_user_id != null ? String(data.target_user_id).trim() : '';
       const myNorm = String(myId ?? '').trim().toLowerCase();
       if (targetId && myNorm && targetId.trim().toLowerCase() !== myNorm) {
-        console.log('🔕 [SocketProvider] incoming_call yok sayıldı (hedef kullanıcı değil)');
-        console.log('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
+        perfLog('🔕 [SocketProvider] incoming_call yok sayıldı (hedef kullanıcı değil)');
+        perfLog('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
           call_id: callId,
           session_id: sessionId,
           reason: 'target_user_mismatch',
@@ -997,8 +996,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
         data?.caller_id != null &&
         String(data.caller_id).trim().toLowerCase() === myNorm
       ) {
-        console.log('🔕 [SocketProvider] incoming_call yok sayıldı (socket: arayan kendisi)');
-        console.log('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
+        perfLog('🔕 [SocketProvider] incoming_call yok sayıldı (socket: arayan kendisi)');
+        perfLog('SOCKET_CALL_IGNORED_REASON', JSON.stringify({
           call_id: callId,
           session_id: sessionId,
           reason: 'self_call',
@@ -1019,14 +1018,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
         agoraToken: data.agora_token || currentData?.agoraToken || '',
         tagId: data.tag_id || currentData?.tagId || '',
       };
-      console.log('SOCKET_CALL_RECEIVE', JSON.stringify({
+      perfLog('SOCKET_CALL_RECEIVE', JSON.stringify({
         call_id: newCallData.callId || null,
         session_id: sessionId,
         receiver_user: myNorm || null,
         source: 'global',
         ts: new Date().toISOString(),
       }));
-      console.log('SOCKET_CALL_UI_OPENED', JSON.stringify({
+      perfLog('SOCKET_CALL_UI_OPENED', JSON.stringify({
         call_id: newCallData.callId || null,
         session_id: sessionId,
         screen: 'global_incoming_call_state',
@@ -1041,7 +1040,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     const onConversationUpdated = (payload: Record<string, unknown>) => {
       if (__DEV__) {
-        console.log('[socket_receive]', JSON.stringify({
+        perfLog('[socket_receive]', JSON.stringify({
           event: 'conversation_updated',
           has_payload: !!payload,
           keys: payload ? Object.keys(payload) : [],
@@ -1056,7 +1055,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     };
     const onTripSessionUpdated = (payload: Record<string, unknown>) => {
       if (__DEV__) {
-        console.log('[socket_receive]', JSON.stringify({
+        perfLog('[socket_receive]', JSON.stringify({
           event: 'trip_session_updated',
           has_payload: !!payload,
           keys: payload ? Object.keys(payload) : [],
@@ -1100,7 +1099,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
           message_id: o.message_id,
         };
       }
-      if (__DEV__) console.log('[socket_receive]', JSON.stringify({ kind: 'legacy_debug', event: ev, ids }));
+      perfLog('[socket_receive]', JSON.stringify({ kind: 'legacy_debug', event: ev, ids }));
     };
     socket.onAny(onAnyInbound);
 
@@ -1149,7 +1148,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       const socket = socketRef.current;
       
       if (nextAppState === 'active') {
-        console.log('📱 [SocketProvider] App aktif oldu');
+        perfLog('📱 [SocketProvider] App aktif oldu');
         
         // Arka plan timer'ını temizle
         if (backgroundTimer) {
@@ -1158,12 +1157,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
         }
         
         const backgroundDuration = Date.now() - lastActiveTime;
-        console.log(`📱 [SocketProvider] Arka planda ${Math.round(backgroundDuration / 1000)} saniye kaldı`);
+        perfLog(`📱 [SocketProvider] Arka planda ${Math.round(backgroundDuration / 1000)} saniye kaldı`);
         
         if (socket) {
           if (!socket.connected) {
             // 🔥 Bağlı değilse HEMEN bağlan
-            console.log('🔄 [SocketProvider] Socket bağlı değil, bağlanıyor...');
+            perfLog('🔄 [SocketProvider] Socket bağlı değil, bağlanıyor...');
             socket.connect();
           } else {
             scheduleSocketRegister('app_foreground_active', { force: true });
@@ -1173,7 +1172,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
             }
             // 🔥 Bağlıysa bile 30 saniyeden fazla arka plandaysa yeniden register ol
             if (backgroundDuration > 30000 && userIdRef.current && userRoleRef.current) {
-              console.log('📱 [SocketProvider] Uzun arka plan süresi, re-register yapılıyor...');
+              perfLog('📱 [SocketProvider] Uzun arka plan süresi, re-register yapılıyor...');
               scheduleSocketRegister('app_foreground_long_bg', { force: true });
             }
           }
@@ -1182,14 +1181,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
         lastActiveTime = Date.now();
         
       } else if (nextAppState === 'background') {
-        console.log('📱 [SocketProvider] App arka plana alındı');
+        perfLog('📱 [SocketProvider] App arka plana alındı');
         lastActiveTime = Date.now();
         
         // 🔥 Arka planda 2 dakikadan fazla kalırsa socket'i koru ama periodic ping at
         // (Socket'i kapatmıyoruz - sadece izliyoruz)
         
       } else if (nextAppState === 'inactive') {
-        console.log('📱 [SocketProvider] App inactive');
+        perfLog('📱 [SocketProvider] App inactive');
         // iOS'ta geçici durum - bir şey yapma
       }
     };
@@ -1204,7 +1203,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
   /** Bağlantı önce, kimlik sonra geldiyse veya ilk deneme bloklandıysa — state değişince mutlaka yeniden dene */
   useEffect(() => {
     if (!isConnected || !userId || !userRole) return;
-    console.log('LATE_IDENTITY_RECOVERY_TRIGGER', {
+    perfLog('LATE_IDENTITY_RECOVERY_TRIGGER', {
       hasUserId: !!userId,
       hasRole: !!userRole,
     });
@@ -1221,14 +1220,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
       if (patch.userId !== undefined) {
         identityTouched = true;
         const id = patch.userId;
-        if (id) console.log('USER_ID_REF_UPDATE', maskIdForLog(id));
+        if (id) perfLog('USER_ID_REF_UPDATE', maskIdForLog(id));
         userIdRef.current = id ?? null;
         setUserId(id ?? null);
       }
       if (patch.role !== undefined) {
         identityTouched = true;
         const r = patch.role;
-        if (r) console.log('USER_ROLE_REF_UPDATE', r);
+        if (r) perfLog('USER_ROLE_REF_UPDATE', r);
         userRoleRef.current = r ?? null;
         setUserRole(r ?? null);
       }
@@ -1240,7 +1239,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
   );
 
   const connect = useCallback((newUserId: string, newUserRole: string) => {
-    console.log('🔌 [SocketProvider] Connect çağrıldı:', maskIdForLog(newUserId), newUserRole);
+    perfLog('🔌 [SocketProvider] Connect çağrıldı:', maskIdForLog(newUserId), newUserRole);
     
     setUserId(newUserId);
     setUserRole(newUserRole);
@@ -1254,10 +1253,10 @@ export function SocketProvider({ children }: SocketProviderProps) {
     }
     
     if (!socket.connected) {
-      console.log('🔌 [SocketProvider] Socket.connect() çağrılıyor...');
+      perfLog('🔌 [SocketProvider] Socket.connect() çağrılıyor...');
       socket.connect();
     } else {
-      console.log('🔌 [SocketProvider] Socket zaten bağlı, register planlanıyor...');
+      perfLog('🔌 [SocketProvider] Socket zaten bağlı, register planlanıyor...');
     }
     scheduleSocketRegister('connect_function', { force: true });
   }, [scheduleSocketRegister]);
@@ -1267,7 +1266,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
   // ══════════════════════════════════════════════════════════════════
   
   const disconnect = useCallback(() => {
-    console.log('⚠️ [SocketProvider] Disconnect çağrıldı - YAPILMIYOR');
+    perfLog('⚠️ [SocketProvider] Disconnect çağrıldı - YAPILMIYOR');
     // Socket'i KAPATMA - sadece user bilgilerini temizle
     setUserId(null);
     setUserRole(null);
@@ -1286,7 +1285,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     
     // Socket bağlıysa HEMEN gönder
     if (socket?.connected) {
-      console.log(`📤 [SocketProvider] Emit: ${event}`);
+      perfLog(`📤 [SocketProvider] Emit: ${event}`);
       socket.emit(event, data);
       return;
     }
@@ -1297,7 +1296,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     
     // Bağlantı olur olmaz gönder
     socket.once('connect', () => {
-      console.log(`📤 [SocketProvider] Emit (after connect): ${event}`);
+      perfLog(`📤 [SocketProvider] Emit (after connect): ${event}`);
       socket.emit(event, data);
     });
   }, []);
@@ -1306,7 +1305,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const socket = getOrCreateSocket();
     const run = () => {
       if (__DEV__) {
-        console.log('📤 EMIT:', event, payload);
+        perfLog('📤 EMIT:', event, payload);
       }
       if (typeof ack === 'function') {
         socket.emit(event, payload, ack);
@@ -1324,36 +1323,36 @@ export function SocketProvider({ children }: SocketProviderProps) {
   }, []);
 
   const emitSendOffer = useCallback((data: any) => {
-    console.log('💰 [SocketProvider] emitSendOffer:', JSON.stringify(data));
+    perfLog('💰 [SocketProvider] emitSendOffer:', JSON.stringify(data));
     emit('send_offer', data);
   }, [emit]);
 
   /** Backend: @sio.on("driver_accept_offer") — bağlantı yoksa connect sonrası gönderilir */
   const emitDriverAcceptOffer = useCallback(
     (data: { tag_id: string; driver_id: string; driver_name?: string }) => {
-      console.log('✅ [SocketProvider] driver_accept_offer:', data);
+      perfLog('✅ [SocketProvider] driver_accept_offer:', data);
       emit('driver_accept_offer', data);
     },
     [emit]
   );
 
   const emitAcceptOffer = useCallback((data: any) => {
-    console.log('✅ [SocketProvider] emitAcceptOffer:', data);
+    perfLog('✅ [SocketProvider] emitAcceptOffer:', data);
     emit('accept_offer', data);
   }, [emit]);
 
   const emitRejectOffer = useCallback((data: any) => {
-    console.log('❌ [SocketProvider] emitRejectOffer:', data);
+    perfLog('❌ [SocketProvider] emitRejectOffer:', data);
     emit('reject_offer', data);
   }, [emit]);
 
   const emitCreateTagRequest = useCallback((data: any) => {
-    console.log('🏷️ [SocketProvider] emitCreateTagRequest:', data);
+    perfLog('🏷️ [SocketProvider] emitCreateTagRequest:', data);
     emit('create_tag_request', data);
   }, [emit]);
 
   const emitCancelTagRequest = useCallback((data: any) => {
-    console.log('🚫 [SocketProvider] emitCancelTagRequest:', data);
+    perfLog('🚫 [SocketProvider] emitCancelTagRequest:', data);
     emit('cancel_tag_request', data);
   }, [emit]);
 
@@ -1366,40 +1365,40 @@ export function SocketProvider({ children }: SocketProviderProps) {
   }, [emit]);
 
   const emitTripStarted = useCallback((data: any) => {
-    console.log('🚗 [SocketProvider] emitTripStarted:', data);
+    perfLog('🚗 [SocketProvider] emitTripStarted:', data);
     emit('trip_started', data);
   }, [emit]);
 
   const emitTripEnded = useCallback((data: any) => {
-    console.log('🏁 [SocketProvider] emitTripEnded:', data);
+    perfLog('🏁 [SocketProvider] emitTripEnded:', data);
     emit('trip_ended', data);
   }, [emit]);
 
   const forceEndTrip = useCallback((data: any) => {
-    console.log('⚡ [SocketProvider] forceEndTrip:', data);
+    perfLog('⚡ [SocketProvider] forceEndTrip:', data);
     emit('force_end_trip', data);
   }, [emit]);
 
   // 🆕 Mesajlaşma - Socket connected kontrolü OLMADAN direkt emit
   const emitSendMessage = useCallback((data: any) => {
     const socket = getOrCreateSocket();
-    console.log('💬 [SocketProvider] emitSendMessage:', JSON.stringify(data).substring(0, 100));
-    console.log('💬 [SocketProvider] Socket connected:', socket.connected);
+    perfLog('💬 [SocketProvider] emitSendMessage:', JSON.stringify(data).substring(0, 100));
+    perfLog('💬 [SocketProvider] Socket connected:', socket.connected);
     
     // Bağlı değilse bağlan
     if (!socket.connected) {
-      console.log('🔌 [SocketProvider] Socket bağlı değil, bağlanıyor...');
+      perfLog('🔌 [SocketProvider] Socket bağlı değil, bağlanıyor...');
       socket.connect();
     }
     
     // Her durumda emit yap - Socket.IO buffer'a alır
     socket.emit('send_message', data);
-    console.log('✅ [SocketProvider] send_message emit edildi!');
+    perfLog('✅ [SocketProvider] send_message emit edildi!');
   }, []);
 
   // 🔥 GELEN ARAMA TEMİZLE - Kabul/Red/İptal sonrası çağır
   const clearIncomingCall = useCallback(() => {
-    console.log('🧹 [SocketProvider] Gelen arama temizlendi');
+    perfLog('🧹 [SocketProvider] Gelen arama temizlendi');
     setIncomingCallData(null);
     incomingCallDataRef.current = null;  // 🔥 Ref'i de temizle!
   }, []);
@@ -1421,7 +1420,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
       const action = criticalActionFromReason(scheduleReason);
       const uid = userIdRef.current;
-      console.log(
+      perfLog(
         'SOCKET_REGISTER_BEFORE_CRITICAL_ACTION',
         JSON.stringify({
           action,
@@ -1448,7 +1447,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
             setTimeout(resolve, 50);
           });
         }
-        console.log(
+        perfLog(
           'SOCKET_REGISTER_CRITICAL_ACTION_DONE',
           JSON.stringify({
             action,

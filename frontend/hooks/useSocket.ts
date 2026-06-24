@@ -16,6 +16,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSocketContext } from '../contexts/SocketContext';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import { AppState, AppStateStatus } from 'react-native';
+import { perfLog, perfWarn } from '../utils/perfDiagLog';
 
 // ════════════════════════════════════════════════════════════════════
 // INTERFACES
@@ -329,52 +330,52 @@ export default function useSocket({
 
   useEffect(() => {
     if (!socket) {
-      console.log('⚠️ [useSocket] Socket henüz hazır değil');
+      perfLog('⚠️ [useSocket] Socket henüz hazır değil');
       return;
     }
 
-    console.log(`🔌 [useSocket] Event listener'lar ekleniyor (${userRole})`);
+    perfLog(`🔌 [useSocket] Event listener'lar ekleniyor (${userRole})`);
 
     // ══════════ ARAMA EVENTLERİ ══════════
 
     const handleIncomingCall = (data: CallData) => {
-      console.log('📞 [useSocket] GELEN ARAMA:', data);
+      perfLog('📞 [useSocket] GELEN ARAMA:', data);
       callbackRefs.current.onIncomingCall?.(data);
     };
 
     const handleCallAccepted = (data: any) => {
-      console.log('✅ [useSocket] ARAMA KABUL:', data);
+      perfLog('✅ [useSocket] ARAMA KABUL:', data);
       callbackRefs.current.onCallAccepted?.(data);
     };
 
     const handleCallRejected = (data: any) => {
-      console.log('❌ [useSocket] ARAMA RED:', data);
+      perfLog('❌ [useSocket] ARAMA RED:', data);
       callbackRefs.current.onCallRejected?.(data);
     };
 
     const handleCallStarted = (data: any) => {
-      console.log('✅ [useSocket] CALL_STARTED:', data);
+      perfLog('✅ [useSocket] CALL_STARTED:', data);
       callbackRefs.current.onCallAccepted?.(data);
     };
 
     const handleCallTimeout = (data: any) => {
-      console.log('⏱️ [useSocket] CALL_TIMEOUT:', data);
+      perfLog('⏱️ [useSocket] CALL_TIMEOUT:', data);
       callbackRefs.current.onCallTimeout?.(data);
     };
 
     const handleCallEnded = (data: any) => {
-      console.log('📴 [useSocket] ARAMA BİTTİ:', data);
+      perfLog('📴 [useSocket] ARAMA BİTTİ:', data);
       callbackRefs.current.onCallEnded?.(data);
       callbackRefs.current.onCallEndedNew?.(data);
     };
 
     const handleCallRinging = (data: any) => {
-      console.log('🔔 [useSocket] ARAMA ÇALIYOR:', data);
+      perfLog('🔔 [useSocket] ARAMA ÇALIYOR:', data);
       callbackRefs.current.onCallRinging?.(data);
     };
 
     const handleCallCancelled = (data: any) => {
-      console.log('🚫 [useSocket] ARAMA İPTAL:', data);
+      perfLog('🚫 [useSocket] ARAMA İPTAL:', data);
       callbackRefs.current.onCallCancelled?.(data);
     };
 
@@ -387,7 +388,7 @@ export default function useSocket({
     ) => {
       if (userRole !== 'driver') return;
       try {
-        console.log(
+        perfLog(
           JSON.stringify({
             evt: 'DRIVER_OFFER_SOCKET_EVENT',
             socketEvent,
@@ -404,9 +405,9 @@ export default function useSocket({
     };
 
     const handleNewTag = (data: any) => {
-      console.log('🏷️ [useSocket] YENİ TAG:', data);
+      perfLog('🏷️ [useSocket] YENİ TAG:', data);
       try {
-        console.log(
+        perfLog(
           '[normal_ride_offer_received]',
           JSON.stringify({
             tag_id: data?.tag_id ?? null,
@@ -420,7 +421,7 @@ export default function useSocket({
       }
       if (userRole === 'driver' && data?.tag_id) {
         try {
-          console.log(
+          perfLog(
             JSON.stringify({
               evt: 'DRIVER_OFFER_ADD',
               source: 'socket_new_passenger_offer_or_tag',
@@ -443,7 +444,7 @@ export default function useSocket({
 
     const notifyTagCancelled = (socketEvent: string, data: any) => {
       emitDriverOfferSocketEvent(socketEvent, data, { intent: 'hard_remove_onTagCancelled' });
-      console.log('🚫 [useSocket] TAG İPTAL:', socketEvent, data);
+      perfLog('🚫 [useSocket] TAG İPTAL:', socketEvent, data);
       callbackRefs.current.onTagCancelled?.(data);
     };
 
@@ -460,7 +461,7 @@ export default function useSocket({
           intent: 'soft_defer_remove',
           routes_to: 'onRemoveOffer',
         });
-        console.log('📤 [useSocket] passenger_offer_revoked (soft rolling):', data);
+        perfLog('📤 [useSocket] passenger_offer_revoked (soft rolling):', data);
         callbackRefs.current.onRemoveOffer?.(data);
         return;
       }
@@ -472,35 +473,35 @@ export default function useSocket({
         intent: 'soft_defer_remove',
         routes_to: 'onRemoveOffer',
       });
-      console.log('📤 [useSocket] remove_offer (dalga geçişi):', data);
+      perfLog('📤 [useSocket] remove_offer (dalga geçişi):', data);
       callbackRefs.current.onRemoveOffer?.(data);
     };
 
     const handleTagUpdated = (data: any) => {
-      console.log('🔄 [useSocket] TAG GÜNCELLENDİ:', data);
+      perfLog('🔄 [useSocket] TAG GÜNCELLENDİ:', data);
       callbackRefs.current.onTagUpdated?.(data);
     };
 
     const handleTagMatched = (data: any) => {
-      console.log('🤝 [useSocket] TAG EŞLEŞTİ:', data);
+      perfLog('🤝 [useSocket] TAG EŞLEŞTİ:', data);
       emitDriverOfferSocketEvent('tag_matched', data, { intent: 'terminal_match_clear_offers' });
       callbackRefs.current.onTagMatched?.(data);
     };
 
     const handleRideAccepted = (data: any) => {
-      console.log('✅ [useSocket] ride_accepted:', data);
+      perfLog('✅ [useSocket] ride_accepted:', data);
       callbackRefs.current.onRideAccepted?.(data as RideMatchSocketData);
     };
 
     const handleRideMatched = (data: any) => {
-      console.log('✅ [useSocket] ride_matched:', data);
+      perfLog('✅ [useSocket] ride_matched:', data);
       emitDriverOfferSocketEvent('ride_matched', data, { intent: 'terminal_match_clear_offers' });
       callbackRefs.current.onRideMatched?.(data as RideMatchSocketData);
     };
 
     const handleDriverOnTheWay = (data: any) => {
       if (userRole !== 'driver') return;
-      console.log('✅ [useSocket] driver_on_the_way:', data);
+      perfLog('✅ [useSocket] driver_on_the_way:', data);
       emitDriverOfferSocketEvent('driver_on_the_way', data, { intent: 'terminal_match_clear_offers' });
       callbackRefs.current.onDriverOnTheWay?.(data);
     };
@@ -508,22 +509,22 @@ export default function useSocket({
     // ══════════ TEKLİF EVENTLERİ ══════════
 
     const handleNewOffer = (data: any) => {
-      console.log('💰 [useSocket] YENİ TEKLİF:', data);
+      perfLog('💰 [useSocket] YENİ TEKLİF:', data);
       callbackRefs.current.onNewOffer?.(data);
     };
 
     const handleOfferAccepted = (data: any) => {
-      console.log('✅ [useSocket] TEKLİF KABUL:', data);
+      perfLog('✅ [useSocket] TEKLİF KABUL:', data);
       callbackRefs.current.onOfferAccepted?.(data);
     };
 
     const handleOfferRejected = (data: any) => {
-      console.log('❌ [useSocket] TEKLİF RED:', data);
+      perfLog('❌ [useSocket] TEKLİF RED:', data);
       callbackRefs.current.onOfferRejected?.(data);
     };
 
     const handleOfferAlreadyTaken = (data: any) => {
-      console.log('❌ [useSocket] TEKLİF ZATEN ALINMIŞ / KİLİT KAYBI:', data);
+      perfLog('❌ [useSocket] TEKLİF ZATEN ALINMIŞ / KİLİT KAYBI:', data);
       if (callbackRefs.current.onOfferAlreadyTaken) {
         callbackRefs.current.onOfferAlreadyTaken(data);
       } else {
@@ -532,7 +533,7 @@ export default function useSocket({
     };
 
     const handleOfferSentAck = (data: any) => {
-      console.log('📤 [useSocket] TEKLİF ACK:', data);
+      perfLog('📤 [useSocket] TEKLİF ACK:', data);
       callbackRefs.current.onOfferSentAck?.(data);
     };
 
@@ -545,13 +546,13 @@ export default function useSocket({
     // ══════════ YOLCULUK EVENTLERİ ══════════
 
     const handleTripStarted = (data: any) => {
-      console.log('🚗 [useSocket] YOLCULUK BAŞLADI:', data);
+      perfLog('🚗 [useSocket] YOLCULUK BAŞLADI:', data);
       callbackRefs.current.onTripStarted?.(data);
     };
 
     const handleTripEnded = (data: any) => {
-      console.log('🏁 [useSocket] YOLCULUK BİTTİ:', data);
-      console.log('TRIP_ENDED_RECEIVED', {
+      perfLog('🏁 [useSocket] YOLCULUK BİTTİ:', data);
+      perfLog('TRIP_ENDED_RECEIVED', {
         userRole,
         tag_id: data?.tag_id ?? data?.tagId ?? null,
         mutual: data?.mutual ?? null,
@@ -562,18 +563,18 @@ export default function useSocket({
     };
 
     const handleTripEndRequested = (data: any) => {
-      console.log('🛑 [useSocket] YOLCULUK BİTİRME TALEBİ:', data);
+      perfLog('🛑 [useSocket] YOLCULUK BİTİRME TALEBİ:', data);
       callbackRefs.current.onTripEndRequested?.(data);
     };
 
     const handleTripEndResponse = (data: any) => {
-      console.log('📝 [useSocket] YOLCULUK BİTİRME YANITI:', data);
+      perfLog('📝 [useSocket] YOLCULUK BİTİRME YANITI:', data);
       callbackRefs.current.onTripEndResponse?.(data);
     };
 
     const handleTripForceEnded = (data: any) => {
-      console.log('⚡ [useSocket] YOLCULUK ZORLA BİTTİ:', data);
-      console.log('TRIP_FORCE_ENDED_RECEIVED', {
+      perfLog('⚡ [useSocket] YOLCULUK ZORLA BİTTİ:', data);
+      perfLog('TRIP_FORCE_ENDED_RECEIVED', {
         userRole,
         tag_id: data?.tag_id ?? data?.tagId ?? null,
         ended_by: data?.ended_by ?? data?.ender_id ?? null,
@@ -584,31 +585,31 @@ export default function useSocket({
     };
 
     const handleForceEndCounterpartyPrompt = (data: any) => {
-      console.log('⚡ [useSocket] force_end_counterparty_prompt:', data);
+      perfLog('⚡ [useSocket] force_end_counterparty_prompt:', data);
       callbackRefs.current.onForceEndCounterpartyPrompt?.(data);
     };
 
     // ══════════ MESAJLAŞMA EVENTLERİ ══════════
 
     const handleNewMessage = (data: any) => {
-      console.log('💬 [useSocket] YENİ MESAJ GELDİ:', data);
+      perfLog('💬 [useSocket] YENİ MESAJ GELDİ:', data);
       callbackRefs.current.onNewMessage?.(data);
     };
 
     const handleFirstChatMessage = (data: any) => {
-      console.log('💬 [useSocket] İLK SOHBET MESAJI:', data);
+      perfLog('💬 [useSocket] İLK SOHBET MESAJI:', data);
       callbackRefs.current.onFirstChatMessage?.(data);
     };
 
     const handleMessageSent = (data: any) => {
-      console.log('✅ [useSocket] MESAJ GÖNDERİLDİ:', data);
+      perfLog('✅ [useSocket] MESAJ GÖNDERİLDİ:', data);
       callbackRefs.current.onMessageSent?.(data);
     };
 
     const handleTrustRequest = (data: any) => {
-      console.log('🛡️ [useSocket] trust_request:', data);
+      perfLog('🛡️ [useSocket] trust_request:', data);
       try {
-        console.log(
+        perfLog(
           'TRUST_DIAG_SOCKET_RECEIVED',
           JSON.stringify({
             event: 'trust_request',
@@ -624,31 +625,31 @@ export default function useSocket({
       callbackRefs.current.onTrustSocketRequest?.(data);
     };
     const handleTrustSessionReady = (data: any) => {
-      console.log('🛡️ [useSocket] trust_session_ready:', data);
+      perfLog('🛡️ [useSocket] trust_session_ready:', data);
       callbackRefs.current.onTrustSessionReady?.(data);
     };
     const handleTrustSessionEnded = (data: any) => {
-      console.log('🛡️ [useSocket] trust_session_ended:', data);
+      perfLog('🛡️ [useSocket] trust_session_ended:', data);
       callbackRefs.current.onTrustSessionEnded?.(data);
     };
 
     const handleTrustedInviteReceived = (data: any) => {
-      console.log('🤝 [useSocket] trusted_invite_received:', data);
+      perfLog('🤝 [useSocket] trusted_invite_received:', data);
       callbackRefs.current.onTrustedInviteReceived?.(data);
     };
 
     const handleTrustedInviteUpdated = (data: any) => {
-      console.log('🤝 [useSocket] trusted_invite_updated:', data);
+      perfLog('🤝 [useSocket] trusted_invite_updated:', data);
       callbackRefs.current.onTrustedInviteUpdated?.(data);
     };
 
     const handleBoardingConfirmed = (data: any) => {
-      console.log('🚌 [useSocket] boarding_confirmed:', data);
+      perfLog('🚌 [useSocket] boarding_confirmed:', data);
       callbackRefs.current.onBoardingConfirmed?.(data);
     };
 
     const handlePassengerDestinationNavHint = (data: any) => {
-      console.log('🧭 [useSocket] passenger_destination_nav_hint:', data);
+      perfLog('🧭 [useSocket] passenger_destination_nav_hint:', data);
       callbackRefs.current.onPassengerDestinationNavHint?.(data);
     };
 
@@ -697,7 +698,7 @@ export default function useSocket({
     
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı
     socket.on('show_rating_modal', (data: any) => {
-      console.log('⭐ [Socket] Puanlama modalı göster:', data);
+      perfLog('⭐ [Socket] Puanlama modalı göster:', data);
       callbackRefs.current.onShowRatingModal?.(data);
     });
 
@@ -717,7 +718,7 @@ export default function useSocket({
 
     // Cleanup - listener'ları kaldır
     return () => {
-      console.log(`🔌 [useSocket] Event listener'lar kaldırılıyor (${userRole})`);
+      perfLog(`🔌 [useSocket] Event listener'lar kaldırılıyor (${userRole})`);
       
       socket.off('incoming_call', handleIncomingCall);
       socket.off('call_accepted', handleCallAccepted);
@@ -784,7 +785,7 @@ export default function useSocket({
 
   useEffect(() => {
     if (userId && userRole) {
-      console.log(`🔌 [useSocket] Connect çağrılıyor: ${userId} (${userRole})`);
+      perfLog(`🔌 [useSocket] Connect çağrılıyor: ${userId} (${userRole})`);
       connect(userId, userRole);
     }
   }, [userId, userRole, connect]);
@@ -802,9 +803,9 @@ export default function useSocket({
         return;
       }
       const r = role ?? userRole ?? 'driver';
-      console.log('📱 [useSocket] Kullanıcı kaydediliyor (JWT):', uid, r);
-      console.log('FRONTEND_SOCKET_REGISTER_USER', { userId: uid, role: r, reason: 'registerUser' });
-      console.log('SOCKET REGISTER EMIT', uid);
+      perfLog('📱 [useSocket] Kullanıcı kaydediliyor (JWT):', uid, r);
+      perfLog('FRONTEND_SOCKET_REGISTER_USER', { userId: uid, role: r, reason: 'registerUser' });
+      perfLog('SOCKET REGISTER EMIT', uid);
       socket.emit('register', { user_id: uid, token, role: r });
     })();
   }, [socket, userRole]);
@@ -823,7 +824,7 @@ export default function useSocket({
     call_type: 'audio' | 'video';
   }) => {
     if (socket?.connected) {
-      console.log('📞 [useSocket] Arama başlatılıyor:', data);
+      perfLog('📞 [useSocket] Arama başlatılıyor:', data);
       socket.emit('call_user', data);
     }
   }, [socket]);
@@ -834,7 +835,7 @@ export default function useSocket({
     receiver_id: string;
   }) => {
     if (socket?.connected) {
-      console.log('✅ [useSocket] Arama kabul ediliyor:', data);
+      perfLog('✅ [useSocket] Arama kabul ediliyor:', data);
       socket.emit('accept_call', data);
     }
   }, [socket]);
@@ -845,7 +846,7 @@ export default function useSocket({
     receiver_id: string;
   }) => {
     if (socket?.connected) {
-      console.log('❌ [useSocket] Arama reddediliyor:', data);
+      perfLog('❌ [useSocket] Arama reddediliyor:', data);
       socket.emit('reject_call', data);
     }
   }, [socket]);
@@ -857,7 +858,7 @@ export default function useSocket({
     ended_by: string;
   }) => {
     if (socket?.connected) {
-      console.log('📴 [useSocket] Arama sonlandırılıyor:', data);
+      perfLog('📴 [useSocket] Arama sonlandırılıyor:', data);
       socket.emit('end_call', data);
     }
   }, [socket]);
@@ -866,7 +867,7 @@ export default function useSocket({
 
   const emitNewTag = useCallback((data: TagData) => {
     if (socket?.connected) {
-      console.log('🏷️ [useSocket] Yeni TAG yayınlanıyor:', data);
+      perfLog('🏷️ [useSocket] Yeni TAG yayınlanıyor:', data);
       socket.emit('new_tag', data);
     }
   }, [socket]);
@@ -889,8 +890,8 @@ export default function useSocket({
     notes?: string;
     passenger_payment_method?: 'cash' | 'card';
   }) => {
-    console.log('🏷️ [useSocket] TAG REQUEST gönderiliyor:', data);
-    console.log('   offered_price:', data.offered_price);
+    perfLog('🏷️ [useSocket] TAG REQUEST gönderiliyor:', data);
+    perfLog('   offered_price:', data.offered_price);
     contextEmitCreateTagRequest(data);
   }, [contextEmitCreateTagRequest]);
 
@@ -899,20 +900,20 @@ export default function useSocket({
     tag_id: string;
     passenger_id: string;
   }) => {
-    console.log('🚫 [useSocket] TAG REQUEST iptal ediliyor:', data);
+    perfLog('🚫 [useSocket] TAG REQUEST iptal ediliyor:', data);
     contextEmitCancelTagRequest(data);
   }, [contextEmitCancelTagRequest]);
 
   const emitCancelTag = useCallback((tagId: string) => {
     if (socket?.connected) {
-      console.log('🚫 [useSocket] TAG iptal ediliyor:', tagId);
+      perfLog('🚫 [useSocket] TAG iptal ediliyor:', tagId);
       socket.emit('cancel_tag', { tag_id: tagId });
     }
   }, [socket]);
 
   const emitUpdateTag = useCallback((data: Partial<TagData> & { tag_id: string }) => {
     if (socket?.connected) {
-      console.log('🔄 [useSocket] TAG güncelleniyor:', data);
+      perfLog('🔄 [useSocket] TAG güncelleniyor:', data);
       socket.emit('update_tag', data);
     }
   }, [socket]);
@@ -920,17 +921,17 @@ export default function useSocket({
   // ══════════ TEKLİF FONKSİYONLARI ══════════
 
   const emitSendOffer = useCallback((data: OfferData) => {
-    console.log('💰 [useSocket] TEKLİF GÖNDERİLİYOR (send_offer):', JSON.stringify(data));
+    perfLog('💰 [useSocket] TEKLİF GÖNDERİLİYOR (send_offer):', JSON.stringify(data));
     contextEmitSendOffer(data);
   }, [contextEmitSendOffer]);
 
   const emitAcceptOffer = useCallback((data: OfferData) => {
-    console.log('✅ [useSocket] Teklif kabul ediliyor:', data);
+    perfLog('✅ [useSocket] Teklif kabul ediliyor:', data);
     contextEmitAcceptOffer(data);
   }, [contextEmitAcceptOffer]);
 
   const emitRejectOffer = useCallback((data: { driver_id: string; tag_id: string }) => {
-    console.log('❌ [useSocket] Teklif reddediliyor:', data);
+    perfLog('❌ [useSocket] Teklif reddediliyor:', data);
     contextEmitRejectOffer(data);
   }, [contextEmitRejectOffer]);
 
@@ -962,7 +963,7 @@ export default function useSocket({
 
   const subscribeToLocation = useCallback((targetId: string) => {
     if (socket?.connected && userId) {
-      console.log('📍 [useSocket] Konum takibi başlatılıyor:', targetId);
+      perfLog('📍 [useSocket] Konum takibi başlatılıyor:', targetId);
       socket.emit('subscribe_location', { 
         target_id: targetId,
         subscriber_id: userId 
@@ -977,7 +978,7 @@ export default function useSocket({
     passenger_id: string; 
     driver_id: string 
   }) => {
-    console.log('🚗 [useSocket] Yolculuk başladı yayınlanıyor:', data);
+    perfLog('🚗 [useSocket] Yolculuk başladı yayınlanıyor:', data);
     contextEmitTripStarted(data);
   }, [contextEmitTripStarted]);
 
@@ -986,7 +987,7 @@ export default function useSocket({
     passenger_id: string; 
     driver_id: string 
   }) => {
-    console.log('🏁 [useSocket] Yolculuk bitti yayınlanıyor:', data);
+    perfLog('🏁 [useSocket] Yolculuk bitti yayınlanıyor:', data);
     contextEmitTripEnded(data);
   }, [contextEmitTripEnded]);
 
@@ -996,7 +997,7 @@ export default function useSocket({
     target_id: string;
   }) => {
     if (socket?.connected) {
-      console.log('🛑 [useSocket] Trip end request gönderiliyor:', data);
+      perfLog('🛑 [useSocket] Trip end request gönderiliyor:', data);
       socket.emit('request_trip_end', data);
     }
   }, [socket]);
@@ -1007,7 +1008,7 @@ export default function useSocket({
     target_id: string;
   }) => {
     if (socket?.connected) {
-      console.log('📝 [useSocket] Trip end response gönderiliyor:', data);
+      perfLog('📝 [useSocket] Trip end response gönderiliyor:', data);
       socket.emit('respond_trip_end', data);
     }
   }, [socket]);
@@ -1019,7 +1020,7 @@ export default function useSocket({
     passenger_id: string;
     driver_id: string;
   }) => {
-    console.log('⚡ [useSocket] FORCE END TRIP gönderiliyor:', data);
+    perfLog('⚡ [useSocket] FORCE END TRIP gönderiliyor:', data);
     contextForceEndTrip(data);
   }, [contextForceEndTrip]);
 
@@ -1032,7 +1033,7 @@ export default function useSocket({
     message: string;
     tag_id?: string;
   }) => {
-    console.log('💬 [useSocket] Mesaj gönderiliyor (context emit):', data);
+    perfLog('💬 [useSocket] Mesaj gönderiliyor (context emit):', data);
     contextEmitSendMessage(data);
   }, [contextEmitSendMessage]);
 

@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { tapButtonHaptic } from '../utils/touchHaptics';
+import { perfLog, perfWarn } from '../utils/perfDiagLog';
 import { callCheck } from '../lib/callCheck';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
@@ -337,7 +338,7 @@ if (Platform.OS !== 'web') {
     Polyline = Maps.Polyline;
     PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
   } catch (e) {
-    console.log('⚠️ react-native-maps yüklenemedi');
+    perfLog('⚠️ react-native-maps yüklenemedi');
   }
 }
 
@@ -670,9 +671,9 @@ type DestinationMetricSource =
 
 function logNavDiag(tag: string, payload: Record<string, unknown>) {
   try {
-    console.log(tag, JSON.stringify({ ...payload, t: Date.now() }));
+    perfLog(tag, JSON.stringify({ ...payload, t: Date.now() }));
   } catch {
-    console.log(tag, '[payload_serialize_failed]');
+    perfLog(tag, '[payload_serialize_failed]');
   }
 }
 
@@ -682,7 +683,7 @@ function logRouteFetchDiag(
   details: Record<string, boolean | number | string | null | undefined> = {},
 ): void {
   try {
-    console.log(
+    perfLog(
       '[route_fetch_diag]',
       JSON.stringify({
         event,
@@ -692,7 +693,7 @@ function logRouteFetchDiag(
       }),
     );
   } catch {
-    console.log('[route_fetch_diag]', event);
+    perfLog('[route_fetch_diag]', event);
   }
 }
 
@@ -1180,7 +1181,7 @@ async function fetchOsrmDrivingRoute(
   const origin = { latitude: fromLat, longitude: fromLng };
   const dest = { latitude: toLat, longitude: toLng };
   if (__DEV__) {
-    console.log('TAG_NAV_ROUTE_ENDPOINTS', {
+    perfLog('TAG_NAV_ROUTE_ENDPOINTS', {
       mode: 'distance',
       origin: { lat: Number(origin.latitude.toFixed(3)), lng: Number(origin.longitude.toFixed(3)) },
       dest: { lat: Number(dest.latitude.toFixed(3)), lng: Number(dest.longitude.toFixed(3)) },
@@ -1192,12 +1193,12 @@ async function fetchOsrmDrivingRoute(
     const data = await res.json();
     if (!data?.routes || !Array.isArray(data.routes) || data.routes.length === 0) {
       logRouteFetchDiag('osrm_fail', { hasRoutes: false, code: String(data?.code ?? '') });
-      if (__DEV__) console.warn('[OSRM] No route found', { code: data?.code });
+      perfWarn('[OSRM] No route found', { code: data?.code });
       return null;
     }
     if (data.code !== 'Ok') {
       logRouteFetchDiag('osrm_fail', { hasRoutes: true, code: String(data.code ?? '') });
-      if (__DEV__) console.warn('[OSRM] Route response not Ok', data?.code);
+      perfWarn('[OSRM] Route response not Ok', data?.code);
       return null;
     }
     const r = data.routes[0];
@@ -1264,7 +1265,7 @@ async function fetchOsrmDrivingRouteWithSteps(
   const origin = { latitude: fromLat, longitude: fromLng };
   const dest = { latitude: toLat, longitude: toLng };
   if (__DEV__) {
-    console.log('TAG_NAV_ROUTE_ENDPOINTS', {
+    perfLog('TAG_NAV_ROUTE_ENDPOINTS', {
       mode: 'steps',
       origin: { lat: Number(origin.latitude.toFixed(3)), lng: Number(origin.longitude.toFixed(3)) },
       dest: { lat: Number(dest.latitude.toFixed(3)), lng: Number(dest.longitude.toFixed(3)) },
@@ -1276,12 +1277,12 @@ async function fetchOsrmDrivingRouteWithSteps(
     const data = await res.json();
     if (!data?.routes || !Array.isArray(data.routes) || data.routes.length === 0) {
       logRouteFetchDiag('osrm_steps_fail', { hasRoutes: false, code: String(data?.code ?? '') });
-      if (__DEV__) console.warn('[OSRM] No route found (steps)', { code: data?.code });
+      perfWarn('[OSRM] No route found (steps)', { code: data?.code });
       return null;
     }
     if (data.code !== 'Ok') {
       logRouteFetchDiag('osrm_steps_fail', { hasRoutes: true, code: String(data.code ?? '') });
-      if (__DEV__) console.warn('[OSRM] Route response not Ok (steps)', data?.code);
+      perfWarn('[OSRM] Route response not Ok (steps)', data?.code);
       return null;
     }
     const r = data.routes[0];
@@ -1759,7 +1760,7 @@ function applyPassengerMapFit(
   if (!capped) return false;
   const coordinateCount = filterValidMapCoords(fitPts).length;
   if (fitLog) {
-    console.log('[LiveMapView] fitToCoordinates', { ...fitLog, coordinateCount });
+    perfLog('[LiveMapView] fitToCoordinates', { ...fitLog, coordinateCount });
   }
 
   if (
@@ -2860,7 +2861,7 @@ export default function LiveMapView({
   );
   const logMapFit = useCallback(
     (payload: { role: 'passenger' | 'driver'; coordinateCount: number; reason: string }) => {
-      console.log('[LiveMapView] fitToCoordinates', {
+      perfLog('[LiveMapView] fitToCoordinates', {
         elapsedMs: mapInstrElapsedMs(),
         ...payload,
       });
@@ -2876,7 +2877,7 @@ export default function LiveMapView({
 
   const logMapSelfHeal = useCallback(
     (event: string, extra?: Record<string, unknown>) => {
-      console.log('[LiveMapView] self-heal', {
+      perfLog('[LiveMapView] self-heal', {
         event,
         platform: Platform.OS,
         role: isDriver ? 'driver' : 'passenger',
@@ -3207,7 +3208,7 @@ export default function LiveMapView({
   }, [isDriver, navigationMode]);
 
   useEffect(() => {
-    console.log('[LiveMapView] mount', {
+    perfLog('[LiveMapView] mount', {
       role: isDriver ? 'driver' : 'passenger',
       tagId: tagId ?? null,
       isAndroid: Platform.OS === 'android',
@@ -3221,7 +3222,7 @@ export default function LiveMapView({
   }, [tagId]);
 
   useEffect(() => {
-    console.log('[LiveMapView] marker tracks state', {
+    perfLog('[LiveMapView] marker tracks state', {
       pinTracks,
       elapsedMs: mapInstrElapsedMs(),
     });
@@ -3234,7 +3235,7 @@ export default function LiveMapView({
     const hasDest = !!(destinationLocation && isValidMapCoord(destinationLocation));
     if (!hasUser && !hasOther && !hasDest) return;
     mapInstrFirstCoordsLoggedRef.current = true;
-    console.log('[LiveMapView] first coordinates', {
+    perfLog('[LiveMapView] first coordinates', {
       elapsedMs: mapInstrElapsedMs(),
       userLocation: hasUser,
       otherLocation: hasOther,
@@ -3260,7 +3261,7 @@ export default function LiveMapView({
       Number.isFinite(meetingDuration);
     if (!hasPolyline && !hasMetrics) return;
     mapInstrRouteMetricsLoggedRef.current = true;
-    console.log('[LiveMapView] route metrics ready', {
+    perfLog('[LiveMapView] route metrics ready', {
       elapsedMs: mapInstrElapsedMs(),
       hasPolyline,
       coordinateCount: meetingRouteCoordinates.length,
@@ -3306,11 +3307,11 @@ export default function LiveMapView({
 
   useEffect(() => {
     if (!isDriver) return;
-    if (__DEV__) console.log('DRIVER_ROUTE_RENDER_STATE', driverMapDebugPayload);
+    perfLog('DRIVER_ROUTE_RENDER_STATE', driverMapDebugPayload);
   }, [isDriver, driverMapDebugPayload]);
 
   useEffect(() => {
-    if (__DEV__) console.log('NAVIGATION_MODE_CHANGED', {
+    perfLog('NAVIGATION_MODE_CHANGED', {
       navigationMode,
       navigationStage,
       isDriver,
@@ -3331,7 +3332,7 @@ export default function LiveMapView({
   const lastNavRefreshThrottleAtRef = useRef(0);
 
   const clearMeetingRoute = useCallback((reason: string) => {
-    if (__DEV__) console.log('CLEAR ROUTE CALLED', {
+    perfLog('CLEAR ROUTE CALLED', {
       reason,
       navigationMode,
       navigationStage,
@@ -3352,7 +3353,7 @@ export default function LiveMapView({
   clearMeetingRouteRef.current = clearMeetingRoute;
 
   const setMeetingRouteCoordsLogged = useCallback((coords: MapLatLng[]) => {
-    if (__DEV__) console.log('SET ROUTE COORDS', coords.length);
+    perfLog('SET ROUTE COORDS', coords.length);
     setMeetingRouteCoordinates(coords);
   }, []);
 
@@ -3446,8 +3447,8 @@ export default function LiveMapView({
   const [navFollowResumeTick, setNavFollowResumeTick] = useState(0);
   const scheduleNavMapGesturePause = useCallback(() => {
     if (Platform.OS !== 'web' && isDriver) {
-      console.log('DRIVER_MAP_GESTURE_START', driverMapDebugPayload);
-      console.log('DRIVER_AUTO_FOLLOW_PAUSED', {
+      perfLog('DRIVER_MAP_GESTURE_START', driverMapDebugPayload);
+      perfLog('DRIVER_AUTO_FOLLOW_PAUSED', {
         ...driverMapDebugPayload,
         untilMs: Date.now() + NAV_MAP_GESTURE_MS,
       });
@@ -3461,8 +3462,8 @@ export default function LiveMapView({
       navGestureResumeTimerRef.current = null;
       navFollowResumeSoftUntilRef.current = Date.now() + NAV_RESUME_SOFT_MS;
       if (Platform.OS !== 'web' && isDriver) {
-        console.log('DRIVER_MAP_GESTURE_END', driverMapDebugPayload);
-        console.log('DRIVER_AUTO_FOLLOW_RESUMED', driverMapDebugPayload);
+        perfLog('DRIVER_MAP_GESTURE_END', driverMapDebugPayload);
+        perfLog('DRIVER_AUTO_FOLLOW_RESUMED', driverMapDebugPayload);
       }
       setNavFollowResumeTick((x) => x + 1);
     }, NAV_MAP_GESTURE_MS);
@@ -3504,7 +3505,7 @@ export default function LiveMapView({
       boardingConfirmed
     ) {
       try {
-        console.log(
+        perfLog(
           'DRIVER_DESTINATION_NAV_PHASE',
           JSON.stringify({ tagId: tagId != null ? String(tagId) : null }),
         );
@@ -3712,11 +3713,11 @@ export default function LiveMapView({
     const tid = tagId != null && String(tagId).trim() !== '' ? String(tagId) : '_';
     if (pickupFallbackLoggedForTagRef.current === tid) return;
     pickupFallbackLoggedForTagRef.current = tid;
-    console.log('Using pickup fallback for passenger');
+    perfLog('Using pickup fallback for passenger');
   }, [isDriver, otherLocationFromPickupFallback, tagId]);
 
   useEffect(() => {
-    console.log('NAVIGATION_MODE_FORCED_FALSE', { reason: 'tag_id_reset', tagId: tagId ?? null });
+    perfLog('NAVIGATION_MODE_FORCED_FALSE', { reason: 'tag_id_reset', tagId: tagId ?? null });
     clearMeetingRouteRef.current('tag_id_reset');
     lastOsrmKeyRef.current = '';
     lastOsrmAtRef.current = 0;
@@ -3764,7 +3765,7 @@ export default function LiveMapView({
 
   useEffect(() => {
     if (!isDriver) return;
-    console.log('NAVIGATION_MODE_PROP_NOTIFY', {
+    perfLog('NAVIGATION_MODE_PROP_NOTIFY', {
       navigationMode,
       hasCallback: typeof onNavigationModeChange === 'function',
     });
@@ -4483,7 +4484,7 @@ export default function LiveMapView({
       /* noop */
     }
 
-    console.log('YOLCUYA_GIT_PRESS_START', {
+    perfLog('YOLCUYA_GIT_PRESS_START', {
       isDriver,
       navigationMode,
       navigationStage,
@@ -4495,7 +4496,7 @@ export default function LiveMapView({
     });
 
     if (!isDriver) {
-      console.log('YOLCUYA_GIT_BLOCKED', { reason: 'not_driver', userLocation, otherLocation });
+      perfLog('YOLCUYA_GIT_BLOCKED', { reason: 'not_driver', userLocation, otherLocation });
       return;
     }
 
@@ -4531,7 +4532,7 @@ export default function LiveMapView({
     });
 
     if (!originOk || !destOk) {
-      console.log('YOLCUYA_GIT_BLOCKED_EXACT', {
+      perfLog('YOLCUYA_GIT_BLOCKED_EXACT', {
         origin,
         destination,
         driverLocation: ctx?.driverLocation ?? null,
@@ -4582,7 +4583,7 @@ export default function LiveMapView({
       navDriverMarkerSmoothedBearingRef.current = null;
       setNavigationMode(true);
       navForceMeetingOsrmOnceRef.current = true;
-      console.log('YOLCUYA_GIT_SET_NAV', {
+      perfLog('YOLCUYA_GIT_SET_NAV', {
         nextNavigationMode: true,
         nextNavigationStage: 'pickup',
       });
@@ -5077,7 +5078,7 @@ export default function LiveMapView({
       if (prev.key === logKey && now - prev.at < DEST_ROUTE_SKIP_LOG_MIN_MS) return;
       destMetricsSkipLogRef.current = { key: logKey, at: now };
       try {
-        console.log(
+        perfLog(
           'TAG_DEST_ROUTE_METRICS_FETCH_SKIP',
           JSON.stringify({
             reason,
@@ -5174,7 +5175,7 @@ export default function LiveMapView({
       forceDestinationRoadLoadingFalse();
     }
     try {
-      console.log(
+      perfLog(
         'TAG_DEST_ROUTE_METRICS_FETCH_START',
         JSON.stringify({
           endpoint_key: endpointKey,
@@ -5195,7 +5196,7 @@ export default function LiveMapView({
       setDestinationRouteMetricsUnavailable(true);
       forceDestinationRoadLoadingFalse();
       try {
-        console.log(
+        perfLog(
           'TAG_DEST_ROUTE_METRICS_TIMEOUT',
           JSON.stringify({
             endpoint_key: endpointKey,
@@ -5274,7 +5275,7 @@ export default function LiveMapView({
           endDestinationRoadLoadingUi();
         }
         try {
-          console.log(
+          perfLog(
             'TAG_DEST_ROUTE_METRICS_FETCH_DONE',
             JSON.stringify({
               endpoint_key: endpointKey,
@@ -5600,7 +5601,7 @@ export default function LiveMapView({
    */
   useEffect(() => {
     if (__DEV__) {
-      console.log('MEETING_ROUTE_EFFECT_ENTER', {
+      perfLog('MEETING_ROUTE_EFFECT_ENTER', {
         isDriver,
         navigationMode,
         navigationStage,
@@ -5750,7 +5751,7 @@ export default function LiveMapView({
           ) {
             if (__DEV__) {
               try {
-                console.log(
+                perfLog(
                   'OSRM route refetch skipped by guard',
                   JSON.stringify({
                     dDriverM: Math.round(dDriver),
@@ -5768,7 +5769,7 @@ export default function LiveMapView({
       }
 
       if (__DEV__) {
-        console.log('TRIGGER ROUTE FETCH', {
+        perfLog('TRIGGER ROUTE FETCH', {
           isDriver,
           navigationMode: navOn,
           navigationStage: navStage,
@@ -5967,7 +5968,7 @@ export default function LiveMapView({
         if (isDriver) {
           const riLog = routeInfoRef.current as Record<string, unknown> | null | undefined;
           try {
-            if (__DEV__) console.log('DRIVER_MAP_ROUTE_INPUT', {
+            perfLog('DRIVER_MAP_ROUTE_INPUT', {
               activeTagRouteInfo: riLog,
               propRouteInfo: routeInfoRef.current,
               routeInfoKeys: riLog && typeof riLog === 'object' ? Object.keys(riLog) : null,
@@ -6009,7 +6010,7 @@ export default function LiveMapView({
             }
           }
 
-          console.log('DRIVER_ROUTE_PREFETCH_START', {
+          perfLog('DRIVER_ROUTE_PREFETCH_START', {
             tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
             navigationMode: navOn,
             navigationStage: navStage,
@@ -6031,7 +6032,7 @@ export default function LiveMapView({
             const minOsrm = Math.max(1, Math.round(rw.durationS / 60));
             const pickupAuth = readPickupKmMinFromRouteInfo(routeInfoRef.current);
             if (commitMeetingPolyline(rw.coordinates)) {
-              console.log('DRIVER_ROUTE_PREFETCH_SUCCESS', {
+              perfLog('DRIVER_ROUTE_PREFETCH_SUCCESS', {
                 tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
                 navigationMode: navigationModeRef.current,
                 navigationStage: navigationStageRef.current,
@@ -6074,8 +6075,8 @@ export default function LiveMapView({
                 osrm_km: kmOsrm,
                 osrm_min: minOsrm,
               });
-              console.log('ROUTE FETCH OK', { points: rw.coordinates.length });
-              console.log('PICKUP ETA', {
+              perfLog('ROUTE FETCH OK', { points: rw.coordinates.length });
+              perfLog('PICKUP ETA', {
                 routeInfo: pickupAuth,
                 backend:
                   prefetchPickupAppliedFromBackend && prefetchPickupBackendKm != null
@@ -6091,7 +6092,7 @@ export default function LiveMapView({
               }
             }
           } else {
-            console.log('DRIVER_ROUTE_PREFETCH_EMPTY', {
+            perfLog('DRIVER_ROUTE_PREFETCH_EMPTY', {
               tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
               navigationMode: navigationModeRef.current,
               navigationStage: navigationStageRef.current,
@@ -6101,7 +6102,7 @@ export default function LiveMapView({
               otherLocationFromPickupFallback: pickupFallbackForDriver,
               isDriver,
             });
-            console.warn('Route empty');
+            perfWarn('Route empty');
             await recoverMeetingMetricsNoStraight();
           }
         } else {
@@ -6167,16 +6168,16 @@ export default function LiveMapView({
               } else if (!navigationModeRef.current) {
                 fitNavigationViewportRef.current?.(polyPax);
               }
-              console.log('ROUTE FETCH OK', { points: polyPax.length });
+              perfLog('ROUTE FETCH OK', { points: polyPax.length });
             }
           } else {
-            console.warn('Route empty');
+            perfWarn('Route empty');
             await recoverMeetingMetricsNoStraight();
           }
         }
       } catch (err) {
         if (isDriver) {
-          console.log('DRIVER_ROUTE_PREFETCH_ERROR', {
+          perfLog('DRIVER_ROUTE_PREFETCH_ERROR', {
             tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
             navigationMode: navigationModeRef.current,
             navigationStage: navigationStageRef.current,
@@ -6188,7 +6189,7 @@ export default function LiveMapView({
             message: String(err),
           });
         }
-        console.warn('Route error:', err);
+        perfWarn('Route error:', err);
         if (!cancelled) await recoverMeetingMetricsNoStraight();
       } finally {
         if (!cancelled && meetingRouteFetchIdRef.current === fetchId) {
@@ -6252,7 +6253,7 @@ export default function LiveMapView({
         clearTimeout(mapSelfHealRemountTimerRef.current);
         mapSelfHealRemountTimerRef.current = null;
       }
-      console.log('[LiveMapView] map ready', {
+      perfLog('[LiveMapView] map ready', {
         source,
         platform: Platform.OS,
         role: isDriver ? 'driver' : 'passenger',
@@ -6320,7 +6321,7 @@ export default function LiveMapView({
       }
       const routePoly =
         meetingRouteCoordinatesRef.current.length >= 2 ? meetingRouteCoordinatesRef.current : null;
-      console.log('[PAX_DEBUG] LiveMapView passenger fit', {
+      perfLog('[PAX_DEBUG] LiveMapView passenger fit', {
         hasMap: !!map,
         endpointCount: filterValidMapCoords(endpoints).length,
         polylinePoints: routePoly?.length ?? 0,
@@ -6407,7 +6408,7 @@ export default function LiveMapView({
 
   useEffect(() => {
     if (!driverRideUiModern) return;
-    console.log('[ride_ui_modern]', {
+    perfLog('[ride_ui_modern]', {
       driverRideUiModern,
       modernLeylekOfferUi,
       boardingConfirmed,
@@ -6420,13 +6421,13 @@ export default function LiveMapView({
   useEffect(() => {
     if (!driverRideUiModern || boardingConfirmed) return;
     if (!onForceEnd) {
-      console.warn('[ride_ui_modern] onForceEnd missing, Zorla Bitir gizlenir');
+      perfWarn('[ride_ui_modern] onForceEnd missing, Zorla Bitir gizlenir');
     }
   }, [driverRideUiModern, boardingConfirmed, onForceEnd]);
 
   useEffect(() => {
     if (!__DEV__ || !driverRideUiModern || !boardingConfirmed) return;
-    console.log('[ride_ui_modern] boardingConfirmed: trip end QR row (modern sheet)');
+    perfLog('[ride_ui_modern] boardingConfirmed: trip end QR row (modern sheet)');
   }, [driverRideUiModern, boardingConfirmed]);
 
   useEffect(() => {
@@ -6460,7 +6461,7 @@ export default function LiveMapView({
       return;
     }
     tagMarkerRenderLogThrottleRef.current = { at: now, key };
-    console.log('TAG_MARKER_RENDER_STATE', JSON.stringify(payload));
+    perfLog('TAG_MARKER_RENDER_STATE', JSON.stringify(payload));
   }, [
     isDriver,
     navigationMode,
@@ -7868,7 +7869,7 @@ export default function LiveMapView({
             style={[styles.driverNavCloseFab, { bottom: 18 + Math.max(insets.bottom, 0) }]}
             onPress={() => {
               void tapButtonHaptic();
-              console.log('NAVIGATION_MODE_FORCED_FALSE', { reason: 'driver_nav_close_fab' });
+              perfLog('NAVIGATION_MODE_FORCED_FALSE', { reason: 'driver_nav_close_fab' });
               setNavigationMode(false);
             }}
             activeOpacity={0.85}

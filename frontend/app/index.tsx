@@ -13,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system';
 import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
+import { perfLog } from '../utils/perfDiagLog';
 import { navigateToPostAuthLanding } from '../lib/theme/themeChoiceGate';
 import ThemeChoiceScreen from '../components/theme/ThemeChoiceScreen';
 import LiveMapView from '../components/LiveMapView';
@@ -230,7 +231,7 @@ if (Platform.OS !== 'web') {
     DestinationPickerMapView = Maps.default;
     DestinationPickerMapProvider = Maps.PROVIDER_GOOGLE;
   } catch (e) {
-    console.log('⚠️ react-native-maps (hedef modal) yüklenemedi:', e);
+    perfLog('⚠️ react-native-maps (hedef modal) yüklenemedi:', e);
   }
 }
 
@@ -554,7 +555,7 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
   },
 ): Promise<boolean> {
   if (!loggedInUser?.id) {
-    console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'no_user_id' });
+    perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'no_user_id' });
     return false;
   }
   let lr: string | null = null;
@@ -564,12 +565,12 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     /* ignore */
   }
 
-  console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_FORCED_CHECK', {
+  perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_FORCED_CHECK', {
     userId: loggedInUser.id,
     userRole: loggedInUser.role,
     lastRole: lr,
   });
-  console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_START', { userId: loggedInUser.id });
+  perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_START', { userId: loggedInUser.id });
 
   try {
     const enc = encodeURIComponent(loggedInUser.id);
@@ -579,7 +580,7 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     const rawSt = dTag?.status;
     const st = dTag ? _normTagStatus(dTag.status) : '';
     const hasTag = !!dTag;
-    console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_FETCH', {
+    perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_FETCH', {
       userId: loggedInUser.id,
       userRole: loggedInUser.role,
       lastRole: lr,
@@ -591,7 +592,7 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     });
 
     if (!dTag || !dj.success) {
-      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', {
+      perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', {
         reason: 'no_tag_or_unsuccessful',
         success: dj.success,
         hasTag,
@@ -599,15 +600,15 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
       return false;
     }
     if (dj.was_cancelled === true) {
-      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'was_cancelled', hasTag });
+      perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'was_cancelled', hasTag });
       return false;
     }
     if (st && _driverTagStatusIsTerminal(st)) {
-      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'terminal_status', st, hasTag });
+      perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'terminal_status', st, hasTag });
       return false;
     }
     if (!(DRIVER_RESUME_STATUSES as readonly string[]).includes(st)) {
-      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'status_not_allowed', st, hasTag });
+      perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'status_not_allowed', st, hasTag });
       return false;
     }
 
@@ -659,7 +660,7 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     } catch {
       /* ignore */
     }
-    console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_HIT', {
+    perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_HIT', {
       userId: loggedInUser.id,
       status: st,
       vehicle_kind: vk,
@@ -717,7 +718,7 @@ async function loadActiveTagForUserResume(
     role === 'passenger'
       ? `${API_URL}/passenger/active-tag?user_id=${enc}`
       : `${API_URL}/driver/active-tag?user_id=${enc}`;
-  console.log('LOAD_ACTIVE_TAG_AFTER_RESUME', { userId, role, url });
+  perfLog('LOAD_ACTIVE_TAG_AFTER_RESUME', { userId, role, url });
   await fetch(url).catch((e) => console.warn('[resume] loadActiveTag (network)', e));
 }
 
@@ -754,7 +755,7 @@ async function tryResumeActiveMatchSession(
 ): Promise<TryResumeActiveMatchResult> {
   const uid = parsedUser.id;
   if (!uid) return { resumed: false };
-  console.log('TRY_RESUME_START', { userId: uid });
+  perfLog('TRY_RESUME_START', { userId: uid });
   const enc = encodeURIComponent(uid);
   try {
     const [pr, dr] = await Promise.all([
@@ -768,7 +769,7 @@ async function tryResumeActiveMatchSession(
     const pOk = pTag ? _passengerTagResumable(pj, pTag) : false;
     const dOk = dTag ? _driverTagResumable(dj, dTag) : false;
     if (dTag && !dOk) {
-      console.log('TAG_RESUME_DRIVER_MISS_STATUS', {
+      perfLog('TAG_RESUME_DRIVER_MISS_STATUS', {
         status: dTag.status,
         success: dj.success,
         was_cancelled: dj.was_cancelled,
@@ -794,8 +795,8 @@ async function tryResumeActiveMatchSession(
     }
 
     if (role) {
-      console.log('TRY_RESUME_SUCCESS', { userId: uid });
-      console.log('TRY_RESUME_ROLE', role);
+      perfLog('TRY_RESUME_SUCCESS', { userId: uid });
+      perfLog('TRY_RESUME_ROLE', role);
       const u: User = { ...parsedUser, role };
       const savedUser = await deps.saveUser(u);
       deps.setUser(savedUser);
@@ -836,7 +837,7 @@ async function submitUserReport(
 }
 
 if (__DEV__) {
-  console.log('TAG_ENV_ENDPOINTS', {
+  perfLog('TAG_ENV_ENDPOINTS', {
     has_backend_url: !!BACKEND_URL,
     has_api_url: !!API_URL,
   });
@@ -1179,18 +1180,18 @@ let forceEndUnlockTimer: ReturnType<typeof setTimeout> | null = null;
 
 function armForceEndLock(reason?: string) {
   const r = reason ?? 'unspecified';
-  console.log('FORCE_END_LOCK_ARMED', { reason: r, ttl_ms: 5000 });
+  perfLog('FORCE_END_LOCK_ARMED', { reason: r, ttl_ms: 5000 });
   forceEndLockRef.current = true;
   if (forceEndUnlockTimer) clearTimeout(forceEndUnlockTimer);
   forceEndUnlockTimer = setTimeout(() => {
-    console.log('FORCE_END_LOCK_RELEASED', { reason: r });
+    perfLog('FORCE_END_LOCK_RELEASED', { reason: r });
     forceEndLockRef.current = false;
     forceEndUnlockTimer = null;
   }, 5000);
 }
 
 function logPollingSkippedForceEndLock(role: 'passenger' | 'driver', where: string) {
-  console.log('POLLING_SKIPPED_FORCE_END_LOCK', { role, where });
+  perfLog('POLLING_SKIPPED_FORCE_END_LOCK', { role, where });
 }
 
 /** Kritik HTTP öncesi socket register — en fazla ~400ms, başarısız olsa da HTTP devam eder. */
@@ -1396,7 +1397,7 @@ export default function App() {
   const playTapSound = useCallback(async () => {}, []);
 
   const handleDriverReturnToRoleSelect = useCallback(() => {
-    console.log('DRIVER_RETURN_TO_ROLE_SELECT');
+    perfLog('DRIVER_RETURN_TO_ROLE_SELECT');
     void playTapSound();
     setSelectedRole(null);
     setRideVehicleKind(null);
@@ -1404,7 +1405,7 @@ export default function App() {
   }, [playTapSound, setScreen]);
 
   const handleOpenDriverProfile = useCallback(() => {
-    console.log('DRIVER_PROFILE_OPEN_START');
+    perfLog('DRIVER_PROFILE_OPEN_START');
     void playTapSound();
     try {
       router.push('/settings-hub' as never);
@@ -1749,7 +1750,7 @@ export default function App() {
         (ok) => {
         if (ok) {
           lastPushRegisterTimeRef.current = Date.now();
-          console.log('[PUSH] splash-deferred register OK (token saved)', { userId: uid });
+          perfLog('[PUSH] splash-deferred register OK (token saved)', { userId: uid });
         } else {
           console.warn('[PUSH] splash-deferred register finished without confirmed save', {
             userId: uid,
@@ -1807,7 +1808,7 @@ export default function App() {
 
   useEffect(() => {
     if (notification) {
-      console.log('📬 Yeni bildirim:', notification.request.content.title);
+      perfLog('📬 Yeni bildirim:', notification.request.content.title);
       // Bildirim geldiğinde aktif tag'i yeniden yükle
       if (screen === 'dashboard' && user) {
         // Dashboard'daki loadActiveTag fonksiyonunu tetiklemek için
@@ -1820,7 +1821,7 @@ export default function App() {
   // PERMISSION GATE - Request ALL permissions at app start
   // ═══════════════════════════════════════════════════════════════════════════
   const requestAllPermissions = async (): Promise<boolean> => {
-    console.log('🔐 Tüm izinler isteniyor...');
+    perfLog('🔐 Tüm izinler isteniyor...');
     
     try {
       // Bildirim izni usePushNotifications icinde tek noktadan yonetilir.
@@ -1828,7 +1829,7 @@ export default function App() {
 
       // ANDROID SPESİFİK İZİNLER
       if (Platform.OS === 'android') {
-        console.log('🔐 Android izinleri isteniyor...');
+        perfLog('🔐 Android izinleri isteniyor...');
         
         const permissions: any[] = [
           PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
@@ -1836,7 +1837,7 @@ export default function App() {
         ];
 
         const results = await PermissionsAndroid.requestMultiple(permissions);
-        console.log('🔐 İzin sonuçları:', JSON.stringify(results, null, 2));
+        perfLog('🔐 İzin sonuçları:', JSON.stringify(results, null, 2));
 
         const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 'granted';
         const cameraGranted = results[PermissionsAndroid.PERMISSIONS.CAMERA] === 'granted';
@@ -1846,10 +1847,10 @@ export default function App() {
 
         if (!audioGranted) {
           // Açılışı kilitleme: arama ekranında tekrar istenebilir
-          console.log('❌ RECORD_AUDIO reddedildi — giriş kullanılabilir');
+          perfLog('❌ RECORD_AUDIO reddedildi — giriş kullanılabilir');
           setPermissionsGranted(false);
         } else {
-          console.log('✅ Mikrofon izni verildi');
+          perfLog('✅ Mikrofon izni verildi');
           setPermissionsGranted(true);
         }
       } else {
@@ -1873,7 +1874,7 @@ export default function App() {
     if (showSplash) return;
     const delay = setTimeout(() => {
       void (async () => {
-        console.log('🔐 Giriş hazır — izin kontrolü (erteli)');
+        perfLog('🔐 Giriş hazır — izin kontrolü (erteli)');
         await requestAllPermissions();
       })();
     }, 1500);
@@ -1888,9 +1889,9 @@ export default function App() {
         // Yeni cihaz ID oluştur
         storedDeviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
         await AsyncStorage.setItem('device_id', storedDeviceId);
-        console.log('🆔 Yeni cihaz ID oluşturuldu:', storedDeviceId);
+        perfLog('🆔 Yeni cihaz ID oluşturuldu:', storedDeviceId);
       } else {
-        console.log('🆔 Mevcut cihaz ID:', storedDeviceId);
+        perfLog('🆔 Mevcut cihaz ID:', storedDeviceId);
       }
       return storedDeviceId;
     } catch (error) {
@@ -1934,7 +1935,7 @@ export default function App() {
     try {
       await AsyncStorage.setItem('kvkk_accepted_phone', phoneNumber);
       setKvkkAccepted(true);
-      console.log('✅ KVKK onayı kaydedildi:', phoneNumber);
+      perfLog('✅ KVKK onayı kaydedildi:', phoneNumber);
     } catch (error) {
       console.error('KVKK kayıt hatası:', error);
     }
@@ -2097,7 +2098,7 @@ export default function App() {
               await setPersistedUserJson(JSON.stringify(parsedUser));
             }
             if (lr === 'driver') {
-              console.log('DRIVER_MODE_RESTORED', {
+              perfLog('DRIVER_MODE_RESTORED', {
                 user_id: parsedUser.id,
                 role: parsedUser.role,
                 last_role_key: lr,
@@ -2206,7 +2207,7 @@ export default function App() {
           registerPushToken(
             parsedUser.id,
             (ok) => {
-            console.log('[PUSH] after session resume', ok ? 'token saved OK' : 'token save skipped or failed');
+            perfLog('[PUSH] after session resume', ok ? 'token saved OK' : 'token save skipped or failed');
           },
             'resumedMatch'
           );
@@ -2257,11 +2258,11 @@ export default function App() {
       }
     }
     await setPersistedUserJson(JSON.stringify(next));
-    console.log('SAVE_USER_PERSIST', {
+    perfLog('SAVE_USER_PERSIST', {
       key: USER_JSON_STORAGE_KEY,
       preservedTokenFromPrev: !!(next.access_token || next.accessToken),
     });
-    console.log('[auth] preserving token on setUser=true', !!(next.access_token || next.accessToken));
+    perfLog('[auth] preserving token on setUser=true', !!(next.access_token || next.accessToken));
     const saved = next as unknown as User;
     setUser(saved);
     return saved;
@@ -2274,7 +2275,7 @@ export default function App() {
    */
   const completeLoginWithTagResumeFirst = async (loggedInUser: User): Promise<boolean> => {
     if (!loggedInUser?.id) {
-      console.log('TAG_RESUME_AFTER_LOGIN_MISS', { reason: 'no_user_id' });
+      perfLog('TAG_RESUME_AFTER_LOGIN_MISS', { reason: 'no_user_id' });
       return false;
     }
     const cleanPhone = (loggedInUser.phone || '').replace(/\D/g, '') || '';
@@ -2283,11 +2284,11 @@ export default function App() {
       cleanPhone === '05326497412' ||
       cleanPhone.endsWith('5326497412');
     if (isMainAdmin) {
-      console.log('TAG_RESUME_AFTER_LOGIN_MISS', { userId: loggedInUser.id, reason: 'main_admin' });
+      perfLog('TAG_RESUME_AFTER_LOGIN_MISS', { userId: loggedInUser.id, reason: 'main_admin' });
       return false;
     }
 
-    console.log('TAG_RESUME_AFTER_LOGIN_START', { userId: loggedInUser.id });
+    perfLog('TAG_RESUME_AFTER_LOGIN_START', { userId: loggedInUser.id });
     sessionResumeProbedRef.current = true;
     const mightResume = await probeResumableActiveMatchSession(loggedInUser.id);
     if (mightResume) {
@@ -2306,7 +2307,7 @@ export default function App() {
         console.warn('TAG_RESUME_AFTER_LOGIN_ERROR', e);
       }
       if (resumeResult.resumed && resumeResult.role && loggedInUser.id) {
-        console.log('TAG_RESUME_AFTER_LOGIN_HIT', {
+        perfLog('TAG_RESUME_AFTER_LOGIN_HIT', {
           userId: loggedInUser.id,
           role: resumeResult.role,
         });
@@ -2318,7 +2319,7 @@ export default function App() {
         registerPushToken(
           loggedInUser.id,
           (ok) => {
-            console.log(
+            perfLog(
               '[PUSH] after login tag resume',
               ok ? 'token saved OK' : 'token save skipped or failed',
             );
@@ -2353,7 +2354,7 @@ export default function App() {
         registerPushToken(
           loggedInUser.id,
           (ok) => {
-            console.log(
+            perfLog(
               '[PUSH] after login tag resume',
               ok ? 'token saved OK' : 'token save skipped or failed',
             );
@@ -2362,7 +2363,7 @@ export default function App() {
         );
         return true;
       }
-      console.log('TAG_RESUME_AFTER_LOGIN_MISS', { userId: loggedInUser.id });
+      perfLog('TAG_RESUME_AFTER_LOGIN_MISS', { userId: loggedInUser.id });
       return false;
     } finally {
       setBootSubtitle(null);
@@ -2397,7 +2398,7 @@ export default function App() {
       await repairSupabaseSessionWithBackendRefresh(API_URL);
     }
     const token = (await getPersistedAccessToken())?.trim();
-    console.log('[muhabbet] auth token refresh after persist', {
+    perfLog('[muhabbet] auth token refresh after persist', {
       userId: userId ?? null,
       tokenReady: !!token,
     });
@@ -2407,7 +2408,7 @@ export default function App() {
     const sr = String(p.supabase_refresh_token ?? p.supabaseRefreshToken ?? '').trim();
     setUser((prev) => {
       if (!prev) return prev;
-      console.log('[auth] preserving token on setUser=true', true);
+      perfLog('[auth] preserving token on setUser=true', true);
       const merged: Record<string, unknown> = {
         ...(prev as unknown as Record<string, unknown>),
         access_token: token,
@@ -2454,11 +2455,11 @@ export default function App() {
         registerPushToken(
           user.id,
           (ok) => {
-          console.log('[PUSH] after role-screen resume', ok ? 'token saved OK' : 'token save skipped or failed');
+          perfLog('[PUSH] after role-screen resume', ok ? 'token saved OK' : 'token save skipped or failed');
         },
           'roleSelectResume'
         );
-        console.log('✅ Aktif eşleşme — rol ekranından panele yönlendirildi');
+        perfLog('✅ Aktif eşleşme — rol ekranından panele yönlendirildi');
       }
     })();
     return () => {
@@ -2502,7 +2503,7 @@ export default function App() {
               registerPushToken(
                 u.id,
                 (ok) => {
-                  console.log(
+                  perfLog(
                     '[PUSH] after foreground role-select resume',
                     ok ? 'token saved OK' : 'token save skipped or failed',
                   );
@@ -2609,7 +2610,7 @@ export default function App() {
       const rawTok = d.token ?? d.access_token;
       const tokStr = typeof rawTok === 'string' ? rawTok.trim() : '';
       await saveUser(withVehicle);
-      console.log('USER_SAVED', withVehicle);
+      perfLog('USER_SAVED', withVehicle);
       await persistAccessTokenAndRefreshUser(tokStr ? { access_token: tokStr } : {}, withVehicle.id);
       await afterAuthAccessTokenPersisted(withVehicle.id);
       try {
@@ -2643,7 +2644,7 @@ export default function App() {
         const d = String(v || '').replace(/\D/g, '');
         return d.length >= 4 ? `***${d.slice(-4)}` : '***';
       };
-      console.log('AUTH_PHONE_NORMALIZE', { raw: maskPhone(phone), clean: maskPhone(cleanPhone) });
+      perfLog('AUTH_PHONE_NORMALIZE', { raw: maskPhone(phone), clean: maskPhone(cleanPhone) });
     }
     if (!/^5\d{9}$/.test(cleanPhone)) {
       appAlert(
@@ -2688,7 +2689,7 @@ export default function App() {
       });
 
       const { data: checkData } = await parseApiJson(checkResponse);
-      console.log('🔍 Check user response:', checkData, 'status', checkResponse.status);
+      perfLog('🔍 Check user response:', checkData, 'status', checkResponse.status);
       if (!checkResponse.ok) {
         appAlert('Hata', apiErrMsg(checkData, `Sunucu hatası (${checkResponse.status})`));
         return;
@@ -2774,7 +2775,7 @@ export default function App() {
       const { data } = await parseApiJson(response);
       if (__DEV__) {
         const d = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
-        console.log('[auth] verify_otp', {
+        perfLog('[auth] verify_otp', {
           status: response.status,
           ok: response.ok,
           success: d.success === true,
@@ -2799,7 +2800,7 @@ export default function App() {
           const sb = getSupabase();
           if (sb && __DEV__) {
             const { data: sess } = await sb.auth.getSession();
-            console.log('[auth] session_after_otp_user_id', sess?.session?.user?.id);
+            perfLog('[auth] session_after_otp_user_id', sess?.session?.user?.id);
           }
 
           if (data.has_pin) {
@@ -2836,7 +2837,7 @@ export default function App() {
               
               const registerData = await registerResponse.json();
               if (__DEV__) {
-                console.log('[auth] register_after_otp', {
+                perfLog('[auth] register_after_otp', {
                   ok: registerResponse.ok,
                   success: registerData?.success === true,
                   has_user: Boolean(registerData?.user),
@@ -2851,7 +2852,7 @@ export default function App() {
                 const sbReg = getSupabase();
                 if (sbReg && __DEV__) {
                   const { data: sessReg } = await sbReg.auth.getSession();
-                  console.log('[auth] session_after_otp_user_id', sessReg?.session?.user?.id);
+                  perfLog('[auth] session_after_otp_user_id', sessReg?.session?.user?.id);
                 }
 
                 await afterAuthAccessTokenPersisted(registerData.user.id);
@@ -2896,11 +2897,11 @@ export default function App() {
 
   const requestLocationPermission = async () => {
     try {
-      console.log('📍 Konum izni isteniyor...');
+      perfLog('📍 Konum izni isteniyor...');
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         setLocationPermission(true);
-        console.log('✅ Konum izni verildi');
+        perfLog('✅ Konum izni verildi');
         
         // Konum izni verildiyse hemen konumu al
         try {
@@ -2912,9 +2913,9 @@ export default function App() {
             longitude: location.coords.longitude
           };
           setUserLocation(coords);
-          console.log('TAG_LOCATION_FIX_ACQUIRED', { has_coords: true });
+          perfLog('TAG_LOCATION_FIX_ACQUIRED', { has_coords: true });
         } catch (locErr) {
-          console.log('⚠️ İlk konum alınamadı:', locErr);
+          perfLog('⚠️ İlk konum alınamadı:', locErr);
         }
         
         return true;
@@ -2987,7 +2988,7 @@ export default function App() {
       const data = await response.json();
       if (data.success) {
         await saveUser(data.user);
-        console.log('USER_SAVED', data.user);
+        perfLog('USER_SAVED', data.user);
         await persistAccessTokenAndRefreshUser(data as TokenPayload, data.user?.id);
         await afterAuthAccessTokenPersisted(data.user?.id);
         await markLoginLegalAccepted();
@@ -3007,7 +3008,7 @@ export default function App() {
   useEffect(() => {
     if (!showSplash) return;
     const splashTimer = setTimeout(() => {
-      console.log('🎬 Splash timeout - devam');
+      perfLog('🎬 Splash timeout - devam');
       setShowSplash(false);
       if (!splashUserRef.current) {
         setScreen('login');
@@ -3526,7 +3527,7 @@ export default function App() {
             const nextUser = user;
             if (nextUser) {
               await saveUser(nextUser);
-              console.log('USER_SAVED', nextUser);
+              perfLog('USER_SAVED', nextUser);
             }
             await persistAccessTokenAndRefreshUser(setPinData as TokenPayload, user?.id);
             await afterAuthAccessTokenPersisted(user?.id);
@@ -3565,7 +3566,7 @@ export default function App() {
         const registerData = await registerResponse.json();
         if (registerData.success && registerData.user) {
           await saveUser(registerData.user);
-          console.log('USER_SAVED', registerData.user);
+          perfLog('USER_SAVED', registerData.user);
           await persistAccessTokenAndRefreshUser(registerData as TokenPayload, registerData.user.id);
           await afterAuthAccessTokenPersisted(registerData.user.id);
           await markLoginLegalAccepted();
@@ -3736,7 +3737,7 @@ export default function App() {
             /* ignore */
           }
           const savedUser = await saveUser(data.user as User);
-          console.log('USER_SAVED', data.user);
+          perfLog('USER_SAVED', data.user);
           await persistAccessTokenAndRefreshUser(data as TokenPayload, savedUser?.id);
           await afterAuthAccessTokenPersisted(savedUser?.id);
           await markLoginLegalAccepted();
@@ -4128,7 +4129,7 @@ export default function App() {
       if (!selectedRole || !rideVehicleKind || roleContinueBusy) return;
       void playUiTapSound();
       roleScreenHaptic();
-      console.log('DRIVER_CONTINUE_PRESSED', {
+      perfLog('DRIVER_CONTINUE_PRESSED', {
         selected_role: selectedRole,
         ride_vehicle_kind: rideVehicleKind,
         user_id: user?.id ?? null,
@@ -4193,7 +4194,7 @@ export default function App() {
             });
             await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
             if (user) await saveUser(mergeVehicleIntoUser(user));
-            console.log('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'driver_kyc_pending' });
+            perfLog('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'driver_kyc_pending' });
             setScreen('dashboard');
             return;
           }
@@ -4205,7 +4206,7 @@ export default function App() {
         if (selectedRole && user) {
           const updatedUser = mergeVehicleIntoUser(user);
           await saveUser(updatedUser);
-          console.log('DRIVER_MODE_PERSISTED', {
+          perfLog('DRIVER_MODE_PERSISTED', {
             role: updatedUser.role,
             vehicle_kind:
               (updatedUser.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind ??
@@ -4213,10 +4214,10 @@ export default function App() {
           });
 
           // 📍 Hemen konum izni iste
-          console.log('📍 Rol seçildi, konum izni isteniyor...');
+          perfLog('📍 Rol seçildi, konum izni isteniyor...');
           requestLocationPermission();
 
-          console.log('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'role_continue' });
+          perfLog('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'role_continue' });
           setScreen('dashboard');
         }
       } catch (error) {
@@ -4228,7 +4229,7 @@ export default function App() {
           // 📍 Konum izni iste
           requestLocationPermission();
 
-          console.log('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'role_continue_catch' });
+          perfLog('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'role_continue_catch' });
           setScreen('dashboard');
         } else if (selectedRole === 'driver') {
           appAlert('Hata', DRIVER_CONTINUE_FAIL_MSG);
@@ -4572,7 +4573,7 @@ export default function App() {
 
   // 🔒 FALLBACK - Beklenmeyen durumlarda login ekranına yönlendir
   // Bu beyaz ekran sorununu önler
-  console.log('⚠️ Unexpected screen state:', { screen, hasUser: !!user });
+  perfLog('⚠️ Unexpected screen state:', { screen, hasUser: !!user });
 
   /* Önceki dallarda daraltılmış `screen` için savunmacı yönlendirme — tam birlik tipine aç */
   const guardScreen = screen as AppScreen;
@@ -7316,7 +7317,7 @@ function logIosLocationBootstrap(
 ): void {
   if (Platform.OS !== 'ios') return;
   try {
-    console.log(
+    perfLog(
       '[ios_loc_bootstrap]',
       JSON.stringify({
         reason,
@@ -7455,7 +7456,7 @@ function logIosDriverLocBootstrap(
 ): void {
   if (Platform.OS !== 'ios') return;
   try {
-    console.log(
+    perfLog(
       '[ios_driver_loc_bootstrap]',
       JSON.stringify({
         reason,
@@ -7721,7 +7722,7 @@ function PassengerDashboard({
           setNearbyDriverCount(data.nearby_driver_count);
         }
       } catch (e) {
-        console.log('Nearby drivers fetch error:', e);
+        perfLog('Nearby drivers fetch error:', e);
       }
     };
     
@@ -8286,7 +8287,7 @@ function PassengerDashboard({
     const hadCoords = prev.lat != null && prev.lng != null;
     const hasCoords = lat != null && lng != null;
     if (!hadCoords && hasCoords) {
-      console.log('TAG_PAX_LOCATION_FIRST_FIX', { has_coords: true });
+      perfLog('TAG_PAX_LOCATION_FIRST_FIX', { has_coords: true });
     }
     prevPaxUserLocRef.current = { lat, lng };
   }, [userLocation?.latitude, userLocation?.longitude]);
@@ -8310,7 +8311,7 @@ function PassengerDashboard({
     void (async () => {
       try {
         if (__DEV__) {
-          console.log('TAG_PAX_REVERSE_GEOCODE_START', {
+          perfLog('TAG_PAX_REVERSE_GEOCODE_START', {
             lat_grid: passengerRevGeoLatKey,
             lng_grid: passengerRevGeoLngKey,
           });
@@ -8346,7 +8347,7 @@ function PassengerDashboard({
   /** Aktif TAG varken hedef/fiyat modalı açık kalmasın (resume sonrası activeTag geç dolunca auto-open yarışı) */
   useEffect(() => {
     if (!activeTag) return;
-    console.log('TAG_ACTIVE_TAG_CLOSE_DESTINATION_PICKER', {
+    perfLog('TAG_ACTIVE_TAG_CLOSE_DESTINATION_PICKER', {
       tagId: activeTag.id,
       status: activeTag.status,
     });
@@ -8548,7 +8549,7 @@ function PassengerDashboard({
             vehicleColor: driverDetails.vehicle_color,
             plateNumber: driverDetails.plate_number,
           });
-          console.log('📋 Sürücü detayları yüklendi:', data.user.name);
+          perfLog('📋 Sürücü detayları yüklendi:', data.user.name);
         }
       } catch (error) {
         console.error('Sürücü detayları alınamadı:', error);
@@ -8592,7 +8593,7 @@ function PassengerDashboard({
 
   const leylekChromePassenger = useLeylekZekaChrome();
   const openLeylekZekaFromMap = useCallback(() => {
-    console.log('[PAX_DEBUG] openLeylekZekaFromMap');
+    perfLog('[PAX_DEBUG] openLeylekZekaFromMap');
     callCheck('Haptics.impactAsync', Haptics?.impactAsync);
     if (Platform.OS !== 'web') {
       try {
@@ -8786,7 +8787,7 @@ function PassengerDashboard({
       if (passengerOutgoingCallCleanupDoneRef.current) return;
       passengerOutgoingCallCleanupDoneRef.current = true;
       try {
-        console.log(
+        perfLog(
           'CALL_REJECT_CLEANUP_APPLY',
           JSON.stringify({ role: 'passenger', source }),
         );
@@ -8794,7 +8795,7 @@ function PassengerDashboard({
         /* noop */
       }
       try {
-        console.log(
+        perfLog(
           'CALL_REJECT_AUDIO_STOP',
           JSON.stringify({
             role: 'passenger',
@@ -8825,7 +8826,7 @@ function PassengerDashboard({
         closePassengerCallUi();
       }, 300);
       try {
-        console.log(
+        perfLog(
           'CALL_UI_CLOSE',
           JSON.stringify({
             role: 'passenger',
@@ -9051,31 +9052,31 @@ function PassengerDashboard({
     userId: user?.id || null,
     userRole: 'passenger',
     onCallCancelled: (data) => {
-      console.log('🚫 YOLCU - ARAMA İPTAL EDİLDİ:', data);
+      perfLog('🚫 YOLCU - ARAMA İPTAL EDİLDİ:', data);
       callCheck('clearIncomingCall', clearIncomingCall);
       clearIncomingCall();
     },
     onCallEndedNew: (data) => {
-      console.log('📴 YOLCU - CALL_ENDED (Backend-driven):', data);
+      perfLog('📴 YOLCU - CALL_ENDED (Backend-driven):', data);
       callCheck('clearIncomingCall', clearIncomingCall);
       clearIncomingCall();
     },
     onIncomingCall: (data) => {
-      console.log('📞 YOLCU - GELEN ARAMA (socket):', data);
+      perfLog('📞 YOLCU - GELEN ARAMA (socket):', data);
     },
     onCallAccepted: (data) => {
-      console.log('✅ YOLCU - ARAMA KABUL EDİLDİ:', data);
+      perfLog('✅ YOLCU - ARAMA KABUL EDİLDİ:', data);
       setCallAccepted(true);
     },
     onCallRejected: (data) => {
-      console.log('❌ YOLCU - ARAMA REDDEDİLDİ:', data);
+      perfLog('❌ YOLCU - ARAMA REDDEDİLDİ:', data);
       const rejectedBy = String((data as { rejected_by?: string })?.rejected_by ?? '').trim().toLowerCase();
       const myLo = String(user?.id ?? '').trim().toLowerCase();
       if (rejectedBy && myLo && rejectedBy === myLo) {
         return;
       }
       try {
-        console.log(
+        perfLog(
           'CALL_REJECT_AUDIO_STOP',
           JSON.stringify({
             role: 'passenger',
@@ -9088,22 +9089,22 @@ function PassengerDashboard({
       runPassengerOutgoingCallRejectCleanup('socket');
     },
     onCallTimeout: () => {
-      console.log('⏱️ YOLCU - ARAMA ZAMAN AŞIMI (socket)');
+      perfLog('⏱️ YOLCU - ARAMA ZAMAN AŞIMI (socket)');
       runPassengerOutgoingCallRejectCleanup('timeout');
     },
     onCallEnded: (data) => {
-      console.log('📴 YOLCU - ARAMA SONLANDIRILDI:', data);
+      perfLog('📴 YOLCU - ARAMA SONLANDIRILDI:', data);
       setCallEnded(true);
     },
     onCallRinging: (data) => {
-      console.log('🔔 YOLCU - ARAMA DURUMU:', data);
+      perfLog('🔔 YOLCU - ARAMA DURUMU:', data);
       if (!data.success && !data.receiver_online) {
         setReceiverOffline(true);
       }
     },
     // Yeni teklif eventi - Şoförden gelen teklifler
     onNewOffer: (data) => {
-      console.log('💰 YOLCU - YENİ TEKLİF GELDİ (Socket):', data);
+      perfLog('💰 YOLCU - YENİ TEKLİF GELDİ (Socket):', data);
       const oid = data.offer_id || `socket_${Date.now()}`;
       // 🚀 TEKLİF KARTINI ANINDA EKLE; mesafeler backend’de async yazılıyor → kısa süre sonra API ile tazele
       addOfferFromSocket({
@@ -9141,9 +9142,9 @@ function PassengerDashboard({
     },
     // 🆕 TAG EŞLEŞTİ - Yolcu teklifi kabul ettiğinde
     onTagMatched: (data) => {
-      console.log('[PASSENGER EVENT RECEIVED]', 'tag_matched', data);
-      console.log('[normal-passenger-flow] matched_event_received=tag_matched');
-      console.log('🤝 YOLCU - TAG EŞLEŞTİ (Socket):', data);
+      perfLog('[PASSENGER EVENT RECEIVED]', 'tag_matched', data);
+      perfLog('[normal-passenger-flow] matched_event_received=tag_matched');
+      perfLog('🤝 YOLCU - TAG EŞLEŞTİ (Socket):', data);
       // 🔊 EŞLEŞME SESİ - Ding ding ding
       playMatchSound();
       // 🔥 TÜM TEKLİFLERİ TEMİZLE - Artık yeni teklif alamaz
@@ -9191,7 +9192,7 @@ function PassengerDashboard({
         setActiveTag((prev) => {
           const nk = _mergePassengerMatchSocketDriverVehicleKind(prev, d);
           const next = { ...matchedTag, driver_vehicle_kind: nk } as Tag;
-          console.log('🔥 YOLCU - ActiveTag ANINDA güncelleniyor:', next);
+          perfLog('🔥 YOLCU - ActiveTag ANINDA güncelleniyor:', next);
           return next;
         });
       }
@@ -9199,14 +9200,14 @@ function PassengerDashboard({
       // Backend'den de çek (ekstra bilgiler için)
       setScreen('dashboard');
       passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
-      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+      perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
         role: 'passenger',
         source: 'tag_matched',
         phase: 'immediate',
       });
       void loadActiveTag();
       setTimeout(() => {
-        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
           role: 'passenger',
           source: 'tag_matched',
           phase: 'delayed',
@@ -9217,9 +9218,9 @@ function PassengerDashboard({
     },
     // Backend accept_ride: doğrudan eşleşme socket’i (yolcu)
     onRideAccepted: (data) => {
-      console.log('[PASSENGER EVENT RECEIVED]', 'ride_accepted', data);
-      console.log('[normal-passenger-flow] matched_event_received=ride_accepted');
-      console.log('✅ YOLCU - ride_accepted (Socket):', data);
+      perfLog('[PASSENGER EVENT RECEIVED]', 'ride_accepted', data);
+      perfLog('[normal-passenger-flow] matched_event_received=ride_accepted');
+      perfLog('✅ YOLCU - ride_accepted (Socket):', data);
       playMatchSound();
       clearOffers();
       if (data?.tag_id) {
@@ -9268,14 +9269,14 @@ function PassengerDashboard({
       }
       setScreen('dashboard');
       passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
-      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+      perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
         role: 'passenger',
         source: 'ride_accepted',
         phase: 'immediate',
       });
       void loadActiveTag();
       setTimeout(() => {
-        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
           role: 'passenger',
           source: 'ride_accepted',
           phase: 'delayed',
@@ -9286,9 +9287,9 @@ function PassengerDashboard({
     },
     // Sürücü HTTP/socket eşleşmesi — ride_matched (tag_matched ile aynı yük)
     onRideMatched: (data) => {
-      console.log('[PASSENGER EVENT RECEIVED]', 'ride_matched', data);
-      console.log('[normal-passenger-flow] matched_event_received=ride_matched');
-      console.log('✅ YOLCU - ride_matched (Socket):', data);
+      perfLog('[PASSENGER EVENT RECEIVED]', 'ride_matched', data);
+      perfLog('[normal-passenger-flow] matched_event_received=ride_matched');
+      perfLog('✅ YOLCU - ride_matched (Socket):', data);
       playMatchSound();
       clearOffers();
       if (data?.tag_id) {
@@ -9337,14 +9338,14 @@ function PassengerDashboard({
       }
       setScreen('dashboard');
       passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
-      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+      perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
         role: 'passenger',
         source: 'ride_matched',
         phase: 'immediate',
       });
       void loadActiveTag();
       setTimeout(() => {
-        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
           role: 'passenger',
           source: 'ride_matched',
           phase: 'delayed',
@@ -9355,16 +9356,16 @@ function PassengerDashboard({
     },
     // 🆕 TEKLİF KABUL EDİLDİ - Ack (backend confirmation)
     onOfferAccepted: (data) => {
-      console.log('✅ YOLCU - TEKLİF KABUL EDILDI (Socket Ack):', data);
+      perfLog('✅ YOLCU - TEKLİF KABUL EDILDI (Socket Ack):', data);
       passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
-      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+      perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
         role: 'passenger',
         source: 'offer_accepted',
         phase: 'immediate',
       });
       void loadActiveTag();
       setTimeout(() => {
-        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
           role: 'passenger',
           source: 'offer_accepted',
           phase: 'delayed',
@@ -9403,14 +9404,14 @@ function PassengerDashboard({
       const ini = String(data.initiator_id);
       const informationalOnly = isForceEndInformationalPrompt(data);
       const requestKey = forceEndCounterpartyRequestKey(tid, ini, null);
-      console.log('FORCE_END_REQUEST_RECEIVED', {
+      perfLog('FORCE_END_REQUEST_RECEIVED', {
         tagId: tid,
         requestedBy: ini,
         requestKey,
         source: 'socket',
         screen: 'PassengerDashboard',
       });
-      console.log('FORCE_END_REQUEST_SOURCE', {
+      perfLog('FORCE_END_REQUEST_SOURCE', {
         tagId: tid,
         requestedBy: ini,
         requestKey,
@@ -9418,7 +9419,7 @@ function PassengerDashboard({
         screen: 'PassengerDashboard',
       });
       if (passengerForceEndModalHandledTagIdsRef.current.has(tid)) {
-        console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+        perfLog('FORCE_END_UI_IGNORED_DUPLICATE', {
           tagId: tid,
           requestedBy: ini,
           requestKey,
@@ -9440,7 +9441,7 @@ function PassengerDashboard({
         informationalOnly,
         message: typeof data.message === 'string' ? data.message : undefined,
       });
-      console.log('FORCE_END_UI_OPEN', {
+      perfLog('FORCE_END_UI_OPEN', {
         tagId: tid,
         requestedBy: ini,
         requestKey,
@@ -9451,13 +9452,13 @@ function PassengerDashboard({
     },
     // 🆕 ZORLA BİTİRME — tamamlandıktan sonra (yolcu onayı zaten alındı veya yolcu zorla bitirdi)
     onTripForceEnded: (data) => {
-      console.log('TRIP_FORCE_ENDED_EVENT', data);
-      console.log('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
+      perfLog('TRIP_FORCE_ENDED_EVENT', data);
+      perfLog('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
       finalizePassengerForceEnd(data as Record<string, unknown>);
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
     onShowRatingModal: (data) => {
-      console.log('⭐ YOLCU - PUANLAMA MODALI AÇ (Socket):', data);
+      perfLog('⭐ YOLCU - PUANLAMA MODALI AÇ (Socket):', data);
       if ((data as { should_rate?: boolean }).should_rate !== true) return;
       setShowQRModal(false);
       scheduleRatingModalAfterQrDismiss(() => {
@@ -9472,7 +9473,7 @@ function PassengerDashboard({
     onBoardingConfirmed: (data) => {
       const tid = data?.tag_id;
       if (!tid) return;
-      console.log('BOARDING_CONFIRMED_SOCKET', {
+      perfLog('BOARDING_CONFIRMED_SOCKET', {
         tag_id: tid,
         role: 'passenger',
         reason: (data as { reason?: string }).reason,
@@ -9566,7 +9567,7 @@ function PassengerDashboard({
   // CANLI KONUM GÜNCELLEME - Eşleşince başla (1 saniyede bir)
   useEffect(() => {
     if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
-      console.log('🔄 Yolcu: Şoför konum takibi başlatıldı');
+      perfLog('🔄 Yolcu: Şoför konum takibi başlatıldı');
       
       // İlk yükleme
       const fetchDriverLocation = async () => {
@@ -9581,7 +9582,7 @@ function PassengerDashboard({
             setDriverLocation(data.location);
           }
         } catch (error) {
-          console.log('Şoför konumu alınamadı:', error);
+          perfLog('Şoför konumu alınamadı:', error);
         }
       };
       
@@ -9620,12 +9621,12 @@ function PassengerDashboard({
   }, [activeTag?.status]);
 
   useEffect(() => {
-    console.log('🔄 Yolcu polling başlatıldı');
+    perfLog('🔄 Yolcu polling başlatıldı');
     isPollingActiveRef.current = true;
     loadActiveTag();
 
     const intervalMs = getPassengerPollIntervalMs();
-    console.log('PAX_POLL_INTERVAL_MS', {
+    perfLog('PAX_POLL_INTERVAL_MS', {
       interval_ms: intervalMs,
       status: activeTag?.status ?? null,
       boarding_confirmed: !!activeTag?.boarding_confirmed_at,
@@ -9635,31 +9636,31 @@ function PassengerDashboard({
     pollingIntervalRef.current = setInterval(() => {
       // 🔥 Polling aktif değilse çalıştırma
       if (!isPollingActiveRef.current) {
-        console.log('PAX_POLL_SKIP_REASON', { reason: 'polling_inactive' });
+        perfLog('PAX_POLL_SKIP_REASON', { reason: 'polling_inactive' });
         return;
       }
       if (forceEndLockRef.current) {
-        console.log('PAX_POLL_SKIP_REASON', { reason: 'force_end_lock' });
+        perfLog('PAX_POLL_SKIP_REASON', { reason: 'force_end_lock' });
         logPollingSkippedForceEndLock('passenger', 'active_tag_interval_tick');
         return;
       }
       if (shouldSkipPassengerPollingTick()) {
-        console.log('PAX_POLL_SKIP_REASON', {
+        perfLog('PAX_POLL_SKIP_REASON', {
           reason: 'terminal_status',
           status: activeTag?.status ?? null,
         });
         return;
       }
-      console.log('PAX_POLL_TICK', {
+      perfLog('PAX_POLL_TICK', {
         interval_ms: intervalMs,
         status: activeTag?.status ?? null,
       });
-      console.log('🔄 Yolcu TAG ve teklifler yükleniyor...');
+      perfLog('🔄 Yolcu TAG ve teklifler yükleniyor...');
       loadActiveTag();
     }, intervalMs);
 
     return () => {
-      console.log('🔄 Yolcu polling durduruldu');
+      perfLog('🔄 Yolcu polling durduruldu');
       isPollingActiveRef.current = false;
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
@@ -9682,7 +9683,7 @@ function PassengerDashboard({
     }
     if (resumeActiveTagPollAfterForceEndRef.current) {
       resumeActiveTagPollAfterForceEndRef.current = false;
-      console.log('ACTIVE_TAG_RESUME_AFTER_FORCE_END', {
+      perfLog('ACTIVE_TAG_RESUME_AFTER_FORCE_END', {
         userId: user?.id ?? null,
         pollingActive: isPollingActiveRef.current,
       });
@@ -9699,9 +9700,9 @@ function PassengerDashboard({
             logPollingSkippedForceEndLock('passenger', 'loadActiveTag_terminal_cancelled_gate');
             return;
           }
-          console.log('🛑 loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
+          perfLog('🛑 loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
           const _t = data.tag as Tag & { cancel_reason?: string; cancelled_at?: string };
-          console.log('PASSENGER_EXIT_REASON', {
+          perfLog('PASSENGER_EXIT_REASON', {
             source: 'loadActiveTag',
             reason: _t.status === 'cancelled' ? 'tag_status_cancelled' : 'tag_status_completed',
             tagId: _t.id,
@@ -9711,14 +9712,14 @@ function PassengerDashboard({
             was_cancelled: data.was_cancelled === true,
             userId: user.id,
           });
-          console.log('ACTIVE_TAG_RESET', {
+          perfLog('ACTIVE_TAG_RESET', {
             role: 'passenger',
             source: 'loadActiveTag_terminal',
             tagId: _t.id,
             nextStatus: _t.status,
             cancel_reason: _t.cancel_reason ?? null,
           });
-          console.log('MATCH_SCREEN_CLEAR', {
+          perfLog('MATCH_SCREEN_CLEAR', {
             role: 'passenger',
             source: 'loadActiveTag_terminal',
             tagId: _t.id,
@@ -9726,7 +9727,7 @@ function PassengerDashboard({
           });
 
           if (ratingModalVisibleRef.current) {
-            console.log('RATING_MODAL_DEFER_TERMINAL_NAV', {
+            perfLog('RATING_MODAL_DEFER_TERMINAL_NAV', {
               role: 'passenger',
               tagId: _t.id,
               status: _t.status,
@@ -9832,7 +9833,7 @@ function PassengerDashboard({
         if (data.success === true && !data.tag && shouldDeferEmpty) {
           passengerActiveTagNullStreakRef.current += 1;
           if (passengerActiveTagNullStreakRef.current < ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK) {
-            console.log('PASSENGER_ACTIVE_TAG_EMPTY_DEFERRED', {
+            perfLog('PASSENGER_ACTIVE_TAG_EMPTY_DEFERRED', {
               priorTagId: prevSnap?.id ?? null,
               priorStatus: prevSnap?.status ?? null,
               streak: passengerActiveTagNullStreakRef.current,
@@ -9845,7 +9846,7 @@ function PassengerDashboard({
             }, ACTIVE_JOURNEY_RECOVERY_RETRY_MS);
             return;
           }
-          console.log('PASSENGER_ACTIVE_TAG_EMPTY_CONFIRMED_CLEAR', {
+          perfLog('PASSENGER_ACTIVE_TAG_EMPTY_CONFIRMED_CLEAR', {
             priorTagId: prevSnap?.id ?? null,
             priorStatus: prevSnap?.status ?? null,
             streak: passengerActiveTagNullStreakRef.current,
@@ -9860,14 +9861,14 @@ function PassengerDashboard({
           if (data.success === true && !data.tag) {
             if (prev) setPassengerChatVisible(false);
             if (prev) {
-              console.log('PASSENGER_EXIT_REASON', {
+              perfLog('PASSENGER_EXIT_REASON', {
                 source: 'loadActiveTag',
                 reason: 'active_tag_response_empty',
                 priorTagId: prev.id,
                 priorStatus: prev.status,
                 userId: user.id,
               });
-              console.log('ACTIVE_TAG_RESET', {
+              perfLog('ACTIVE_TAG_RESET', {
                 role: 'passenger',
                 source: 'loadActiveTag_no_tag',
                 priorTagId: prev.id,
@@ -9895,7 +9896,7 @@ function PassengerDashboard({
         
           if (prev) {
             setPassengerChatVisible(false);
-            console.log('ACTIVE_TAG_RESET', {
+            perfLog('ACTIVE_TAG_RESET', {
               role: 'passenger',
               source: 'loadActiveTag_else_clear',
               priorTagId: prev.id,
@@ -10025,7 +10026,7 @@ function PassengerDashboard({
 
       if (!tid || !activeTag?.id || !tripTagIdsMatch(activeTag.id, tid)) {
         try {
-          console.log(
+          perfLog(
             'BOARDING_VERIFY_TAG_MISMATCH',
             JSON.stringify({
               tid,
@@ -10082,7 +10083,7 @@ function PassengerDashboard({
           }
           try {
             await loadActiveTag();
-            console.log(
+            perfLog(
               'BOARDING_VERIFY_REFRESH_DONE',
               JSON.stringify({ tag_id: tid }),
             );
@@ -10094,7 +10095,7 @@ function PassengerDashboard({
         // Verify cevabı yeterli — socket birincil; tek gecikmeli active-tag yedek senkron
         setTimeout(() => {
           void loadActiveTag().then(() => {
-            console.log(
+            perfLog(
               'BOARDING_VERIFY_REFRESH_DONE',
               JSON.stringify({ tag_id: tid, deferred: true }),
             );
@@ -10153,7 +10154,7 @@ function PassengerDashboard({
     setPassengerBoardingReminderBannerVisible(false);
     setPassengerBoardingPromptVisible(false);
     setPassengerBoardingScanVisible(false);
-    console.log(
+    perfLog(
       'BOARDING_PROMPT_RESET_BY_DRIVER_TRIGGER',
       JSON.stringify({ tag_id: tagId, boarding_qr_issued_at: sig || null }),
     );
@@ -10270,20 +10271,20 @@ function PassengerDashboard({
           const bannerMode =
             declines >= BOARDING_DECLINES_BEFORE_BANNER_ONLY &&
             !passengerBoardingBannerDismissedRef.current;
-          console.log('BOARDING_PROXIMITY_ENTER', {
+          perfLog('BOARDING_PROXIMITY_ENTER', {
             tag_id: activeTag.id,
             d_m: Math.round(d),
             declines,
             prompt_mode: bannerMode ? 'banner' : 'modal',
           });
-          console.log('BOARDING_PROMPT_SHOWN', {
+          perfLog('BOARDING_PROMPT_SHOWN', {
             tag_id: activeTag.id,
             mode: bannerMode ? 'banner' : 'modal',
             declines,
           });
           if (passengerBoardingDriverReissuePendingRef.current) {
             passengerBoardingDriverReissuePendingRef.current = false;
-            console.log(
+            perfLog(
               'BOARDING_PROMPT_REOPENED',
               JSON.stringify({
                 tag_id: activeTag.id,
@@ -10342,14 +10343,14 @@ function PassengerDashboard({
     if (!ini || ini === uid) return;
     const tid = String(activeTag.id);
     const requestKey = forceEndCounterpartyRequestKey(tid, iniRaw, er?.requested_at);
-    console.log('FORCE_END_REQUEST_RECEIVED', {
+    perfLog('FORCE_END_REQUEST_RECEIVED', {
       tagId: tid,
       requestedBy: iniRaw,
       requestKey,
       source: 'polling',
       screen: 'PassengerDashboard',
     });
-    console.log('FORCE_END_REQUEST_SOURCE', {
+    perfLog('FORCE_END_REQUEST_SOURCE', {
       tagId: tid,
       requestedBy: iniRaw,
       requestKey,
@@ -10357,7 +10358,7 @@ function PassengerDashboard({
       screen: 'PassengerDashboard',
     });
     if (passengerForceEndModalHandledTagIdsRef.current.has(tid)) {
-      console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+      perfLog('FORCE_END_UI_IGNORED_DUPLICATE', {
         tagId: tid,
         requestedBy: iniRaw,
         requestKey,
@@ -10379,7 +10380,7 @@ function PassengerDashboard({
       initiatorType: it,
       initiatorName: it === 'driver' ? 'Sürücü' : 'Yolcu',
     });
-    console.log('FORCE_END_UI_OPEN', {
+    perfLog('FORCE_END_UI_OPEN', {
       tagId: tid,
       requestedBy: iniRaw,
       requestKey,
@@ -10402,7 +10403,7 @@ function PassengerDashboard({
         const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
         const data = await response.json();
 
-        console.log('🔚 YOLCU - Trip end request check:', JSON.stringify(data));
+        perfLog('🔚 YOLCU - Trip end request check:', JSON.stringify(data));
 
         const pollRequestKind = (data as { request_kind?: string }).request_kind;
         const tagForceEndPending = isPendingForceEndCounterparty(activeTag.end_request);
@@ -10418,7 +10419,7 @@ function PassengerDashboard({
           );
           setShowTripEndModal(false);
           setTripEndRequesterType(null);
-          console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+          perfLog('FORCE_END_UI_IGNORED_DUPLICATE', {
             tagId: activeTag.id,
             requestedBy: (data as { requester_id?: string }).requester_id,
             requestKey: rk,
@@ -10439,7 +10440,7 @@ function PassengerDashboard({
               String(passengerDriverForceReview.tagId) === String(activeTag.id));
           if (blockLegacyOpen) {
             if (__DEV__) {
-              console.log('FORCE_END_LEGACY_TRIP_END_OPEN_BLOCKED', {
+              perfLog('FORCE_END_LEGACY_TRIP_END_OPEN_BLOCKED', {
                 screen: 'PassengerDashboard',
                 tagId: activeTag.id,
                 showTripEndModal,
@@ -10451,12 +10452,12 @@ function PassengerDashboard({
             setTripEndRequesterType(null);
             return;
           }
-          console.log('🔚 YOLCU - Bitirme isteği VAR! Requester:', data.requester_type);
+          perfLog('🔚 YOLCU - Bitirme isteği VAR! Requester:', data.requester_type);
           setTripEndRequesterType(data.requester_type || 'unknown');
           setShowTripEndModal(true);
         }
       } catch (error) {
-        console.log('Check trip end error:', error);
+        perfLog('Check trip end error:', error);
       }
     };
 
@@ -10480,7 +10481,7 @@ function PassengerDashboard({
   useEffect(() => {
     if (!showTripEndModal) return;
     if (legacyTripEndModalVisible(showTripEndModal, activeTag, passengerDriverForceReview)) return;
-    console.log('FORCE_END_LEGACY_MODAL_STALE_SWEEP', {
+    perfLog('FORCE_END_LEGACY_MODAL_STALE_SWEEP', {
       screen: 'PassengerDashboard',
       tagId: activeTag?.id,
       showTripEndModal,
@@ -10639,7 +10640,7 @@ function PassengerDashboard({
     if (showPriceModal || offerSendSubmitting) {
       if (opts.source === 'destination_confirm') {
         try {
-          console.log(
+          perfLog(
             'TAG_PRICE_MODAL_AUTO_OPEN',
             JSON.stringify({ skipped: true, reason: 'modal_or_submitting' }),
           );
@@ -10656,7 +10657,7 @@ function PassengerDashboard({
       if (opts.playTapSound) playTapSound();
       if (opts.source === 'destination_confirm') {
         try {
-          console.log(
+          perfLog(
             'TAG_PRICE_MODAL_AUTO_OPEN',
             JSON.stringify({ phase: 'start', dropLat: opts.dropLat, dropLng: opts.dropLng }),
           );
@@ -10695,7 +10696,7 @@ function PassengerDashboard({
           __paxFn('requestLocationPermission', requestLocationPermission);
           const granted = await requestLocationPermission();
           if (!granted) {
-            console.log('[PAX_LOC] requestLocationPermission → denied or false');
+            perfLog('[PAX_LOC] requestLocationPermission → denied or false');
             appAlert(
               'Konum izni gerekli',
               'Yakındaki sürücüleri gösterebilmek ve rotanızı hazırlayabilmek için konum izni gereklidir.',
@@ -10710,7 +10711,7 @@ function PassengerDashboard({
           if (hasValidPassengerPickupCoords(userLocation)) {
             pickupCoords = userLocation;
           } else {
-            console.log('[PAX_LOC] requestLocationPermission → granted (userLocation may update async)');
+            perfLog('[PAX_LOC] requestLocationPermission → granted (userLocation may update async)');
             return;
           }
         }
@@ -10741,7 +10742,7 @@ function PassengerDashboard({
         passengerPostForceEndRef.current = false;
         if (opts.source === 'destination_confirm') {
           try {
-            console.log('TAG_PRICE_MODAL_AUTO_OPEN', JSON.stringify({ phase: 'prefetch_hit' }));
+            perfLog('TAG_PRICE_MODAL_AUTO_OPEN', JSON.stringify({ phase: 'prefetch_hit' }));
           } catch {
             /* noop */
           }
@@ -10750,7 +10751,7 @@ function PassengerDashboard({
       }
 
       if (passengerPostForceEndRef.current) {
-        console.log('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', {
+        perfLog('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', {
           prefetchKey,
           pickupLat,
           pickupLng,
@@ -10778,7 +10779,7 @@ function PassengerDashboard({
         } catch {
           /* ignore */
         }
-        console.log('NEW_OFFER_API_ERROR', {
+        perfLog('NEW_OFFER_API_ERROR', {
           api: `${API_URL}/price/calculate`,
           httpOk: false,
           status: response.status,
@@ -10807,13 +10808,13 @@ function PassengerDashboard({
         passengerPostForceEndRef.current = false;
         if (opts.source === 'destination_confirm') {
           try {
-            console.log('TAG_PRICE_MODAL_AUTO_OPEN', JSON.stringify({ phase: 'api_ok' }));
+            perfLog('TAG_PRICE_MODAL_AUTO_OPEN', JSON.stringify({ phase: 'api_ok' }));
           } catch {
             /* noop */
           }
         }
       } else {
-        console.log('NEW_OFFER_API_ERROR', {
+        perfLog('NEW_OFFER_API_ERROR', {
           api: `${API_URL}/price/calculate`,
           httpOk: response.ok,
           status: response.status,
@@ -10829,7 +10830,7 @@ function PassengerDashboard({
       const networkLike =
         raw === 'Failed to fetch' || raw.includes('Network request failed');
       console.error('Fiyat hesaplama hatası:', error);
-      console.log('NEW_OFFER_API_ERROR', {
+      perfLog('NEW_OFFER_API_ERROR', {
         api: `${API_URL}/price/calculate`,
         phase: 'catch',
         message: raw,
@@ -10854,7 +10855,7 @@ function PassengerDashboard({
   const handleCallButton = async () => {
     playTapSound();
     void playUiTapSound();
-    console.log('🔵 FİYAT TEKLİF BUTONU TIKLANDI!');
+    perfLog('🔵 FİYAT TEKLİF BUTONU TIKLANDI!');
 
     // Hedef kontrolü (arama tek başına yetmez; haritadan nokta şart)
     if (!destination) {
@@ -10984,8 +10985,8 @@ function PassengerDashboard({
       const raw = e instanceof Error ? e.message : String(e);
       const networkLike =
         raw === 'Failed to fetch' || raw.includes('Network request failed');
-      console.log('Price recalc error:', e);
-      console.log('NEW_OFFER_API_ERROR', {
+      perfLog('Price recalc error:', e);
+      perfLog('NEW_OFFER_API_ERROR', {
         api: `${API_URL}/price/calculate`,
         phase: 'recalc_catch',
         message: raw,
@@ -11088,7 +11089,7 @@ function PassengerDashboard({
           pickupAddress = parts.length > 0 ? parts.join(', ') : 'Mevcut Konumunuz';
         }
       } catch (err) {
-        console.log('Reverse geocoding hatası:', err);
+        perfLog('Reverse geocoding hatası:', err);
       }
 
       const generateUUID = () =>
@@ -11142,9 +11143,9 @@ function PassengerDashboard({
       });
 
       try {
-        console.log('CREATE RIDE REQUEST SENT');
+        perfLog('CREATE RIDE REQUEST SENT');
         if (passengerPostForceEndRef.current) {
-          console.log('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', { phase: 'ride_create', userId: user?.id ?? null });
+          perfLog('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', { phase: 'ride_create', userId: user?.id ?? null });
         }
         // API_URL = {BACKEND}/api → yol /api/ride/create (çift /api olmaması için /ride/create)
         const res = await fetch(`${API_URL}/ride/create`, {
@@ -11173,9 +11174,9 @@ function PassengerDashboard({
         } catch {
           throw new Error(`Sunucu yanıtı okunamadı (${res.status})`);
         }
-        console.log('CREATE RIDE RESPONSE', data);
+        perfLog('CREATE RIDE RESPONSE', data);
         try {
-          console.log(
+          perfLog(
             '[normal_ride_create_response]',
             JSON.stringify({
               ok: res.ok,
@@ -11257,8 +11258,8 @@ function PassengerDashboard({
         setShowPriceModal(false);
         resetPriceOfferPaymentUi();
         setActiveTag(mergedTag as Tag);
-        console.log('[normal-passenger-flow] offer_sent tag_id=', resolvedTagId);
-        console.log('[normal-passenger-flow] waiting_screen=true');
+        perfLog('[normal-passenger-flow] offer_sent tag_id=', resolvedTagId);
+        perfLog('[normal-passenger-flow] waiting_screen=true');
         setScreen('dashboard');
         setCurrentRequestId(requestId);
 
@@ -11287,12 +11288,12 @@ function PassengerDashboard({
             passenger_payment_method: 'cash',
           });
         }
-        console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', resolvedTagId);
+        perfLog('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', resolvedTagId);
         passengerPostForceEndRef.current = false;
       } catch (err) {
-        console.log('Backend kayıt hatası:', err);
+        perfLog('Backend kayıt hatası:', err);
         const raw = err instanceof Error ? err.message : String(err);
-        console.log('NEW_OFFER_API_ERROR', {
+        perfLog('NEW_OFFER_API_ERROR', {
           api: `${API_URL}/ride/create`,
           phase: 'ride_create_catch',
           message: raw,
@@ -11394,13 +11395,13 @@ function PassengerDashboard({
         });
       }
     } catch (error) {
-      console.log('Paylaşım hatası:', error);
+      perfLog('Paylaşım hatası:', error);
     }
   };
 
   /** Eşleşmiş yolculukta Agora araması — POST /voice/start-call + CallScreenV2 */
   const startTripCallAsPassenger = async (callType: 'audio' | 'video') => {
-    console.log('[PAX_DEBUG] startTripCallAsPassenger enter', callType);
+    perfLog('[PAX_DEBUG] startTripCallAsPassenger enter', callType);
     if (!user?.id || !activeTag?.id) {
       appAlert('Hata', 'Yolculuk bilgisi bulunamadı');
       return;
@@ -11438,14 +11439,14 @@ function PassengerDashboard({
       clearIncomingCall();
     }
     const _tagPress = String(activeTag.id ?? '');
-    console.log(
+    perfLog(
       'TAG_CALL_PRESS',
       JSON.stringify({ role: 'passenger', tag_id: _tagPress, call_type: callType }),
     );
     setCalling(true);
     try {
       await awaitSocketRegisterBeforeCriticalAction(ensureSocketRegistered, 'voice_start_call');
-      console.log(
+      perfLog(
         'TAG_CALL_START_REQUEST',
         JSON.stringify({ role: 'passenger', tag_id: _tagPress, receiver_id: receiverId }),
       );
@@ -11514,7 +11515,7 @@ function PassengerDashboard({
         appAlert('Hata', 'Arama başlatılamadı');
         return;
       }
-      console.log(
+      perfLog(
         'TAG_CALL_START_DONE',
         JSON.stringify({
           role: 'passenger',
@@ -11546,7 +11547,7 @@ function PassengerDashboard({
         callType,
       });
       setShowCallScreen(true);
-      console.log(
+      perfLog(
         'TAG_CALL_SCREEN_OPENED',
         JSON.stringify({
           role: 'passenger',
@@ -11634,7 +11635,7 @@ function PassengerDashboard({
         setTimeout(() => setShowToast(false), 2000);
       }
     } catch (error) {
-      console.log('Dismiss error:', error);
+      perfLog('Dismiss error:', error);
     }
   };
 
@@ -11654,7 +11655,7 @@ function PassengerDashboard({
       return;
     }
 
-    console.log(
+    perfLog(
       'TAG_MATCH_TRANSITION_SHOW',
       JSON.stringify({ role: 'passenger', tag_id: activeTag?.id ?? null }),
     );
@@ -11713,7 +11714,7 @@ function PassengerDashboard({
           passengerMatchTransitionTimerRef.current = null;
           passengerMatchTransitionFromAcceptRef.current = false;
           setMatchingInProgress(false);
-          console.log(
+          perfLog(
             'TAG_MATCH_TRANSITION_HIDE',
             JSON.stringify({ role: 'passenger', tag_id: activeTag?.id ?? null, ms }),
           );
@@ -11723,14 +11724,14 @@ function PassengerDashboard({
         
         // API'den tam veriyi çek (arka planda) + recovery penceresi
         passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
-        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
           role: 'passenger',
           source: 'accept_offer',
           phase: 'immediate',
         });
         void loadActiveTag();
         setTimeout(() => {
-          console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+          perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
             role: 'passenger',
             source: 'accept_offer',
             phase: 'delayed',
@@ -11751,7 +11752,7 @@ function PassengerDashboard({
   };
 
   const handleCancelTag = async () => {
-    console.log("MANUAL_CANCEL_CLICK");
+    perfLog("MANUAL_CANCEL_CLICK");
     playTapSound();
     if (!activeTag) return;
 
@@ -11866,7 +11867,7 @@ function PassengerDashboard({
         });
       setPassengerIdleOfferChannel('normal');
       setRoutePickerIntent('normal');
-      console.log(
+      perfLog(
         '[QM] FLOW_OPEN route_ready',
         JSON.stringify({
           source: 'destination_confirm',
@@ -11905,7 +11906,7 @@ function PassengerDashboard({
     if (shouldAutoPrice) {
       setPassengerIdleOfferChannel('normal');
       try {
-        console.log(
+        perfLog(
           'TAG_DESTINATION_CONFIRMED',
           JSON.stringify({
             lat: Number(lat.toFixed(5)),
@@ -12041,7 +12042,7 @@ function PassengerDashboard({
     destinationPickerPendingInteractiveBootAnimateRef.current = true;
     setDestinationPickerPhase('map');
     try {
-      console.log(
+      perfLog(
         '[ROUTE_PICKER] PICKUP_VERIFY_FROM_SEARCH',
         JSON.stringify({ address: _address, lat, lng }),
       );
@@ -12064,7 +12065,7 @@ function PassengerDashboard({
       return;
     }
     try {
-      console.log(
+      perfLog(
         'ROUTE_PICKER_DEST_VERIFY_FROM_SEARCH',
         JSON.stringify({ address: place.address, lat, lng }),
       );
@@ -12174,7 +12175,7 @@ function PassengerDashboard({
           if (hasValidPassengerPickupCoords(userLocation)) {
             coords = userLocation;
           } else {
-            console.log('[PAX_LOC] pickup_confirm → granted (userLocation may update async)');
+            perfLog('[PAX_LOC] pickup_confirm → granted (userLocation may update async)');
             return;
           }
         }
@@ -12582,7 +12583,7 @@ function PassengerDashboard({
           onCancel={handleCancelTag}
           onMatch={(driverData) => {
             // Eşleşme olduğunda
-            console.log('Match received:', driverData);
+            perfLog('Match received:', driverData);
           }}
         />
         </View>
@@ -13008,7 +13009,7 @@ function PassengerDashboard({
                             driver_id: String(activeTag.driver_id ?? ''),
                           });
                         } catch (socketErr) {
-                          console.log('Socket force end hatası:', socketErr);
+                          perfLog('Socket force end hatası:', socketErr);
                         }
                       }
                       applyPassengerForceEndHttpResult(activeTag.id, user.id, result, () => {
@@ -13112,7 +13113,7 @@ function PassengerDashboard({
                         { 
                           text: 'Diğer (Açıklama Yaz)', 
                           onPress: () => {
-                            console.log('[PAX_DEBUG] passenger LiveMap onReport > Diğer');
+                            perfLog('[PAX_DEBUG] passenger LiveMap onReport > Diğer');
                             const ok =
                               isAlertPromptCallable() &&
                               callAlertPrompt(
@@ -13161,7 +13162,7 @@ function PassengerDashboard({
                     }
                   }}
                   onForceEnd={async () => {
-                    console.log('⚡ YOLCU - ZORLA BİTİR başlatılıyor...');
+                    perfLog('⚡ YOLCU - ZORLA BİTİR başlatılıyor...');
                     await awaitSocketRegisterBeforeCriticalAction(
                       ensureSocketRegistered,
                       'force_end_request',
@@ -13185,7 +13186,7 @@ function PassengerDashboard({
                         immediate?: boolean;
                         pre_boarding?: boolean;
                       };
-                      console.log('🔥 Force end API yanıtı:', result);
+                      perfLog('🔥 Force end API yanıtı:', result);
                       if (!response.ok || result.success === false) {
                         appAlert('Hata', result.detail || result.message || 'İşlem başarısız');
                         return;
@@ -13202,7 +13203,7 @@ function PassengerDashboard({
                             driver_id: String(activeTag.driver_id ?? ''),
                           });
                         } catch (socketErr) {
-                          console.log('Socket force end hatası:', socketErr);
+                          perfLog('Socket force end hatası:', socketErr);
                         }
                       }
                       applyPassengerForceEndHttpResult(activeTag.id, user.id, result, () => {
@@ -13229,7 +13230,7 @@ function PassengerDashboard({
                         void loadActiveTag();
                       });
                     } catch (err) {
-                      console.log('Force end API hatası:', err);
+                      perfLog('Force end API hatası:', err);
                       appAlert('Hata', 'İşlem başarısız');
                     }
                   }}
@@ -13264,14 +13265,14 @@ function PassengerDashboard({
                       setPassengerDriverForceReview(null);
                       return;
                     }
-                    console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'passenger' });
+                    perfLog('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'passenger' });
                     setPassengerForceEndReviewSubmitting(true);
                     try {
                       await awaitSocketRegisterBeforeCriticalAction(
                         ensureSocketRegistered,
                         'force_end_confirm',
                       );
-                      console.log('FRONTEND_FORCE_END_CONFIRM_START', {
+                      perfLog('FRONTEND_FORCE_END_CONFIRM_START', {
                         tag_id: tid,
                         user_id: user.id,
                         ender_id: passengerDriverForceReview.initiatorId,
@@ -13287,7 +13288,7 @@ function PassengerDashboard({
                       const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
                       const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
                       const reqKey = passengerForceEndLastRequestKeyRef.current;
-                      console.log('FORCE_END_CONFIRM_SENT', {
+                      perfLog('FORCE_END_CONFIRM_SENT', {
                         tagId: tid,
                         requestedBy: passengerDriverForceReview.initiatorId,
                         requestKey: reqKey,
@@ -13308,8 +13309,8 @@ function PassengerDashboard({
                         appAlert('Hata', (j as { detail?: string }).detail || 'Onay gönderilemedi.');
                         return;
                       }
-                      console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'passenger' });
-                      console.log('FORCE_END_FINALIZED', {
+                      perfLog('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'passenger' });
+                      perfLog('FORCE_END_FINALIZED', {
                         tagId: tid,
                         requestedBy: passengerDriverForceReview.initiatorId,
                         requestKey: reqKey,
@@ -13317,7 +13318,7 @@ function PassengerDashboard({
                         screen: 'PassengerDashboard',
                         approved: true,
                       });
-                      console.log('FORCE_END_STATE_CLEARED', {
+                      perfLog('FORCE_END_STATE_CLEARED', {
                         tagId: tid,
                         requestKey: reqKey,
                         source: 'local',
@@ -13341,14 +13342,14 @@ function PassengerDashboard({
                   onReject={async () => {
                     if (!passengerDriverForceReview || !user?.id || passengerForceEndReviewSubmitting) return;
                     const tid = passengerDriverForceReview.tagId;
-                    console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: false, role: 'passenger' });
+                    perfLog('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: false, role: 'passenger' });
                     setPassengerForceEndReviewSubmitting(true);
                     try {
                       await awaitSocketRegisterBeforeCriticalAction(
                         ensureSocketRegistered,
                         'force_end_confirm',
                       );
-                      console.log('FRONTEND_FORCE_END_CONFIRM_START', {
+                      perfLog('FRONTEND_FORCE_END_CONFIRM_START', {
                         tag_id: tid,
                         user_id: user.id,
                         ender_id: passengerDriverForceReview.initiatorId,
@@ -13364,7 +13365,7 @@ function PassengerDashboard({
                       const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
                       const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
                       const reqKey = passengerForceEndLastRequestKeyRef.current;
-                      console.log('FORCE_END_REJECT_SENT', {
+                      perfLog('FORCE_END_REJECT_SENT', {
                         tagId: tid,
                         requestedBy: passengerDriverForceReview.initiatorId,
                         requestKey: reqKey,
@@ -13385,8 +13386,8 @@ function PassengerDashboard({
                         appAlert('Hata', (j as { detail?: string }).detail || 'Yanıt gönderilemedi.');
                         return;
                       }
-                      console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'passenger' });
-                      console.log('FORCE_END_FINALIZED', {
+                      perfLog('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'passenger' });
+                      perfLog('FORCE_END_FINALIZED', {
                         tagId: tid,
                         requestedBy: passengerDriverForceReview.initiatorId,
                         requestKey: reqKey,
@@ -13394,7 +13395,7 @@ function PassengerDashboard({
                         screen: 'PassengerDashboard',
                         approved: false,
                       });
-                      console.log('FORCE_END_STATE_CLEARED', {
+                      perfLog('FORCE_END_STATE_CLEARED', {
                         tagId: tid,
                         requestKey: reqKey,
                         source: 'local',
@@ -13432,7 +13433,7 @@ function PassengerDashboard({
                   onIncomingMessageHandled={() => setPassengerIncomingMessage(null)}
                   onSendMessage={(text, receiverId) => {
                     // Socket ile ANLIK gönder
-                    console.log('📤 [YOLCU] onSendMessage callback:', { 
+                    perfLog('📤 [YOLCU] onSendMessage callback:', { 
                       text, 
                       receiverId, 
                       activeTagDriverId: activeTag?.driver_id,
@@ -13444,7 +13445,7 @@ function PassengerDashboard({
                       return;
                     }
                     if (passengerEmitSendMessage) {
-                      console.log('📤 [YOLCU] passengerEmitSendMessage çağrılıyor...');
+                      perfLog('📤 [YOLCU] passengerEmitSendMessage çağrılıyor...');
                       callCheck('passengerEmitSendMessage', passengerEmitSendMessage);
                       passengerEmitSendMessage({
                         sender_id: user?.id || '',
@@ -13453,7 +13454,7 @@ function PassengerDashboard({
                         message: text,
                         tag_id: activeTag?.id,
                       });
-                      console.log('✅ [YOLCU] passengerEmitSendMessage çağrıldı!');
+                      perfLog('✅ [YOLCU] passengerEmitSendMessage çağrıldı!');
                     } else {
                       console.error('❌ [YOLCU] passengerEmitSendMessage TANIMLI DEĞİL!');
                     }
@@ -13542,7 +13543,7 @@ function PassengerDashboard({
                             driver_id: String(activeTag.driver_id ?? ''),
                           });
                         } catch (socketErr) {
-                          console.log('Socket force end hatası:', socketErr);
+                          perfLog('Socket force end hatası:', socketErr);
                         }
                       }
                       applyPassengerForceEndHttpResult(activeTag.id, user.id, result, () => {
@@ -14974,7 +14975,7 @@ function PassengerDashboard({
             clearIncomingCall();
           }}
           onClose={() => {
-            console.log('📞 YOLCU - Arama ekranı kapandı');
+            perfLog('📞 YOLCU - Arama ekranı kapandı');
             setShowCallScreen(false);
             setCallScreenData(null);
             setCalling(false);
@@ -15116,7 +15117,7 @@ function PassengerDashboard({
             n >= BOARDING_DECLINES_BEFORE_BANNER_ONLY
               ? BOARDING_DECLINE_COOLDOWN_LONG_MS
               : BOARDING_DECLINE_COOLDOWN_MS;
-          console.log(
+          perfLog(
             'BOARDING_PROMPT_DECLINE',
             JSON.stringify({ tag_id: activeTag?.id ?? null, decline_count: n }),
           );
@@ -15172,7 +15173,7 @@ function PassengerDashboard({
               if (ctx) {
                 setQuickMatchRouteContext(ctx);
                 setQuickMatchFlowVisible(true);
-                console.log(
+                perfLog(
                   '[QM] FLOW_OPEN route_ready',
                   JSON.stringify({
                     source: 'retry',
@@ -15526,7 +15527,7 @@ function DriverDashboard({
     /** Anında kaldır: önceki 30s bekleme kaybı; üst sınır istenirse 0 yerine küçük bir sabit kullanılabilir. */
     const delay = 0;
     try {
-      console.log(
+      perfLog(
         JSON.stringify({
           evt: 'DRIVER_OFFER_REMOVE_REQUESTED',
           kind: 'soft_scheduled',
@@ -15547,7 +15548,7 @@ function DriverDashboard({
     driverRemoveOfferTimersRef.current[tagKey] = setTimeout(() => {
       delete driverRemoveOfferTimersRef.current[tagKey];
       try {
-        console.log(
+        perfLog(
           JSON.stringify({
             evt: 'DRIVER_OFFER_REMOVE_EXECUTED',
             kind: 'soft_scheduled',
@@ -15564,7 +15565,7 @@ function DriverDashboard({
       setRequests(prev => {
         const next = prev.filter(r => r.id !== tagKey && r.request_id !== request_id);
         try {
-          console.log(
+          perfLog(
             JSON.stringify({
               evt: 'DRIVER_OFFER_LIST_AFTER_SET',
               source: `${source}:soft_timeout_filter`,
@@ -15650,7 +15651,7 @@ function DriverDashboard({
   }, [activeTag?.boarding_confirmed_at, activeTag?.id, user?.id]);
 
   useEffect(() => {
-    console.log('DRIVER_WAITING_SCREEN_ENTER', { user_id: user?.id ?? null });
+    perfLog('DRIVER_WAITING_SCREEN_ENTER', { user_id: user?.id ?? null });
   }, [user?.id]);
   
   // Mesafe ve süre state'leri
@@ -15721,7 +15722,7 @@ function DriverDashboard({
           ts === 'motorcycle' || ts === 'motor' ? 'motorcycle' : 'car';
         if (tripVk !== driverVehicleKind) {
           try {
-            console.log(
+            perfLog(
               '[normal_ride_driver_offer_filtered]',
               JSON.stringify({
                 reason: 'trip_fetch_vehicle_mismatch_show_anyway',
@@ -16047,7 +16048,7 @@ function DriverDashboard({
       if (driverOutgoingCallCleanupDoneRef.current) return;
       driverOutgoingCallCleanupDoneRef.current = true;
       try {
-        console.log(
+        perfLog(
           'CALL_REJECT_CLEANUP_APPLY',
           JSON.stringify({ role: 'driver', source }),
         );
@@ -16055,7 +16056,7 @@ function DriverDashboard({
         /* noop */
       }
       try {
-        console.log(
+        perfLog(
           'CALL_REJECT_AUDIO_STOP',
           JSON.stringify({
             role: 'driver',
@@ -16086,7 +16087,7 @@ function DriverDashboard({
         closeDriverCallUi();
       }, 300);
       try {
-        console.log(
+        perfLog(
           'CALL_UI_CLOSE',
           JSON.stringify({
             role: 'driver',
@@ -16141,7 +16142,7 @@ function DriverDashboard({
   ]);
   
   const applyDriverMatchRouteSocket = (event: string, raw: unknown) => {
-    console.log('DRIVER EVENT:', event, raw);
+    perfLog('DRIVER EVENT:', event, raw);
     const norm = normalizeDriverMatchSocketPayload(raw);
     if (!norm) {
       console.warn('DRIVER_EVENT_SKIP_NO_TAG_ID', event, raw);
@@ -16162,7 +16163,7 @@ function DriverDashboard({
     const navBoost = event === 'driver_on_the_way' || tagStatusRaw === 'driver_on_the_way';
     if (navBoost) {
       try {
-        console.log('DRIVER_NAV_UI', { event, tag_status: tagStatusRaw, route_info });
+        perfLog('DRIVER_NAV_UI', { event, tag_status: tagStatusRaw, route_info });
       } catch {
         /* noop */
       }
@@ -16230,7 +16231,7 @@ function DriverDashboard({
     };
     try {
       const ri = (matchedTag as { route_info?: Record<string, unknown> }).route_info;
-      console.log('DRIVER_ACTIVE_TAG_AFTER_SOCKET', {
+      perfLog('DRIVER_ACTIVE_TAG_AFTER_SOCKET', {
         id: matchedTag.id,
         status: matchedTag.status,
         routeInfo: ri ?? null,
@@ -16244,14 +16245,14 @@ function DriverDashboard({
     setActiveTag(matchedTag as Tag);
     setScreen('dashboard');
     driverJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
-    console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+    perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
       role: 'driver',
       source: event,
       phase: 'immediate',
     });
     void loadDriverDashboardDataRef.current?.();
     setTimeout(() => {
-      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+      perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
         role: 'driver',
         source: event,
         phase: 'delayed',
@@ -16307,7 +16308,7 @@ function DriverDashboard({
   const finalizeDriverForceEnd = useCallback(
     (data: Record<string, unknown>) => {
       const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
-      console.log('DRIVER_EXIT_REASON', {
+      perfLog('DRIVER_EXIT_REASON', {
         source: 'finalizeDriverForceEnd',
         reason: 'trip_force_ended',
         tagId: tid,
@@ -16400,29 +16401,29 @@ function DriverDashboard({
     userId: user?.id || null,
     userRole: 'driver',
     onCallCancelled: (data) => {
-      console.log('🚫 ŞOFÖR - ARAMA İPTAL EDİLDİ:', data);
+      perfLog('🚫 ŞOFÖR - ARAMA İPTAL EDİLDİ:', data);
       driverClearIncomingCall();
     },
     onCallEndedNew: (data) => {
-      console.log('📴 ŞOFÖR - CALL_ENDED:', data);
+      perfLog('📴 ŞOFÖR - CALL_ENDED:', data);
       driverClearIncomingCall();
     },
     onIncomingCall: (data) => {
-      console.log('📞 ŞOFÖR - GELEN ARAMA (socket):', data);
+      perfLog('📞 ŞOFÖR - GELEN ARAMA (socket):', data);
     },
     onCallAccepted: (data) => {
-      console.log('✅ ŞOFÖR - ARAMA KABUL:', data);
+      perfLog('✅ ŞOFÖR - ARAMA KABUL:', data);
       setCallAccepted(true);
     },
     onCallRejected: (data) => {
-      console.log('❌ ŞOFÖR - ESKİ ARAMA RED:', data);
+      perfLog('❌ ŞOFÖR - ESKİ ARAMA RED:', data);
       const rejectedBy = String((data as { rejected_by?: string })?.rejected_by ?? '').trim().toLowerCase();
       const myLo = String(user?.id ?? '').trim().toLowerCase();
       if (rejectedBy && myLo && rejectedBy === myLo) {
         return;
       }
       try {
-        console.log(
+        perfLog(
           'CALL_REJECT_AUDIO_STOP',
           JSON.stringify({
             role: 'driver',
@@ -16432,30 +16433,30 @@ function DriverDashboard({
       } catch {
         /* noop */
       }
-      console.log(
+      perfLog(
         'CALL_REJECT_UI_CLOSE',
         JSON.stringify({ call_id: (data as { call_id?: string })?.call_id ?? null })
       );
       runDriverOutgoingCallRejectCleanup('socket');
     },
     onCallTimeout: () => {
-      console.log('⏱️ ŞOFÖR - ARAMA ZAMAN AŞIMI (socket)');
+      perfLog('⏱️ ŞOFÖR - ARAMA ZAMAN AŞIMI (socket)');
       runDriverOutgoingCallRejectCleanup('timeout');
     },
     onCallEnded: (data) => {
-      console.log('📴 ŞOFÖR - ESKİ ARAMA BİTTİ:', data);
+      perfLog('📴 ŞOFÖR - ESKİ ARAMA BİTTİ:', data);
       setCallEnded(true);
     },
     onCallRinging: (data) => {
-      console.log('🔔 ŞOFÖR - ARAMA DURUMU:', data);
+      perfLog('🔔 ŞOFÖR - ARAMA DURUMU:', data);
       if (!data.success && !data.receiver_online) {
         setReceiverOffline(true);
       }
     },
     // Yeni TAG eventi - Yolcudan gelen TAG'ler
     onTagCreated: async (data) => {
-      console.log('🏷️ ŞOFÖR - YENİ TAG GELDİ (Socket):', data);
-      console.log('OFFER_EVENT_RECEIVED', {
+      perfLog('🏷️ ŞOFÖR - YENİ TAG GELDİ (Socket):', data);
+      perfLog('OFFER_EVENT_RECEIVED', {
         kind: 'tag_created',
         tag_id: data?.tag_id ?? null,
         passenger_id: data?.passenger_id ?? null,
@@ -16463,7 +16464,7 @@ function DriverDashboard({
       const pid = String(data?.passenger_id ?? '').toLowerCase();
       const uid = String(user?.id ?? '').toLowerCase();
       if (pid && uid && pid === uid) {
-        console.log('⚠️ ŞOFÖR: Kendi yolcu teklifim — listeye eklenmedi');
+        perfLog('⚠️ ŞOFÖR: Kendi yolcu teklifim — listeye eklenmedi');
         return;
       }
 
@@ -16474,7 +16475,7 @@ function DriverDashboard({
           pvkS === 'motorcycle' || pvkS === 'motor' ? 'motorcycle' : 'car';
         if (tripVk !== driverVehicleKind) {
           try {
-            console.log(
+            perfLog(
               '[normal_ride_driver_offer_filtered]',
               JSON.stringify({
                 reason: 'vehicle_mismatch_socket_show_anyway',
@@ -16486,7 +16487,7 @@ function DriverDashboard({
           } catch {
             /* noop */
           }
-          console.log(
+          perfLog(
             '⚠️ ŞOFÖR: Araç tipi uyarısı (kart yine listelenir):',
             tripVk,
             driverVehicleKind,
@@ -16499,13 +16500,13 @@ function DriverDashboard({
       setRequests(prev => {
         // 1. Aynı tag_id varsa EKLEME
         if (prev.some(r => r.id === data.tag_id)) {
-          console.log('⚠️ DUPLICATE TAG_ID, skipping:', data.tag_id);
+          perfLog('⚠️ DUPLICATE TAG_ID, skipping:', data.tag_id);
           return prev;
         }
         
         // 2. Aynı request_id varsa EKLEME
         if (data.request_id && prev.some(r => r.request_id === data.request_id)) {
-          console.log('⚠️ DUPLICATE REQUEST_ID, skipping:', data.request_id);
+          perfLog('⚠️ DUPLICATE REQUEST_ID, skipping:', data.request_id);
           return prev;
         }
         
@@ -16513,7 +16514,7 @@ function DriverDashboard({
         const filtered = prev.filter(r => {
           if (r.passenger_id !== data.passenger_id) return true;
           // Aynı yolcudan eski TAG'ı sil
-          console.log('🔄 REPLACING old request from same passenger:', r.id, '->', data.tag_id);
+          perfLog('🔄 REPLACING old request from same passenger:', r.id, '->', data.tag_id);
           return false;
         });
         
@@ -16586,7 +16587,7 @@ function DriverDashboard({
             .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
             .filter(Boolean);
           try {
-            console.log(
+            perfLog(
               JSON.stringify({
                 evt: 'DRIVER_OFFER_ADD',
                 source: 'onTagCreated_setRequests',
@@ -16597,7 +16598,7 @@ function DriverDashboard({
               }),
             );
             try {
-              console.log(
+              perfLog(
                 '[normal_ride_driver_offer_added]',
                 JSON.stringify({
                   tag_id: data.tag_id,
@@ -16607,7 +16608,7 @@ function DriverDashboard({
             } catch {
               /* noop */
             }
-            console.log(
+            perfLog(
               JSON.stringify({
                 evt: 'DRIVER_OFFER_LIST_AFTER_SET',
                 source: 'onTagCreated_append',
@@ -16626,10 +16627,10 @@ function DriverDashboard({
       // Frontend rota hesaplaması yok: yalnızca backend'in gönderdiği mesafe/süre kullanılır.
     },
     onTagCancelled: (data) => {
-      console.log('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
+      perfLog('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
       // Soft rolling revoke useSocket’ta onRemoveOffer’a yönlendirilir; burada yalnızca hard removal.
       try {
-        console.log(
+        perfLog(
           JSON.stringify({
             evt: 'DRIVER_OFFER_REMOVE_REQUESTED',
             kind: 'hard_immediate',
@@ -16651,7 +16652,7 @@ function DriverDashboard({
       setRequests(prev => {
         const next = prev.filter(r => r.id !== data.tag_id && r.request_id !== data.request_id);
         try {
-          console.log(
+          perfLog(
             JSON.stringify({
               evt: 'DRIVER_OFFER_REMOVE_EXECUTED',
               kind: 'hard_immediate',
@@ -16661,7 +16662,7 @@ function DriverDashboard({
               source: 'DriverDashboard:onTagCancelled',
             }),
           );
-          console.log(
+          perfLog(
             JSON.stringify({
               evt: 'DRIVER_OFFER_LIST_AFTER_SET',
               source: 'DriverDashboard:onTagCancelled_hard_filter',
@@ -16695,8 +16696,8 @@ function DriverDashboard({
       );
     },
     onTagMatched: (data) => {
-      console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
-      console.log('OFFER_EVENT_RECEIVED', { kind: 'tag_matched', tag_id: data?.tag_id ?? null });
+      perfLog('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
+      perfLog('OFFER_EVENT_RECEIVED', { kind: 'tag_matched', tag_id: data?.tag_id ?? null });
       void stopDriverOfferAlarmLoop('tag_matched');
       // 🔊 EŞLEŞME SESİ - Ding ding ding
       playMatchSound();
@@ -16763,20 +16764,20 @@ function DriverDashboard({
           ...coordFields,
           ...socketPlOnly,
         };
-        console.log('🔥 ŞOFÖR - ActiveTag ANINDA güncelleniyor:', matchedTag);
+        perfLog('🔥 ŞOFÖR - ActiveTag ANINDA güncelleniyor:', matchedTag);
         setActiveTag((prev) => mergeTripTagState(prev, matchedTag as Tag));
       }
       
       // Backend'den de çek (ekstra bilgiler için)
       driverJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
-      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+      perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
         role: 'driver',
         source: 'tag_matched',
         phase: 'immediate',
       });
       void loadDriverDashboardDataRef.current?.();
       setTimeout(() => {
-        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
           role: 'driver',
           source: 'tag_matched',
           phase: 'delayed',
@@ -16787,26 +16788,26 @@ function DriverDashboard({
     },
     // Backend accept_ride + `_emit_driver_on_the_way_route`: `ride_matched` / `driver_on_the_way`
     onRideMatched: (data) => {
-      console.log('✅ ŞOFÖR - ride_matched (Socket):', data);
+      perfLog('✅ ŞOFÖR - ride_matched (Socket):', data);
       const tid =
         (data as { tag_id?: string })?.tag_id ??
         (data as { tag?: { id?: string } })?.tag?.id ??
         null;
-      console.log('OFFER_EVENT_RECEIVED', { kind: 'ride_matched', tag_id: tid });
+      perfLog('OFFER_EVENT_RECEIVED', { kind: 'ride_matched', tag_id: tid });
       applyDriverMatchRouteSocket('ride_matched', data);
     },
     onDriverOnTheWay: (data) => {
-      console.log('✅ ŞOFÖR - driver_on_the_way (Socket):', data);
+      perfLog('✅ ŞOFÖR - driver_on_the_way (Socket):', data);
       applyDriverMatchRouteSocket('driver_on_the_way', data);
     },
     // Teklif kabul/red
     onOfferAccepted: (data) => {
-      console.log('✅ ŞOFÖR - TEKLİF KABUL EDİLDİ (Socket):', data);
+      perfLog('✅ ŞOFÖR - TEKLİF KABUL EDİLDİ (Socket):', data);
       void loadDriverDashboardDataRef.current?.();
       appAlert('🎉 Teklif Kabul Edildi!', 'Yolcu teklifinizi kabul etti.');
     },
     onOfferRejected: (data) => {
-      console.log('❌ ŞOFÖR - TEKLİF REDDEDİLDİ (Socket):', data);
+      perfLog('❌ ŞOFÖR - TEKLİF REDDEDİLDİ (Socket):', data);
       void loadDriverDashboardDataRef.current?.();
     },
     onOfferAlreadyTaken: () => {
@@ -16846,14 +16847,14 @@ function DriverDashboard({
       const ini = String(data.initiator_id);
       const informationalOnly = isForceEndInformationalPrompt(data);
       const requestKey = forceEndCounterpartyRequestKey(tid, ini, null);
-      console.log('FORCE_END_REQUEST_RECEIVED', {
+      perfLog('FORCE_END_REQUEST_RECEIVED', {
         tagId: tid,
         requestedBy: ini,
         requestKey,
         source: 'socket',
         screen: 'DriverDashboard',
       });
-      console.log('FORCE_END_REQUEST_SOURCE', {
+      perfLog('FORCE_END_REQUEST_SOURCE', {
         tagId: tid,
         requestedBy: ini,
         requestKey,
@@ -16861,7 +16862,7 @@ function DriverDashboard({
         screen: 'DriverDashboard',
       });
       if (driverForceEndModalHandledTagIdsRef.current.has(tid)) {
-        console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+        perfLog('FORCE_END_UI_IGNORED_DUPLICATE', {
           tagId: tid,
           requestedBy: ini,
           requestKey,
@@ -16883,7 +16884,7 @@ function DriverDashboard({
         informationalOnly,
         message: typeof data.message === 'string' ? data.message : undefined,
       });
-      console.log('FORCE_END_UI_OPEN', {
+      perfLog('FORCE_END_UI_OPEN', {
         tagId: tid,
         requestedBy: ini,
         requestKey,
@@ -16893,13 +16894,13 @@ function DriverDashboard({
       });
     },
     onTripForceEnded: (data) => {
-      console.log('TRIP_FORCE_ENDED_EVENT', data);
-      console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
+      perfLog('TRIP_FORCE_ENDED_EVENT', data);
+      perfLog('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
       finalizeDriverForceEnd(data as Record<string, unknown>);
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
     onShowRatingModal: (data) => {
-      console.log('⭐ ŞOFÖR - PUANLAMA MODALI AÇ (Socket):', data);
+      perfLog('⭐ ŞOFÖR - PUANLAMA MODALI AÇ (Socket):', data);
       if ((data as { should_rate?: boolean }).should_rate !== true) return;
 
       const scheduleDriverRating = () => {
@@ -16941,7 +16942,7 @@ function DriverDashboard({
     onBoardingConfirmed: (data) => {
       const tid = data?.tag_id;
       if (!tid) return;
-      console.log('BOARDING_CONFIRMED_SOCKET', {
+      perfLog('BOARDING_CONFIRMED_SOCKET', {
         tag_id: tid,
         role: 'driver',
         reason: (data as { reason?: string }).reason,
@@ -17158,14 +17159,14 @@ function DriverDashboard({
     }
     driverClearIncomingCall();
     const _tagPressD = String(activeTag.id ?? '');
-    console.log(
+    perfLog(
       'TAG_CALL_PRESS',
       JSON.stringify({ role: 'driver', tag_id: _tagPressD, call_type: callType }),
     );
     setCalling(true);
     try {
       await awaitSocketRegisterBeforeCriticalAction(driverEnsureSocketRegistered, 'voice_start_call');
-      console.log(
+      perfLog(
         'TAG_CALL_START_REQUEST',
         JSON.stringify({ role: 'driver', tag_id: _tagPressD, receiver_id: receiverId }),
       );
@@ -17234,7 +17235,7 @@ function DriverDashboard({
         appAlert('Hata', 'Arama başlatılamadı');
         return;
       }
-      console.log(
+      perfLog(
         'TAG_CALL_START_DONE',
         JSON.stringify({
           role: 'driver',
@@ -17266,7 +17267,7 @@ function DriverDashboard({
         callType,
       });
       setShowCallScreen(true);
-      console.log(
+      perfLog(
         'TAG_CALL_SCREEN_OPENED',
         JSON.stringify({
           role: 'driver',
@@ -17416,15 +17417,15 @@ function DriverDashboard({
   const buttonPulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    console.log('🔄 Sürücü polling başlatıldı');
+    perfLog('🔄 Sürücü polling başlatıldı');
     // Android 16 gibi cihazlarda aşırı istek ANR/çökme yaratabileceği için polling frekansını düşürüyoruz.
-    loadData().catch((e) => console.log('loadData polling error:', e));
+    loadData().catch((e) => perfLog('loadData polling error:', e));
     const interval = setInterval(() => {
-      loadData().catch((e) => console.log('loadData polling error:', e));
+      loadData().catch((e) => perfLog('loadData polling error:', e));
     }, 2500); // Socket kaçırırsa dispatch-pending-offer ile yakala
     driverDataPollingIntervalRef.current = interval;
     return () => {
-      console.log('🔄 Sürücü polling durduruldu');
+      perfLog('🔄 Sürücü polling durduruldu');
       clearInterval(interval);
       driverDataPollingIntervalRef.current = null;
     };
@@ -17483,7 +17484,7 @@ function DriverDashboard({
       clearTimeout(driverMatchTransitionTimerRef.current);
       driverMatchTransitionTimerRef.current = null;
     }
-    console.log(
+    perfLog(
       'TAG_MATCH_TRANSITION_SHOW',
       JSON.stringify({ role: 'driver', tag_id: id, from_status: prev }),
     );
@@ -17492,7 +17493,7 @@ function DriverDashboard({
     driverMatchTransitionTimerRef.current = setTimeout(() => {
       driverMatchTransitionTimerRef.current = null;
       setDriverMatchTransitionVisible(false);
-      console.log(
+      perfLog(
         'TAG_MATCH_TRANSITION_HIDE',
         JSON.stringify({ role: 'driver', tag_id: id, ms }),
       );
@@ -17516,7 +17517,7 @@ function DriverDashboard({
             setPassengerLocation({ latitude: Number(loc.latitude), longitude: Number(loc.longitude) });
           }
         } catch (error) {
-          console.log('Yolcu konumu alınamadı:', error);
+          perfLog('Yolcu konumu alınamadı:', error);
         }
       }, 10000); // active-tag + socket yedek; konum poll seyreltildi (SCALE-P1-C-F-A)
 
@@ -17529,9 +17530,9 @@ function DriverDashboard({
       return;
     }
     const eff = driverPassengerCoordsForMap(passengerLocation, activeTag);
-    console.log('DRIVER LOC:', userLocation);
-    console.log('PASSENGER LOC (polled state):', passengerLocation);
-    console.log('PASSENGER LOC (effective for map):', eff);
+    perfLog('DRIVER LOC:', userLocation);
+    perfLog('PASSENGER LOC (polled state):', passengerLocation);
+    perfLog('PASSENGER LOC (effective for map):', eff);
   }, [
     activeTag?.id,
     activeTag?.status,
@@ -17560,7 +17561,7 @@ function DriverDashboard({
             totalTrips: data.user.total_trips || 0,
             profilePhoto: data.user.profile_photo,
           });
-          console.log('📋 Yolcu detayları yüklendi:', data.user.name);
+          perfLog('📋 Yolcu detayları yüklendi:', data.user.name);
         }
       } catch (error) {
         console.error('Yolcu detayları alınamadı:', error);
@@ -17689,7 +17690,7 @@ function DriverDashboard({
       details: Record<string, boolean | number | string | null | undefined> = {},
     ) => {
       try {
-        console.log(
+        perfLog(
           '[driver_gps_diag]',
           JSON.stringify({
             event,
@@ -17699,7 +17700,7 @@ function DriverDashboard({
           }),
         );
       } catch {
-        console.log('[driver_gps_diag]', event);
+        perfLog('[driver_gps_diag]', event);
       }
     };
 
@@ -17865,7 +17866,7 @@ function DriverDashboard({
           ps === 'motorcycle' || ps === 'motor' ? 'motorcycle' : 'car';
         if (tripVk !== driverVehicleKind) {
           try {
-            console.log(
+            perfLog(
               '[normal_ride_driver_offer_filtered]',
               JSON.stringify({
                 reason: 'dispatch_pending_vehicle_mismatch_show_anyway',
@@ -17908,7 +17909,7 @@ function DriverDashboard({
         let pLng = Number(data.pickup_lng);
         if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) {
           try {
-            console.log(
+            perfLog(
               '[normal_ride_driver_offer_filtered]',
               JSON.stringify({
                 reason: 'dispatch_pending_pickup_fallback',
@@ -17966,7 +17967,7 @@ function DriverDashboard({
           .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
           .filter(Boolean);
       try {
-        console.log(
+        perfLog(
           JSON.stringify({
             evt: 'DRIVER_OFFER_LIST_AFTER_SET',
             source: 'loadDispatchPendingOffer_append',
@@ -18014,7 +18015,7 @@ function DriverDashboard({
         if (journeyRecoveryEligible || (inRecoveryWindow && !!prevSnap)) {
           driverActiveTagNullStreakRef.current += 1;
           if (driverActiveTagNullStreakRef.current < ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK) {
-            console.log('DRIVER_ACTIVE_TAG_EMPTY_DEFERRED', {
+            perfLog('DRIVER_ACTIVE_TAG_EMPTY_DEFERRED', {
               priorTagId: prevSnap?.id ?? null,
               priorStatus: prevSnap?.status ?? null,
               streak: driverActiveTagNullStreakRef.current,
@@ -18027,7 +18028,7 @@ function DriverDashboard({
             }, ACTIVE_JOURNEY_RECOVERY_RETRY_MS);
             return prevSnap as Record<string, unknown> | null;
           }
-          console.log('DRIVER_ACTIVE_TAG_EMPTY_CONFIRMED_CLEAR', {
+          perfLog('DRIVER_ACTIVE_TAG_EMPTY_CONFIRMED_CLEAR', {
             priorTagId: prevSnap?.id ?? null,
             priorStatus: prevSnap?.status ?? null,
             streak: driverActiveTagNullStreakRef.current,
@@ -18039,13 +18040,13 @@ function DriverDashboard({
           driverActiveTagNullStreakRef.current = 0;
         }
 
-        console.log('DRIVER_WAITING_EXIT_REASON', {
+        perfLog('DRIVER_WAITING_EXIT_REASON', {
           source: 'loadActiveTag',
           outcome: 'stay_dashboard',
           reason: 'active_tag_response_empty_idle',
           userId: user.id,
         });
-        console.log('ACTIVE_TAG_RESET', {
+        perfLog('ACTIVE_TAG_RESET', {
           role: 'driver',
           source: 'loadActiveTag_no_tag',
         });
@@ -18053,7 +18054,7 @@ function DriverDashboard({
         setActiveTag(null);
         // Bekleyen Marti / socket teklifleri `active-tag` boşken de geçerlidir; `setRequests([])` flicker üretirdi (polling ~2.5s).
         try {
-          console.log(
+          perfLog(
             JSON.stringify({
               evt: 'DRIVER_OFFER_LIST_AFTER_SET',
               source: 'loadActiveTag:success_no_active_tag',
@@ -18081,9 +18082,9 @@ function DriverDashboard({
             logPollingSkippedForceEndLock('driver', 'loadActiveTag_terminal_cancelled_gate');
             return null;
           }
-          console.log('🛑 ŞOFÖR loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
+          perfLog('🛑 ŞOFÖR loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
           const _dt = data.tag as Tag & { cancel_reason?: string; cancelled_at?: string };
-          console.log('DRIVER_EXIT_REASON', {
+          perfLog('DRIVER_EXIT_REASON', {
             source: 'loadActiveTag',
             reason: _dt.status === 'cancelled' ? 'tag_status_cancelled' : 'tag_status_completed',
             tagId: _dt.id,
@@ -18093,14 +18094,14 @@ function DriverDashboard({
             was_cancelled: data.was_cancelled === true,
             userId: user.id,
           });
-          console.log('ACTIVE_TAG_RESET', {
+          perfLog('ACTIVE_TAG_RESET', {
             role: 'driver',
             source: 'loadActiveTag_terminal',
             tagId: _dt.id,
             nextStatus: _dt.status,
             cancel_reason: _dt.cancel_reason ?? null,
           });
-          console.log('MATCH_SCREEN_CLEAR', {
+          perfLog('MATCH_SCREEN_CLEAR', {
             role: 'driver',
             source: 'loadActiveTag_terminal',
             tagId: _dt.id,
@@ -18108,7 +18109,7 @@ function DriverDashboard({
           });
 
           if (ratingModalVisibleRef.current) {
-            console.log('RATING_MODAL_DEFER_TERMINAL_NAV', {
+            perfLog('RATING_MODAL_DEFER_TERMINAL_NAV', {
               role: 'driver',
               tagId: _dt.id,
               status: _dt.status,
@@ -18135,7 +18136,7 @@ function DriverDashboard({
           lastCancelledTagId.current = data.tag.id;
           
           // Rol seçim ekranına yönlendir
-          console.log('DRIVER_SCREEN_RESET_TO_ROLE_SELECT', {
+          perfLog('DRIVER_SCREEN_RESET_TO_ROLE_SELECT', {
             source: 'loadActiveTag_terminal',
             tag_id: _dt.id,
             status: _dt.status,
@@ -18192,7 +18193,7 @@ function DriverDashboard({
         }
         setActiveTag((prev) => {
           if (data.success === false && prev && (prev.status === 'matched' || prev.status === 'in_progress')) {
-            console.log('DRIVER_STALE_MATCH_KEPT', {
+            perfLog('DRIVER_STALE_MATCH_KEPT', {
               role: 'driver',
               source: 'loadActiveTag',
               tagId: prev.id,
@@ -18200,7 +18201,7 @@ function DriverDashboard({
               apiSuccess: data.success,
               userId: user.id,
             });
-            console.log('OFFER_EVENT_RECEIVED', {
+            perfLog('OFFER_EVENT_RECEIVED', {
               kind: 'stale_match_kept',
               tag_id: prev.id,
               api_success: data.success,
@@ -18268,7 +18269,7 @@ function DriverDashboard({
         setActiveTag(buildOptimisticQuickMatchDriverTag(tid, acceptPayload, user));
         setScreen('dashboard');
         driverJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
-        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
           role: 'driver',
           source: 'quick_match_accept',
           phase: 'optimistic',
@@ -18470,14 +18471,14 @@ function DriverDashboard({
     if (!ini || ini === uid) return;
     const tid = String(activeTag.id);
     const requestKey = forceEndCounterpartyRequestKey(tid, iniRaw, er?.requested_at);
-    console.log('FORCE_END_REQUEST_RECEIVED', {
+    perfLog('FORCE_END_REQUEST_RECEIVED', {
       tagId: tid,
       requestedBy: iniRaw,
       requestKey,
       source: 'polling',
       screen: 'DriverDashboard',
     });
-    console.log('FORCE_END_REQUEST_SOURCE', {
+    perfLog('FORCE_END_REQUEST_SOURCE', {
       tagId: tid,
       requestedBy: iniRaw,
       requestKey,
@@ -18485,7 +18486,7 @@ function DriverDashboard({
       screen: 'DriverDashboard',
     });
     if (driverForceEndModalHandledTagIdsRef.current.has(tid)) {
-      console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+      perfLog('FORCE_END_UI_IGNORED_DUPLICATE', {
         tagId: tid,
         requestedBy: iniRaw,
         requestKey,
@@ -18507,7 +18508,7 @@ function DriverDashboard({
       initiatorType: it,
       initiatorName: it === 'driver' ? 'Sürücü' : 'Yolcu',
     });
-    console.log('FORCE_END_UI_OPEN', {
+    perfLog('FORCE_END_UI_OPEN', {
       tagId: tid,
       requestedBy: iniRaw,
       requestKey,
@@ -18530,7 +18531,7 @@ function DriverDashboard({
         const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
         const data = await response.json();
 
-        console.log('🔚 ŞOFÖR - Trip end request check:', JSON.stringify(data));
+        perfLog('🔚 ŞOFÖR - Trip end request check:', JSON.stringify(data));
 
         const pollRequestKindDriver = (data as { request_kind?: string }).request_kind;
         const tagForceEndPendingDriver = isPendingForceEndCounterparty(activeTag.end_request);
@@ -18546,7 +18547,7 @@ function DriverDashboard({
           );
           setShowTripEndModal(false);
           setTripEndRequesterType(null);
-          console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+          perfLog('FORCE_END_UI_IGNORED_DUPLICATE', {
             tagId: activeTag.id,
             requestedBy: (data as { requester_id?: string }).requester_id,
             requestKey: rk,
@@ -18567,7 +18568,7 @@ function DriverDashboard({
               String(driverPassengerForceEndReview.tagId) === String(activeTag.id));
           if (blockLegacyOpen) {
             if (__DEV__) {
-              console.log('FORCE_END_LEGACY_TRIP_END_OPEN_BLOCKED', {
+              perfLog('FORCE_END_LEGACY_TRIP_END_OPEN_BLOCKED', {
                 screen: 'DriverDashboard',
                 tagId: activeTag.id,
                 showTripEndModal,
@@ -18579,12 +18580,12 @@ function DriverDashboard({
             setTripEndRequesterType(null);
             return;
           }
-          console.log('🔚 ŞOFÖR - Bitirme isteği VAR! Requester:', data.requester_type);
+          perfLog('🔚 ŞOFÖR - Bitirme isteği VAR! Requester:', data.requester_type);
           setTripEndRequesterType(data.requester_type || 'unknown');
           setShowTripEndModal(true);
         }
       } catch (error) {
-        console.log('Check trip end error:', error);
+        perfLog('Check trip end error:', error);
       }
     };
 
@@ -18607,7 +18608,7 @@ function DriverDashboard({
   useEffect(() => {
     if (!showTripEndModal) return;
     if (legacyTripEndModalVisible(showTripEndModal, activeTag, driverPassengerForceEndReview)) return;
-    console.log('FORCE_END_LEGACY_MODAL_STALE_SWEEP', {
+    perfLog('FORCE_END_LEGACY_MODAL_STALE_SWEEP', {
       screen: 'DriverDashboard',
       tagId: activeTag?.id,
       showTripEndModal,
@@ -18653,7 +18654,7 @@ function DriverDashboard({
               pvkS === 'motorcycle' || pvkS === 'motor' ? 'motorcycle' : 'car';
             if (tripVk !== driverVehicleKind) {
               try {
-                console.log(
+                perfLog(
                   '[normal_ride_driver_offer_filtered]',
                   JSON.stringify({
                     reason: 'driver_requests_poll_vehicle_mismatch_show_anyway',
@@ -18699,7 +18700,7 @@ function DriverDashboard({
           let pickup_lng = Number(raw.pickup_lng);
           if (!Number.isFinite(pickup_lat) || !Number.isFinite(pickup_lng)) {
             try {
-              console.log(
+              perfLog(
                 '[normal_ride_driver_offer_filtered]',
                 JSON.stringify({
                   reason: 'poll_pickup_coords_fallback_driver_location',
@@ -18799,7 +18800,7 @@ function DriverDashboard({
         }
 
         try {
-          console.log(
+          perfLog(
             JSON.stringify({
               evt: 'DRIVER_OFFER_LIST_AFTER_SET',
               source: 'loadRequests_merge_prune',
@@ -18933,7 +18934,7 @@ function DriverDashboard({
     const requestId = tag?.request_id || tagId; // Fallback to tagId
     const passengerId = tag?.passenger_id;
     
-    console.log('🚀 TEKLİF GÖNDERİLİYOR (HIZLI):', {
+    perfLog('🚀 TEKLİF GÖNDERİLİYOR (HIZLI):', {
       price, tagId, requestId, passengerId,
       socketSendOffer: !!socketSendOffer
     });
@@ -18957,9 +18958,9 @@ function DriverDashboard({
         vehicle_model: user.vehicle_model,
         vehicle_color: user.vehicle_color,
       };
-      console.log('🔥 [DRIVER] Socket emit YAPILIYOR:', JSON.stringify(offerPayload));
+      perfLog('🔥 [DRIVER] Socket emit YAPILIYOR:', JSON.stringify(offerPayload));
       socketSendOffer(offerPayload);
-      console.log('✅ [DRIVER] Socket emit TAMAMLANDI!');
+      perfLog('✅ [DRIVER] Socket emit TAMAMLANDI!');
     } else {
       console.error('❌ socketSendOffer TANIMLANMAMIŞ!');
     }
@@ -18975,7 +18976,7 @@ function DriverDashboard({
         longitude: userLocation?.longitude || 0
       })
     }).then(res => res.json()).then(data => {
-      console.log('📥 BACKEND KAYIT:', data.success ? '✅' : '❌', data.offer_id || data.detail);
+      perfLog('📥 BACKEND KAYIT:', data.success ? '✅' : '❌', data.offer_id || data.detail);
     }).catch(err => {
       console.error('❌ BACKEND KAYIT HATASI:', err.message);
     });
@@ -19011,7 +19012,7 @@ function DriverDashboard({
         setRequests(prev => prev.filter(r => r.id !== tagId));
       }
     } catch (error) {
-      console.log('Dismiss error:', error);
+      perfLog('Dismiss error:', error);
     }
   };
 
@@ -19029,7 +19030,7 @@ function DriverDashboard({
     
     // 🔥 Socket ile yolcuya bildir
     if (socketSendOffer && tag) {
-      console.log('🔥 [SÜRÜCÜ] Socket teklif gönderiliyor...', { tagId, price, socketConnected });
+      perfLog('🔥 [SÜRÜCÜ] Socket teklif gönderiliyor...', { tagId, price, socketConnected });
       socketSendOffer({
         tag_id: tagId,
         driver_id: user.id,
@@ -19037,7 +19038,7 @@ function DriverDashboard({
         passenger_id: tag.passenger_id,
         price: price,
       });
-      console.log('🔥 [SÜRÜCÜ] Socket teklif ÇAĞRILDI!');
+      perfLog('🔥 [SÜRÜCÜ] Socket teklif ÇAĞRILDI!');
       
       // Kartı 1 saniye sonra kaldır (socket gönderim için zaman ver)
       setTimeout(() => {
@@ -19062,15 +19063,15 @@ function DriverDashboard({
     .then(data => {
       setOfferSending(false);
       if (data.success || data.offer_id) {
-        console.log('✅ Teklif Supabase\'e kaydedildi');
+        perfLog('✅ Teklif Supabase\'e kaydedildi');
       } else {
-        console.log('⚠️ Supabase kayıt hatası:', data.detail);
+        perfLog('⚠️ Supabase kayıt hatası:', data.detail);
         // Hata olursa geri ekle (opsiyonel)
       }
     })
     .catch((err) => {
       setOfferSending(false);
-      console.log('⚠️ REST API hatası (socket zaten gönderdi):', err);
+      perfLog('⚠️ REST API hatası (socket zaten gönderdi):', err);
     });
   };
 
@@ -19234,7 +19235,7 @@ function DriverDashboard({
     const inMatched =
       !!activeTag &&
       (activeTag.status === 'matched' || activeTag.status === 'in_progress');
-    console.log('OFFER_STATE_UPDATED', {
+    perfLog('OFFER_STATE_UPDATED', {
       requests_len: requests.length,
       active_tag_id: activeTag?.id ?? null,
       active_status: activeTag?.status ?? null,
@@ -19242,7 +19243,7 @@ function DriverDashboard({
       driver_in_active_trip_ui: inMatched && !hasPendingOtherTrip,
     });
     try {
-      console.log(
+      perfLog(
         JSON.stringify({
           evt: 'DRIVER_OFFER_RENDER_STATE',
           requests_len: requests.length,
@@ -19263,7 +19264,7 @@ function DriverDashboard({
       !!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) &&
       !hasPendingRequestForOtherTripGuard;
     try {
-      console.log(
+      perfLog(
         JSON.stringify({
           evt: 'DRIVER_OFFER_RENDER_GUARD',
           driver_in_active_trip: driverInActiveTripGuard,
@@ -19385,7 +19386,7 @@ function DriverDashboard({
     (activeTag.status === 'matched' || activeTag.status === 'in_progress')
   );
 
-  console.log('OFFER_RENDER_CONDITION', {
+  perfLog('OFFER_RENDER_CONDITION', {
     driver_in_active_trip: driverInActiveTrip,
     has_pending_request_for_other_trip: hasPendingRequestForOtherTrip,
     requests_len: requests.length,
@@ -19451,7 +19452,7 @@ function DriverDashboard({
                     router.push('/trusted-network?role=driver' as never);
                   }}
                   onToggleOnline={(isOnline) => {
-                    console.log('Sürücü online durumu değişti:', isOnline);
+                    perfLog('Sürücü online durumu değişti:', isOnline);
                   }}
                   expanded={driverDashboardExpanded}
                   onExpandToggle={() => setDriverDashboardExpanded(!driverDashboardExpanded)}
@@ -19599,14 +19600,14 @@ function DriverDashboard({
                 }
                 setScreen('dashboard');
                 driverJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
-                console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+                perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
                   role: 'driver',
                   source: 'accept_offer',
                   phase: 'immediate',
                 });
                 void loadData();
                 setTimeout(() => {
-                  console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+                  perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
                     role: 'driver',
                     source: 'accept_offer',
                     phase: 'delayed',
@@ -19802,7 +19803,7 @@ function DriverDashboard({
             onDriverEnteredDestinationNavigation={handleDriverEnteredDestinationNavigation}
             driverYolcuyaGitCoordContext={driverYolcuyaGitCoordContext}
             onDriverYolcuyaGitAttempt={() => {
-              console.log('DRIVER_NAV_COORDS', {
+              perfLog('DRIVER_NAV_COORDS', {
                 driverLocation: userLocation,
                 activeTag,
                 passenger_location: activeTag?.passenger_location,
@@ -19940,7 +19941,7 @@ function DriverDashboard({
                       driver_id: String(activeTag.driver_id ?? ''),
                     });
                   } catch (socketErr) {
-                    console.log('Socket force end hatası:', socketErr);
+                    perfLog('Socket force end hatası:', socketErr);
                   }
                 }
                 applyDriverForceEndHttpResult(activeTag.id, user.id, result, () => {
@@ -19976,7 +19977,7 @@ function DriverDashboard({
               }
             }}
             onForceEnd={async () => {
-              console.log('⚡ ŞOFÖR - ZORLA BİTİR başlatılıyor...');
+              perfLog('⚡ ŞOFÖR - ZORLA BİTİR başlatılıyor...');
               await awaitSocketRegisterBeforeCriticalAction(
                 driverEnsureSocketRegistered,
                 'force_end_request',
@@ -20000,7 +20001,7 @@ function DriverDashboard({
                   immediate?: boolean;
                   pre_boarding?: boolean;
                 };
-                console.log('🔥 Force end API yanıtı:', result);
+                perfLog('🔥 Force end API yanıtı:', result);
                 if (!response.ok || result.success === false) {
                   appAlert('Hata', result.detail || result.message || 'İşlem başarısız');
                   return;
@@ -20016,7 +20017,7 @@ function DriverDashboard({
                       driver_id: String(activeTag.driver_id ?? ''),
                     });
                   } catch (socketErr) {
-                    console.log('Socket force end hatası:', socketErr);
+                    perfLog('Socket force end hatası:', socketErr);
                   }
                 }
                 applyDriverForceEndHttpResult(activeTag.id, user.id, result, () => {
@@ -20043,7 +20044,7 @@ function DriverDashboard({
                   void loadData();
                 });
               } catch (err) {
-                console.log('Force end API hatası:', err);
+                perfLog('Force end API hatası:', err);
                 appAlert('Hata', 'İşlem başarısız');
               }
             }}
@@ -20138,7 +20139,7 @@ function DriverDashboard({
                   { 
                     text: 'Diğer (Açıklama Yaz)', 
                     onPress: () => {
-                      console.log('[PAX_DEBUG] driver trip onReport passenger > Diğer');
+                      perfLog('[PAX_DEBUG] driver trip onReport passenger > Diğer');
                       const ok =
                         isAlertPromptCallable() &&
                         callAlertPrompt(
@@ -20205,7 +20206,7 @@ function DriverDashboard({
             onIncomingMessageHandled={() => setDriverIncomingMessage(null)}
             onSendMessage={(text, receiverId) => {
               // Socket ile ANLIK gönder
-              console.log('📤 [SÜRÜCÜ] onSendMessage callback:', { 
+              perfLog('📤 [SÜRÜCÜ] onSendMessage callback:', { 
                 text, 
                 receiverId, 
                 activeTagPassengerId: activeTag?.passenger_id,
@@ -20217,7 +20218,7 @@ function DriverDashboard({
                 return;
               }
               if (driverEmitSendMessage) {
-                console.log('📤 [SÜRÜCÜ] driverEmitSendMessage çağrılıyor...');
+                perfLog('📤 [SÜRÜCÜ] driverEmitSendMessage çağrılıyor...');
                 driverEmitSendMessage({
                   sender_id: user?.id || '',
                   sender_name: user?.name || 'Sürücü',
@@ -20225,7 +20226,7 @@ function DriverDashboard({
                   message: text,
                   tag_id: activeTag?.id,
                 });
-                console.log('✅ [SÜRÜCÜ] driverEmitSendMessage çağrıldı!');
+                perfLog('✅ [SÜRÜCÜ] driverEmitSendMessage çağrıldı!');
               } else {
                 console.error('❌ [SÜRÜCÜ] driverEmitSendMessage TANIMLI DEĞİL!');
               }
@@ -20310,7 +20311,7 @@ function DriverDashboard({
                       driver_id: String(activeTag.driver_id ?? ''),
                     });
                   } catch (socketErr) {
-                    console.log('Socket force end hatası:', socketErr);
+                    perfLog('Socket force end hatası:', socketErr);
                   }
                 }
                 applyDriverForceEndHttpResult(activeTag.id, user.id, result, () => {
@@ -20495,7 +20496,7 @@ function DriverDashboard({
             driverClearIncomingCall();
           }}
           onClose={() => {
-            console.log('📞 ŞOFÖR - Arama ekranı kapandı');
+            perfLog('📞 ŞOFÖR - Arama ekranı kapandı');
             setShowCallScreen(false);
             setCallScreenData(null);
             setCalling(false);
@@ -20625,14 +20626,14 @@ function DriverDashboard({
             setDriverPassengerForceEndReview(null);
             return;
           }
-          console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'driver' });
+          perfLog('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'driver' });
           setDriverForceEndReviewSubmitting(true);
           try {
             await awaitSocketRegisterBeforeCriticalAction(
               driverEnsureSocketRegistered,
               'force_end_confirm',
             );
-            console.log('FRONTEND_FORCE_END_CONFIRM_START', {
+            perfLog('FRONTEND_FORCE_END_CONFIRM_START', {
               tag_id: tid,
               user_id: user.id,
               ender_id: driverPassengerForceEndReview.initiatorId,
@@ -20648,7 +20649,7 @@ function DriverDashboard({
             const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
             const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
             const reqKey = driverForceEndLastRequestKeyRef.current;
-            console.log('FORCE_END_CONFIRM_SENT', {
+            perfLog('FORCE_END_CONFIRM_SENT', {
               tagId: tid,
               requestedBy: driverPassengerForceEndReview.initiatorId,
               requestKey: reqKey,
@@ -20669,8 +20670,8 @@ function DriverDashboard({
               appAlert('Hata', (j as { detail?: string }).detail || 'Onay gönderilemedi.');
               return;
             }
-            console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'driver' });
-            console.log('FORCE_END_FINALIZED', {
+            perfLog('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'driver' });
+            perfLog('FORCE_END_FINALIZED', {
               tagId: tid,
               requestedBy: driverPassengerForceEndReview.initiatorId,
               requestKey: reqKey,
@@ -20678,7 +20679,7 @@ function DriverDashboard({
               screen: 'DriverDashboard',
               approved: true,
             });
-            console.log('FORCE_END_STATE_CLEARED', {
+            perfLog('FORCE_END_STATE_CLEARED', {
               tagId: tid,
               requestKey: reqKey,
               source: 'local',
@@ -20702,14 +20703,14 @@ function DriverDashboard({
         onReject={async () => {
           if (!driverPassengerForceEndReview || !user?.id || driverForceEndReviewSubmitting) return;
           const tid = driverPassengerForceEndReview.tagId;
-          console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: false, role: 'driver' });
+          perfLog('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: false, role: 'driver' });
           setDriverForceEndReviewSubmitting(true);
           try {
             await awaitSocketRegisterBeforeCriticalAction(
               driverEnsureSocketRegistered,
               'force_end_confirm',
             );
-            console.log('FRONTEND_FORCE_END_CONFIRM_START', {
+            perfLog('FRONTEND_FORCE_END_CONFIRM_START', {
               tag_id: tid,
               user_id: user.id,
               ender_id: driverPassengerForceEndReview.initiatorId,
@@ -20725,7 +20726,7 @@ function DriverDashboard({
             const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
             const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
             const reqKey = driverForceEndLastRequestKeyRef.current;
-            console.log('FORCE_END_REJECT_SENT', {
+            perfLog('FORCE_END_REJECT_SENT', {
               tagId: tid,
               requestedBy: driverPassengerForceEndReview.initiatorId,
               requestKey: reqKey,
@@ -20746,8 +20747,8 @@ function DriverDashboard({
               appAlert('Hata', (j as { detail?: string }).detail || 'Yanıt gönderilemedi.');
               return;
             }
-            console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'driver' });
-            console.log('FORCE_END_FINALIZED', {
+            perfLog('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'driver' });
+            perfLog('FORCE_END_FINALIZED', {
               tagId: tid,
               requestedBy: driverPassengerForceEndReview.initiatorId,
               requestKey: reqKey,
@@ -20755,7 +20756,7 @@ function DriverDashboard({
               screen: 'DriverDashboard',
               approved: false,
             });
-            console.log('FORCE_END_STATE_CLEARED', {
+            perfLog('FORCE_END_STATE_CLEARED', {
               tagId: tid,
               requestKey: reqKey,
               source: 'local',
