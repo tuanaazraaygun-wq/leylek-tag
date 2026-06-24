@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -58,7 +59,9 @@ export function LoginScreen({
   styles,
 }: LoginScreenProps) {
   const { tokens, lightSurfaces, isAuthLight } = useAuthTheme();
+  const insets = useSafeAreaInsets();
   const { height: winH, width: winW } = useWindowDimensions();
+  const trustBottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 8 : 6);
   const isShort = winH < 560;
   const isCompact = winH < 660;
   const padH = Math.min(22, Math.max(14, Math.round(winW * 0.045)));
@@ -190,7 +193,14 @@ export function LoginScreen({
           <Text style={[pa.supportLabel, lightSurfaces?.supportLabel]}>Destek</Text>
         </TouchableOpacity>
 
-        <View style={[trustStyles.wrap, isAuthLight && trustStyles.wrapLight]} accessibilityRole="summary">
+        <View
+          style={[
+            trustStyles.wrap,
+            isAuthLight && trustStyles.wrapLight,
+            { marginBottom: trustBottomPad },
+          ]}
+          accessibilityRole="summary"
+        >
           <PremiumText variant="caption" muted style={[trustStyles.stripLabel, isAuthLight && trustStyles.stripLabelLight]}>
             LeylekTAG güven katmanı
           </PremiumText>
@@ -288,7 +298,8 @@ function SupportModalInner({
 const trustStyles = StyleSheet.create({
   wrap: {
     alignSelf: 'stretch',
-    marginTop: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.xxs,
     opacity: 0.92,
   },
   wrapLight: {

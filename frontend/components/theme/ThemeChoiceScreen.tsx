@@ -23,8 +23,7 @@ import type { LhThemeTokens, ThemeMode } from '../../lib/theme/types';
 import { tapButtonHaptic } from '../../utils/touchHaptics';
 import * as Haptics from 'expo-haptics';
 
-const LOGO_DARK = require('../../assets/images/leylek-logo-premium.png');
-const LOGO_LIGHT = require('../../assets/images/leylek-logo-premium-transparent.png');
+const LOGO = require('../../assets/images/leylek-logo-premium.png');
 
 type FirstRunThemeMode = 'dark' | 'light';
 
@@ -127,7 +126,7 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
         >
           <View style={styles.brandCluster}>
             <Image
-              source={isLightPreview ? LOGO_LIGHT : LOGO_DARK}
+              source={LOGO}
               style={styles.logo}
               resizeMode="contain"
               accessibilityIgnoresInvertColors

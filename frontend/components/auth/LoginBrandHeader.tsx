@@ -17,8 +17,8 @@ export type LoginBrandHeaderProps = {
 
 const LHIS_DEFAULT_CAPTION = 'Güvenli yolculuk paylaşımı';
 
-const LOGO_DARK = require('../../assets/images/leylek-logo-premium.png');
-const LOGO_LIGHT = require('../../assets/images/leylek-logo-premium-transparent.png');
+/** Premium Family A — same asset on light/dark auth; dark plate reads on both themes. */
+const LOGO_PREMIUM = require('../../assets/images/leylek-logo-premium.png');
 
 export function LoginBrandHeader({
   usableWidth,
@@ -106,7 +106,7 @@ export function LoginBrandHeader({
       <View style={[styles.cluster, clusterStyle]}>
         <View style={styles.logoRow}>
           <Image
-            source={premiumOnLight ? LOGO_LIGHT : LOGO_DARK}
+            source={LOGO_PREMIUM}
             style={[styles.logo, isCompact && styles.logoCompact, isShort && styles.logoShort]}
             resizeMode="contain"
             accessibilityIgnoresInvertColors
@@ -132,7 +132,7 @@ export function LoginBrandHeader({
     <View style={[styles.cluster, clusterStyle]}>
       <View style={styles.logoRow}>
         <Image
-          source={require('../../assets/images/leylek-logo-premium.png')}
+          source={LOGO_PREMIUM}
           style={[styles.logo, isCompact && styles.logoCompact, isShort && styles.logoShort]}
           resizeMode="contain"
         />

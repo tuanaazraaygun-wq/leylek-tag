@@ -226,8 +226,9 @@ export function PremiumAuthScreenShell({
   const padH = Math.min(22, Math.max(14, Math.round(winW * 0.045)));
   const columnW = Math.min(400, winW - padH * 2);
   const isCompact = winH < 660;
-  const scrollBottomPad = Math.max(insets.bottom, 12);
+  const scrollBottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
   const kbOffset = Platform.OS === 'ios' ? insets.top + 6 : 0;
+  const contentMinHeight = Math.max(winH - insets.top - insets.bottom - 8, 480);
 
   const layerStyle = parentStyles.loginLayerAboveClouds as Record<string, unknown>;
   const kavStyle = parentStyles.loginKavFlex as Record<string, unknown>;
@@ -238,7 +239,7 @@ export function PremiumAuthScreenShell({
     <View style={[pa.root, lightSurfaces?.root]}>
       <CockpitBackground />
 
-      <SafeAreaView style={pa.safe} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={pa.safe} edges={['top', 'left', 'right', 'bottom']}>
         <View style={[layerStyle, pa.flexOne]}>
           <KeyboardAvoidingView style={kavStyle} behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled keyboardVerticalOffset={kbOffset}>
             <ScrollView
@@ -247,10 +248,10 @@ export function PremiumAuthScreenShell({
                 scrollContentStyle as object,
                 {
                   paddingTop: isCompact ? 4 : 8,
-                  paddingBottom: scrollBottomPad + 16,
+                  paddingBottom: scrollBottomPad + (isCompact ? 12 : 20),
                   paddingHorizontal: padH,
                   flexGrow: 1,
-                  minHeight: Math.max(winH - insets.top - 8, 480),
+                  minHeight: contentMinHeight,
                   alignItems: 'center',
                 },
               ]}
