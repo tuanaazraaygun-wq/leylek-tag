@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Text, View, StyleSheet, ViewStyle, type TextStyle } from 'react-native';
+import { Image, Text, View, StyleSheet, ViewStyle } from 'react-native';
 import { useAuthTheme } from './premiumAuthChrome';
 
 export type LoginBrandHeaderProps = {
@@ -17,6 +17,9 @@ export type LoginBrandHeaderProps = {
 
 const LHIS_DEFAULT_CAPTION = 'Güvenli yolculuk paylaşımı';
 
+const LOGO_DARK = require('../../assets/images/leylek-logo-premium.png');
+const LOGO_LIGHT = require('../../assets/images/leylek-logo-premium-transparent.png');
+
 export function LoginBrandHeader({
   usableWidth,
   isCompact,
@@ -26,29 +29,14 @@ export function LoginBrandHeader({
   premiumHeadline,
   subtitleVariant = 'brand',
 }: LoginBrandHeaderProps) {
-  const { isAuthLight, tokens } = useAuthTheme();
+  const { isAuthLight } = useAuthTheme();
   const clusterStyle: ViewStyle = {
     width: usableWidth,
     maxWidth: usableWidth,
   };
 
   const isPremium = theme === 'premium';
-  const premiumLightText = isPremium && isAuthLight;
-
-  const leylekColorStyle: TextStyle = isPremium
-    ? premiumLightText
-      ? { color: '#0D1117' }
-      : styles.wordmarkLeylekPremium
-    : styles.wordmarkLeylekDefault;
-
-  const tagColorStyle: TextStyle = isPremium
-    ? premiumLightText
-      ? { color: '#00D4AA' }
-      : styles.wordmarkTagPremium
-    : styles.wordmarkTagDefault;
-
-  const premiumSubtitleColorStyle: TextStyle | null = premiumLightText ? { color: tokens.text.muted } : null;
-  const premiumHeadlineColorStyle: TextStyle | null = premiumLightText ? { color: tokens.text.primary } : null;
+  const premiumOnLight = isPremium && isAuthLight;
 
   const useBodySubtitle = subtitleVariant === 'body' && !!subtitle?.trim();
 
@@ -64,28 +52,48 @@ export function LoginBrandHeader({
       accessibilityRole="header"
       accessibilityLabel="LeylekTAG"
     >
-      <Text style={[styles.wordmarkLeylek, leylekColorStyle, isCompact && styles.wordmarkLeylekCompact]}>
+      <Text
+        style={[
+          styles.wordmarkLeylek,
+          premiumOnLight || !isPremium ? styles.wordmarkLeylekDefault : styles.wordmarkLeylekPremium,
+          isCompact && styles.wordmarkLeylekCompact,
+        ]}
+      >
         Leylek
       </Text>
-      <Text style={[styles.wordmarkTag, tagColorStyle, isCompact && styles.wordmarkTagCompact]}>
+      <Text
+        style={[
+          styles.wordmarkTag,
+          premiumOnLight ? styles.wordmarkTagLight : isPremium ? styles.wordmarkTagPremium : styles.wordmarkTagDefault,
+          isCompact && styles.wordmarkTagCompact,
+        ]}
+      >
         TAG
       </Text>
     </Text>
   ) : null;
 
   if (isPremium) {
-    const subtitleBase = useBodySubtitle ? styles.taglinePremiumBody : styles.taglineLhCaption;
+    const subtitleBase = useBodySubtitle
+      ? premiumOnLight
+        ? styles.taglinePremiumBodyLight
+        : styles.taglinePremiumBody
+      : premiumOnLight
+        ? styles.taglineLhCaptionLightPremium
+        : styles.taglineLhCaption;
     const subtitleExtras = (
       useBodySubtitle
-        ? [isShort ? styles.taglinePremiumBodyShort : null, isCompact ? styles.taglinePremiumBodyCompact : null]
+        ? [
+            isShort ? (premiumOnLight ? styles.taglinePremiumBodyLightShort : styles.taglinePremiumBodyShort) : null,
+            isCompact ? (premiumOnLight ? styles.taglinePremiumBodyLightCompact : styles.taglinePremiumBodyCompact) : null,
+          ]
         : [isShort ? styles.taglineLhCaptionShort : null, isCompact ? styles.taglineLhCaptionCompact : null]
     ).filter(Boolean) as object[];
 
     const titleBlock = premiumHeadline?.trim() ? (
       <Text
         style={[
-          styles.premiumAlternateHeadline,
-          premiumHeadlineColorStyle,
+          premiumOnLight ? styles.premiumAlternateHeadlineLight : styles.premiumAlternateHeadline,
           isCompact && styles.premiumAlternateHeadlineCompact,
         ]}
         numberOfLines={2}
@@ -94,31 +102,21 @@ export function LoginBrandHeader({
       </Text>
     ) : null;
 
-    const logoFrameStyle: ViewStyle | null = premiumLightText
-      ? {
-          backgroundColor: tokens.accent.glowLow,
-          borderColor: tokens.accent.glowMid,
-        }
-      : null;
-
     return (
       <View style={[styles.cluster, clusterStyle]}>
-        <View style={[styles.logoRow, premiumLightText && styles.logoRowLight]}>
-          <View style={[styles.logoWell, logoFrameStyle]}>
-            <Image
-              source={require('../../assets/images/leylek-logo-premium.png')}
-              style={[styles.logo, isCompact && styles.logoCompact, isShort && styles.logoShort]}
-              resizeMode="contain"
-              accessibilityIgnoresInvertColors
-            />
-          </View>
+        <View style={styles.logoRow}>
+          <Image
+            source={premiumOnLight ? LOGO_LIGHT : LOGO_DARK}
+            style={[styles.logo, isCompact && styles.logoCompact, isShort && styles.logoShort]}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
         </View>
         {wordmarkBlock}
         {titleBlock}
         <Text
           style={[
             subtitleBase,
-            premiumSubtitleColorStyle,
             showWordmark ? styles.taglineAfterWordmark : styles.taglineAfterHeadline,
             ...subtitleExtras,
           ]}
@@ -160,18 +158,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoRowLight: {
-    paddingHorizontal: 4,
-  },
-  logoWell: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 28,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'transparent',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
   wordmarkRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -194,7 +180,7 @@ const styles = StyleSheet.create({
     color: 'rgba(243, 248, 255, 0.94)',
   },
   wordmarkLeylekDefault: {
-    color: '#1B1B1E',
+    color: '#0D1117',
   },
   wordmarkLeylekCompact: {
     fontSize: 23,
@@ -207,6 +193,9 @@ const styles = StyleSheet.create({
   },
   wordmarkTagPremium: {
     color: '#22D3EE',
+  },
+  wordmarkTagLight: {
+    color: '#00D4AA',
   },
   wordmarkTagDefault: {
     color: '#0891B2',
@@ -232,6 +221,15 @@ const styles = StyleSheet.create({
   },
   taglineLhCaptionDefault: {
     color: '#475569',
+  },
+  taglineLhCaptionLightPremium: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#475569',
+    textAlign: 'center',
+    fontWeight: '600',
+    paddingHorizontal: 12,
+    letterSpacing: 0.2,
   },
   taglineLhCaptionShort: {
     marginTop: 6,
@@ -259,6 +257,15 @@ const styles = StyleSheet.create({
     fontSize: 19,
     paddingHorizontal: 6,
   },
+  premiumAlternateHeadlineLight: {
+    marginTop: 10,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0D1117',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+    paddingHorizontal: 10,
+  },
   taglinePremiumBody: {
     marginTop: 10,
     fontSize: 14,
@@ -280,7 +287,27 @@ const styles = StyleSheet.create({
     letterSpacing: 0.08,
     paddingHorizontal: 6,
   },
-  /** Görünür kutuda nefes: kuş görseli içte `contain` ile tam görünür */
+  taglinePremiumBodyLight: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#475569',
+    textAlign: 'center',
+    fontWeight: '600',
+    paddingHorizontal: 12,
+  },
+  taglinePremiumBodyLightShort: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingHorizontal: 8,
+  },
+  taglinePremiumBodyLightCompact: {
+    fontSize: 12,
+    lineHeight: 17,
+    letterSpacing: 0.08,
+    paddingHorizontal: 6,
+  },
   logo: {
     width: 100,
     height: 100,

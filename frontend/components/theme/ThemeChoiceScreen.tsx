@@ -3,7 +3,7 @@
  * Black / White only; tap applies theme immediately; Continue marks one-time done.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -23,7 +23,8 @@ import type { LhThemeTokens, ThemeMode } from '../../lib/theme/types';
 import { tapButtonHaptic } from '../../utils/touchHaptics';
 import * as Haptics from 'expo-haptics';
 
-const LOGO = require('../../assets/images/leylek-logo-premium.png');
+const LOGO_DARK = require('../../assets/images/leylek-logo-premium.png');
+const LOGO_LIGHT = require('../../assets/images/leylek-logo-premium-transparent.png');
 
 type FirstRunThemeMode = 'dark' | 'light';
 
@@ -65,12 +66,18 @@ export type ThemeChoiceScreenProps = {
 export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScreenProps) {
   const insets = useSafeAreaInsets();
   const { width: winW } = useWindowDimensions();
-  const { setTheme, tokens, themeMode } = useTheme();
+  const { setTheme, themeMode } = useTheme();
 
   const [selectedMode, setSelectedMode] = useState<FirstRunThemeMode>(() =>
     themeMode === 'light' ? 'light' : 'dark',
   );
   const [busy, setBusy] = useState(false);
+
+  const tokens = useMemo(
+    () => buildThemeTokens(selectedMode === 'light' ? 'light' : 'dark'),
+    [selectedMode],
+  );
+  const isLightPreview = selectedMode === 'light';
 
   const padH = Math.min(22, Math.max(14, Math.round(winW * 0.045)));
   const columnW = Math.min(400, winW - padH * 2);
@@ -118,7 +125,20 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
             },
           ]}
         >
-          <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />
+          <View style={styles.brandCluster}>
+            <Image
+              source={isLightPreview ? LOGO_LIGHT : LOGO_DARK}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+            />
+            {isLightPreview ? (
+              <Text style={styles.wordmarkRow} accessibilityRole="header" accessibilityLabel="LeylekTAG">
+                <Text style={styles.wordmarkLeylek}>Leylek</Text>
+                <Text style={styles.wordmarkTag}>TAG</Text>
+              </Text>
+            ) : null}
+          </View>
 
           <View style={styles.header} accessibilityRole="header">
             <ThemedText tokens={tokens} variant="title">
@@ -147,7 +167,6 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
                       shadowColor: selected ? optionPreview.accent.primary : 'transparent',
                     },
                     selected ? styles.cardSelected : null,
-                    selected && option.mode === 'light' ? styles.cardSelectedLight : null,
                     selected && option.mode === 'dark' ? styles.cardSelectedDark : null,
                   ]}
                   accessibilityRole="radio"
@@ -247,7 +266,26 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   safe: { flex: 1 },
   column: { flex: 1, alignSelf: 'center', alignItems: 'stretch' },
-  logo: { width: 80, height: 80, alignSelf: 'center', marginTop: 8, marginBottom: 16 },
+  brandCluster: { alignItems: 'center', marginTop: 8, marginBottom: 16 },
+  logo: { width: 80, height: 80, alignSelf: 'center' },
+  wordmarkRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  wordmarkLeylek: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 0.15,
+    color: '#0D1117',
+  },
+  wordmarkTag: {
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    color: '#00D4AA',
+  },
   header: { marginBottom: 20, alignItems: 'center' },
   titleText: { fontSize: 20, fontWeight: '700', textAlign: 'center', letterSpacing: 0.2, lineHeight: 28 },
   subtitleText: { fontSize: 14, textAlign: 'center', marginTop: 10, lineHeight: 20 },
@@ -263,11 +301,6 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   cardSelected: { transform: [{ scale: 1.02 }] },
-  cardSelectedLight: {
-    shadowOpacity: 0.28,
-    shadowRadius: 14,
-    elevation: 5,
-  },
   cardSelectedDark: {
     shadowOpacity: 0.42,
     shadowRadius: 16,
