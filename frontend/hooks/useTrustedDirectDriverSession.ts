@@ -470,12 +470,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
         stopPolling();
         return;
       }
-      if (
-        enabledRef.current &&
-        !hasActiveTagRef.current &&
-        statusRef.current === 'pending' &&
-        inviteRef.current?.id
-      ) {
+      if (enabledRef.current && !hasActiveTagRef.current) {
         void refresh();
       }
     };

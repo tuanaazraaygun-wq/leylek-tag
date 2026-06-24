@@ -1307,20 +1307,45 @@ def _has_active_package_for_dispatch(driver_active_until, now_iso: str) -> bool:
     return bool(driver_active_until and driver_active_until > now_iso)
 
 
+def _driver_row_dispatch_emit_gate(
+    row: Optional[dict], now_iso: str
+) -> tuple[bool, str]:
+    """
+    Row-level dispatch emit gates (snapshot).
+    Mirrors is_driver_eligible_for_dispatch_offer predicates; emit path still re-fetches.
+    Returns (ok, skip_reason); skip_reason empty when ok.
+    """
+    if not row or not isinstance(row, dict):
+        return False, "row_missing"
+    if not user_account_is_eligible(row):
+        return False, "account_ineligible"
+    if row.get("driver_online") is not True:
+        return False, "driver_offline"
+    if not _has_active_package_for_dispatch(row.get("driver_active_until"), now_iso):
+        return False, "package_inactive"
+    lat, lng = row.get("latitude"), row.get("longitude")
+    if lat is None or lng is None:
+        return False, "missing_lat_lng"
+    if str(lat).strip() == "" or str(lng).strip() == "":
+        return False, "missing_lat_lng"
+    return True, ""
+
+
 _DISPATCH_ONLINE_DRIVER_SELECT_FULL = (
     "id, name, rating, latitude, longitude, last_location_update, driver_active_until, driver_online, "
     "driver_details, is_active, is_deleted, deleted_at, is_banned"
 )
 _DISPATCH_ONLINE_DRIVER_SELECT_MIN = (
     "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
-    "is_active"
+    "is_active, is_deleted, deleted_at, is_banned"
 )
 _DISPATCH_DRIVER_OFFER_SELECT_FULL = (
     "id, driver_online, driver_active_until, latitude, longitude, "
     "is_active, is_deleted, deleted_at, is_banned"
 )
 _DISPATCH_DRIVER_OFFER_SELECT_MIN = (
-    "id, driver_online, driver_active_until, latitude, longitude, is_active"
+    "id, driver_online, driver_active_until, latitude, longitude, is_active, "
+    "is_deleted, deleted_at, is_banned"
 )
 
 
@@ -1515,15 +1540,12 @@ def _fetch_user_row_for_dispatch_offer(uid: str) -> Optional[dict]:
     return None
 
 
-async def is_driver_eligible_for_dispatch_offer(driver_id) -> bool:
-    """
-    Teklif / push gönderilebilir mi: çevrimiçi, geçerli paket süresi (ücretsiz dönemde yalnızca online),
-    konum satırı dolu. Kuyruk/eski liste gecikmeli kalsa bile pasif sürücüye emit edilmez.
-    """
+async def _check_driver_dispatch_emit_eligibility(driver_id) -> tuple[bool, str]:
+    """Fresh DB row + shared row gate. Emit-time authoritative re-fetch uses this."""
     try:
         uid = str(driver_id).strip() if driver_id is not None else ""
         if not uid or not supabase:
-            return False
+            return False, "invalid_driver_id"
         try:
             resolved = await resolve_user_id(uid)
             if resolved:
@@ -1533,22 +1555,20 @@ async def is_driver_eligible_for_dispatch_offer(driver_id) -> bool:
         now_iso = datetime.utcnow().isoformat()
         row = _fetch_user_row_for_dispatch_offer(uid)
         if not row:
-            return False
-        if not user_account_is_eligible(row):
-            return False
-        if row.get("driver_online") is not True:
-            return False
-        if not _has_active_package_for_dispatch(row.get("driver_active_until"), now_iso):
-            return False
-        lat, lng = row.get("latitude"), row.get("longitude")
-        if lat is None or lng is None:
-            return False
-        if str(lat).strip() == "" or str(lng).strip() == "":
-            return False
-        return True
+            return False, "row_missing"
+        return _driver_row_dispatch_emit_gate(row, now_iso)
     except Exception as e:
-        logger.warning("is_driver_eligible_for_dispatch_offer: %s", e)
-        return False
+        logger.warning("_check_driver_dispatch_emit_eligibility: %s", e)
+        return False, "fetch_failed"
+
+
+async def is_driver_eligible_for_dispatch_offer(driver_id) -> bool:
+    """
+    Teklif / push gönderilebilir mi: çevrimiçi, geçerli paket süresi (ücretsiz dönemde yalnızca online),
+    konum satırı dolu. Kuyruk/eski liste gecikmeli kalsa bile pasif sürücüye emit edilmez.
+    """
+    ok, _ = await _check_driver_dispatch_emit_eligibility(driver_id)
+    return ok
 
 
 def _canonical_vehicle_kind(value) -> Optional[str]:
@@ -2686,7 +2706,7 @@ async def find_eligible_drivers(
             pref,
             vehicle_filter,
         )
-        no_loc = excluded = vehicle_mismatch = too_far = 0
+        no_loc = excluded = vehicle_mismatch = too_far = dispatch_gate = 0
         max_age_sec = get_location_max_age_seconds()
         stale_location_log_count = 0
 
@@ -2699,18 +2719,18 @@ async def find_eligible_drivers(
                 excluded += 1
                 continue
 
-            if not user_account_is_eligible(driver):
-                excluded += 1
-                continue
-
-            if driver.get("latitude") is None or driver.get("longitude") is None:
-                no_loc += 1
-                continue
-            if (
-                str(driver.get("latitude", "")).strip() == ""
-                or str(driver.get("longitude", "")).strip() == ""
-            ):
-                no_loc += 1
+            gate_ok, gate_reason = _driver_row_dispatch_emit_gate(driver, now)
+            if not gate_ok:
+                if gate_reason == "missing_lat_lng":
+                    no_loc += 1
+                else:
+                    dispatch_gate += 1
+                logger.info(
+                    "find_eligible_dispatch_gate_rejected reason=%s tag_id=%s driver_id=%s",
+                    gate_reason,
+                    tag_id,
+                    str(driver.get("id") or "")[:13],
+                )
                 continue
 
             if vehicle_filter:
@@ -2827,11 +2847,12 @@ async def find_eligible_drivers(
                     len(meta),
                 )
             logger.warning(
-                "find_eligible_drivers: 0 uygun — online=%s no_latlng=%s excluded=%s vehicle_mismatch=%s "
-                "too_far=%s pref=%s r_km=%s pickup=(%.5f,%.5f) vehicle_filter=%s",
+                "find_eligible_drivers: 0 uygun — online=%s no_latlng=%s excluded=%s dispatch_gate=%s "
+                "vehicle_mismatch=%s too_far=%s pref=%s r_km=%s pickup=(%.5f,%.5f) vehicle_filter=%s",
                 online_count,
                 no_loc,
                 excluded,
+                dispatch_gate,
                 vehicle_mismatch,
                 too_far,
                 pref,
@@ -3593,7 +3614,15 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
             }
 
             try:
-                await emit_new_passenger_offer_to_driver(driver_id, offer_data)
+                emit_res = await emit_new_passenger_offer_to_driver(driver_id, offer_data)
+                if not emit_res:
+                    continue
+                await _dispatch_queue_insert_after_emit(
+                    tid,
+                    resolved_driver_id,
+                    1,
+                    delivery_id=emit_res.delivery_id,
+                )
                 accepted_tag_ids.append(str(tag.get("id")))
             except Exception as e:
                 logger.error(
@@ -5339,10 +5368,17 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
             if not await is_driver_eligible_for_dispatch_offer(did):
                 logger.info(f"📢 Broadcast atlandı (aktif değil): driver={did[:13]}… tag={tag_id}")
                 continue
-            ok = await emit_new_passenger_offer_to_driver(did, offer_data)
-            if not ok:
+            emit_res = await emit_new_passenger_offer_to_driver(did, offer_data)
+            if not emit_res:
                 continue
             n_sent += 1
+            await _dispatch_queue_insert_after_emit(
+                tag_id,
+                did,
+                n_sent,
+                delivery_id=emit_res.delivery_id,
+                is_rolling_batch=False,
+            )
             # Push: emit_new_passenger_offer_to_driver içinde FCM (send_trip_push_and_log).
         
         logger.info(
@@ -6028,8 +6064,21 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         d_id = str(entry["driver_id"]).strip().lower()
         if d_id not in newly_arrived_set:
             continue
-        if not await is_driver_eligible_for_dispatch_offer(d_id):
-            logger.info("rolling batch atlandı (aktif değil) tag=%s driver=%s", tag_id, d_id)
+        emit_ok, skip_reason = await _check_driver_dispatch_emit_eligibility(d_id)
+        if not emit_ok:
+            logger.info(
+                "[DISPATCH_BATCH] tag=%s event=pre_emit_skip driver=%s reason=%s",
+                tag_id,
+                d_id,
+                skip_reason or "ineligible",
+            )
+            _offer_delivery_obs_log(
+                "offer_delivery_skipped",
+                tag_id=tag_id,
+                driver_id=d_id,
+                reason=skip_reason or "pre_emit_ineligible",
+                delivery_id=None,
+            )
             continue
         pk_km = entry.get("distance_km", 0)
         pk_min = entry.get("duration_min")
@@ -15869,16 +15918,39 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
                 logger.info("AUTO_CANCEL_BLOCKED (<20s)")
                 return {"success": False, "message": "Too early cancel blocked"}
         
-        update_query = supabase.table("tags").update({
-            "status": "cancelled",
-            "cancelled_at": datetime.utcnow().isoformat(),
-            "cancel_reason": "passenger_cancelled",
-        }).eq("id", tag_id)
-        
+        update_query = (
+            supabase.table("tags")
+            .update({
+                "status": "cancelled",
+                "cancelled_at": datetime.utcnow().isoformat(),
+                "cancel_reason": "passenger_cancelled",
+            })
+            .eq("id", tag_id)
+            .in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST)
+        )
+
         if resolved_id:
             update_query = update_query.eq("passenger_id", resolved_id)
-        
-        update_query.execute()
+
+        cancel_result = update_query.execute()
+        if not (cancel_result.data or []):
+            ref = (
+                supabase.table("tags")
+                .select("status")
+                .eq("id", tag_id)
+                .limit(1)
+                .execute()
+            )
+            st = (ref.data[0].get("status") or "").lower() if ref.data else ""
+            if st == "cancelled":
+                return {"success": True, "message": "TAG iptal edildi"}
+            logger.info(
+                "PASSENGER_CANCEL_BLOCKED status=%s tag_id=%s",
+                st or "missing",
+                tag_id,
+            )
+            return {"success": False, "message": "TAG iptal edilemez"}
+
         invalidate_tag_cache(tag_id, resolved_id or pid, driver_id)
 
         try:
@@ -15939,16 +16011,39 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
                 return {"success": False, "message": "Too early cancel blocked"}
         
         # 1. TAG'i iptal et (yolcu self-cancel — istemci active-tag polling'de ayırır)
-        update_query = supabase.table("tags").update({
-            "status": "cancelled",
-            "cancelled_at": datetime.utcnow().isoformat(),
-            "cancel_reason": "passenger_cancelled",
-        }).eq("id", tid)
-        
+        update_query = (
+            supabase.table("tags")
+            .update({
+                "status": "cancelled",
+                "cancelled_at": datetime.utcnow().isoformat(),
+                "cancel_reason": "passenger_cancelled",
+            })
+            .eq("id", tid)
+            .in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST)
+        )
+
         if resolved_id:
             update_query = update_query.eq("passenger_id", resolved_id)
-        
-        update_query.execute()
+
+        cancel_result = update_query.execute()
+        if not (cancel_result.data or []):
+            ref = (
+                supabase.table("tags")
+                .select("status")
+                .eq("id", tid)
+                .limit(1)
+                .execute()
+            )
+            st = (ref.data[0].get("status") or "").lower() if ref.data else ""
+            if st == "cancelled":
+                return {"success": True, "message": "TAG iptal edildi"}
+            logger.info(
+                "PASSENGER_CANCEL_BLOCKED status=%s tag_id=%s",
+                st or "missing",
+                tid,
+            )
+            return {"success": False, "message": "TAG iptal edilemez"}
+
         invalidate_tag_cache(tid, resolved_id or pid, driver_id)
         
         # 2. Aktif teklifleri de iptal et

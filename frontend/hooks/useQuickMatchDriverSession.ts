@@ -464,12 +464,7 @@ export function useQuickMatchDriverSession(options: UseQuickMatchDriverSessionOp
         stopPolling();
         return;
       }
-      if (
-        enabledRef.current &&
-        !hasActiveTagRef.current &&
-        statusRef.current === 'pending' &&
-        inviteRef.current?.invite_id
-      ) {
+      if (enabledRef.current && !hasActiveTagRef.current) {
         void refresh();
       }
     };
