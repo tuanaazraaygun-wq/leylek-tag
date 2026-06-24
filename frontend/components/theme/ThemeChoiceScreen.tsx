@@ -12,6 +12,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
@@ -132,6 +133,7 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
             {OPTIONS.map((option) => {
               const selected = selectedMode === option.mode;
               const optionPreview = buildThemeTokens(option.mode);
+              const selectedBorder = option.mode === 'light' ? '#00D4AA' : '#22D3EE';
               return (
                 <Pressable
                   key={option.mode}
@@ -140,10 +142,13 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
                     styles.card,
                     {
                       backgroundColor: optionPreview.bg.glass,
-                      borderColor: selected ? optionPreview.border.emphasis : optionPreview.border.default,
+                      borderColor: selected ? selectedBorder : optionPreview.border.default,
+                      borderWidth: selected ? 3 : 2,
                       shadowColor: selected ? optionPreview.accent.primary : 'transparent',
                     },
                     selected ? styles.cardSelected : null,
+                    selected && option.mode === 'light' ? styles.cardSelectedLight : null,
+                    selected && option.mode === 'dark' ? styles.cardSelectedDark : null,
                   ]}
                   accessibilityRole="radio"
                   accessibilityState={{ selected, checked: selected }}
@@ -169,6 +174,30 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
                         {option.caption}
                       </ThemedText>
                     </View>
+                    {selected ? (
+                      <View
+                        style={[
+                          styles.selectedBadge,
+                          {
+                            backgroundColor: optionPreview.accent.glowLow,
+                            borderColor: optionPreview.accent.primary,
+                          },
+                        ]}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
+                        <Ionicons name="checkmark" size={18} color={optionPreview.accent.primary} />
+                      </View>
+                    ) : (
+                      <View
+                        style={[
+                          styles.unselectedRing,
+                          { borderColor: optionPreview.border.default },
+                        ]}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      />
+                    )}
                   </View>
                 </Pressable>
               );
@@ -234,6 +263,16 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   cardSelected: { transform: [{ scale: 1.02 }] },
+  cardSelectedLight: {
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 5,
+  },
+  cardSelectedDark: {
+    shadowOpacity: 0.42,
+    shadowRadius: 16,
+    elevation: 6,
+  },
   cardRow: { flexDirection: 'row', alignItems: 'center' },
   previewSwatch: {
     width: 44,
@@ -246,6 +285,22 @@ const styles = StyleSheet.create({
   },
   previewDot: { width: 10, height: 10, borderRadius: 5 },
   cardCopy: { flex: 1 },
+  selectedBadge: {
+    marginLeft: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unselectedRing: {
+    marginLeft: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+  },
   cardTitle: { textAlign: 'left', fontSize: 17 },
   ctaWrap: { marginTop: 20 },
 });

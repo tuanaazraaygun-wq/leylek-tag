@@ -838,6 +838,8 @@ export function RoleSelectScreen({
                         style={[
                           styles.roleStatusPill,
                           styles.roleStatusPillCompact,
+                          roleLt?.roleStatusPill,
+                          roleLt?.roleStatusPillCompact,
                           rs.isVeryCompact && styles.roleStatusPillCompactVery,
                         ]}
                       >

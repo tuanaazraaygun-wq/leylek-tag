@@ -41,6 +41,8 @@ export type PassengerMatchModeCardsProps = {
   onTrustedPress?: () => void;
   /** Onaylı sürücü kaydı — kart «Yolcularım» + sürücü paneli köprüsü */
   hasDriverRegistration?: boolean;
+  /** Onaylı sürücü — doğrudan sürücü paneline geçiş (Yolcularım kartı) */
+  onDriverPanelPress?: () => void;
   /** v1.1 — role-filtered yolcu sayısı; yoksa statik fallback */
   trustedPassengerCount?: number | null;
 };
@@ -316,6 +318,7 @@ function PassengerMatchModeCards({
   onNormalPress,
   onQuickPress,
   onTrustedPress,
+  onDriverPanelPress,
   hasDriverRegistration = false,
   trustedPassengerCount = null,
 }: PassengerMatchModeCardsProps) {
@@ -323,6 +326,7 @@ function PassengerMatchModeCards({
   const { status, summary } = useTrustedSummary();
   const { isScopeLight, tokens } = usePassengerTheme();
   const trustedWired = typeof onTrustedPress === 'function';
+  const driverPanelWired = typeof onDriverPanelPress === 'function';
   const quickWired = typeof onQuickPress === 'function';
 
   const cardTheme = useMemo(
@@ -535,7 +539,9 @@ function PassengerMatchModeCards({
     const isDriverViewer = isTrusted && hasDriverRegistration;
     const isEnabled = isProxy
       ? false
-      : card.enabled || (isTrusted && trustedWired);
+      : isDriverViewer
+        ? driverPanelWired || trustedWired
+        : card.enabled || (isTrusted && trustedWired);
     const trustedReady = isTrusted && status === 'ready' && summary != null;
     const trustedSubtitle =
       !isDriverViewer && trustedReady && summary
@@ -543,7 +549,6 @@ function PassengerMatchModeCards({
         : null;
     const showSoonPill =
       isProxy || (isTrusted && !isDriverViewer && !trustedWired && !trustedReady);
-    const onPress = isTrusted && trustedWired ? onTrustedPress : undefined;
 
     const displayTitle = isDriverViewer ? 'Yolcularım' : card.title;
     const passengerPeerCount =
@@ -552,8 +557,8 @@ function PassengerMatchModeCards({
         : null;
     const driverViewerSubtitle =
       passengerPeerCount != null && passengerPeerCount > 0
-        ? `${passengerPeerCount} güvenilir yolcu`
-        : 'Güvenilir yolcularınız';
+        ? `${passengerPeerCount} güvenilir yolcu · Sürücü panelinden yönetin`
+        : 'Güvenilir yolcu ağınız · Sürücü paneline geçin';
 
     const displaySubtitle = showSoonPill
       ? null
@@ -570,6 +575,11 @@ function PassengerMatchModeCards({
       : isDriverViewer && isEnabled
         ? renderDriverPanelCtaPill(layout.isVeryCompact)
         : undefined;
+
+    const driverPanelHandler = isDriverViewer && driverPanelWired ? onDriverPanelPress : undefined;
+    const onPress =
+      driverPanelHandler ??
+      (isTrusted && trustedWired ? onTrustedPress : undefined);
 
     const accessibilityLabel = isDriverViewer
       ? `${displayTitle}. ${driverViewerSubtitle}. Sürücü paneline git`

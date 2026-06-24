@@ -6909,14 +6909,7 @@ export default function LiveMapView({
       {/* HARİTA - Google Maps - ZOOM VE SCROLL AKTİF + sol üst Ara (48x48) */}
       {MapView ? (
         <View
-          style={[
-            styles.mapSlot,
-            !mapEngineReady && (showMapLoadingOverlay || showMapSelfHealUi)
-              ? isScopeLight
-                ? styles.mapSlotLoadingLight
-                : styles.mapSlotLoadingDark
-              : null,
-          ]}
+          style={styles.mapSlot}
           pointerEvents="box-none"
         >
         <MapView
@@ -6935,7 +6928,9 @@ export default function LiveMapView({
             longitudeDelta: 0.01,
           }}
           onMapReady={handleMapReadyFromReady}
-          onMapLoaded={Platform.OS === 'android' ? handleMapReadyFromLoaded : undefined}
+          onMapLoaded={handleMapReadyFromLoaded}
+          loadingBackgroundColor="transparent"
+          loadingEnabled={Platform.OS === 'ios'}
           mapPadding={
             driverNavImmersive
               ? {

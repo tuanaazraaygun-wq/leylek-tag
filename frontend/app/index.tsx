@@ -404,7 +404,7 @@ function _approvedVehicleKindsFromDriverDetails(dd: Record<string, unknown>): ('
   return out;
 }
 
-/** Onaylı sürücü kaydı (yolcu modunda TDM «Sürücülerim» kartı guard). */
+  /** Onaylı sürücü kaydı (yolcu modunda TDM «Sürücülerim» kartı guard). */
 function userHasDriverRegistration(user: User | null | undefined): boolean {
   const dd = user?.driver_details;
   if (!dd || typeof dd !== 'object' || Array.isArray(dd)) return false;
@@ -419,6 +419,75 @@ function userHasDriverRegistration(user: User | null | undefined): boolean {
   if (kycVk) return true;
 
   return _canonicalDriverVehicleKindForGuard(d.vehicle_kind) != null;
+}
+
+/** Yolcu modundan onaylı sürücü paneline geçiş — Yolcularım kartı / TDM köprüsü. */
+async function switchPassengerToDriverPanel(
+  loggedInUser: User,
+  deps: {
+    saveUser: (u: User) => Promise<User>;
+    setUser: (u: User | ((prev: User | null) => User | null)) => void;
+    setSelectedRole: (r: 'passenger' | 'driver') => void;
+    setRideVehicleKind: (v: 'car' | 'motorcycle') => void;
+    setScreen: (s: AppScreen) => void;
+    requestLocationPermission?: () => Promise<boolean>;
+    openDriverVehicleUpgradeKyc?: (kind: 'car' | 'motorcycle') => void;
+    hasActivePassengerTag?: boolean;
+  },
+): Promise<boolean> {
+  if (!loggedInUser?.id) return false;
+  if (deps.hasActivePassengerTag) {
+    appAlert(
+      'Aktif yolculuk',
+      'Aktif yolculuğunuz varken sürücü paneline geçemezsiniz.',
+    );
+    return false;
+  }
+
+  const vk = _pickDriverVehicleKindForRoleSwitch(loggedInUser);
+  const setRideUrl = `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(loggedInUser.id)}&role=driver&vehicle_kind=${vk}`;
+  let setRideRes: Response;
+  try {
+    setRideRes = await fetch(setRideUrl, { method: 'POST' });
+  } catch {
+    appAlert('Hata', 'Bağlantı hatası');
+    return false;
+  }
+  const { data: setRideData } = await parseApiJson(setRideRes);
+  if (!setRideRes.ok) {
+    if (setRideRes.status === 403 && deps.openDriverVehicleUpgradeKyc) {
+      alertVehicleRegistrationRequired(vk, () => deps.openDriverVehicleUpgradeKyc!(vk));
+      return false;
+    }
+    appAlert(
+      'Hata',
+      apiErrMsg(setRideData, 'Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.'),
+    );
+    return false;
+  }
+
+  const baseDd =
+    loggedInUser.driver_details && typeof loggedInUser.driver_details === 'object'
+      ? { ...(loggedInUser.driver_details as Record<string, unknown>) }
+      : {};
+  const mergedDd = { ...baseDd, vehicle_kind: vk };
+  const u: User = {
+    ...loggedInUser,
+    role: 'driver',
+    driver_details: mergedDd as User['driver_details'],
+  };
+  const savedUser = await deps.saveUser(u);
+  deps.setUser(savedUser);
+  deps.setSelectedRole('driver');
+  deps.setRideVehicleKind(vk);
+  try {
+    await AsyncStorage.setItem(`last_role_${loggedInUser.id}`, 'driver');
+  } catch {
+    /* ignore */
+  }
+  deps.setScreen('dashboard');
+  void deps.requestLocationPermission?.();
+  return true;
 }
 
 function alertTrustedDirectPassengerOnlyBlocked(onGoToDriverPanel?: () => void): void {
@@ -4391,6 +4460,21 @@ export default function App() {
         setScreen={setScreen}
         requestLocationPermission={requestLocationPermission}
         onShowTripEndedBanner={setRoleSelectTripExitBanner}
+        onSwitchToDriverPanel={(hasActivePassengerTag) =>
+          switchPassengerToDriverPanel(user, {
+            saveUser,
+            setUser,
+            setSelectedRole,
+            setRideVehicleKind,
+            setScreen,
+            requestLocationPermission,
+            hasActivePassengerTag,
+            openDriverVehicleUpgradeKyc: (kind) => {
+              setDriverKycScreenVehicleKind(kind);
+              setScreen('driver-kyc');
+            },
+          })
+        }
       />
     ) : (
       <RuntimeBoundary name="DriverDashboard">
@@ -7487,6 +7571,7 @@ function PassengerDashboard({
   setScreen,
   requestLocationPermission,
   onShowTripEndedBanner,
+  onSwitchToDriverPanel,
 }: { 
   user: User; 
   logout: () => void;
@@ -7501,6 +7586,8 @@ function PassengerDashboard({
   setScreen: (screen: AppScreen) => void;
   requestLocationPermission: () => Promise<boolean>;
   onShowTripEndedBanner?: (message: string) => void;
+  /** App scope — onaylı sürücü yolcu kokpitinden sürücü paneline geçiş */
+  onSwitchToDriverPanel?: (hasActivePassengerTag: boolean) => Promise<boolean>;
 }) {
   /** Geçici: yolcu panelinde olası `undefined is not a function` — doğrudan PassengerDashboard içinde */
   const __paxFn = (label: string, fn: unknown) => {
@@ -11771,7 +11858,9 @@ function PassengerDashboard({
     if (routePickerIntent === 'trusted_direct' && !activeTag) {
       if (userHasDriverRegistration(user)) {
         setRoutePickerIntent('normal');
-        alertTrustedDirectPassengerOnlyBlocked(() => setScreen('role-select'));
+        alertTrustedDirectPassengerOnlyBlocked(() => {
+          void onSwitchToDriverPanel?.(!!activeTag);
+        });
         return;
       }
       const ctx = buildTrustedDirectRouteContext(newDestination);
@@ -13504,61 +13593,11 @@ function PassengerDashboard({
                 onTrustedPress={() => {
                   playTapSound();
                   if (userHasDriverRegistration(user)) {
-                    void (async () => {
-                      if (activeTag) {
-                        appAlert(
-                          'Aktif yolculuk',
-                          'Aktif yolculuğunuz varken sürücü paneline geçemezsiniz.',
-                        );
-                        return;
-                      }
-                      if (!user?.id) return;
-                      const vk = _pickDriverVehicleKindForRoleSwitch(user);
-                      const setRideUrl = `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(user.id)}&role=driver&vehicle_kind=${vk}`;
-                      let setRideRes: Response;
-                      try {
-                        setRideRes = await fetch(setRideUrl, { method: 'POST' });
-                      } catch {
-                        appAlert('Hata', 'Bağlantı hatası');
-                        return;
-                      }
-                      const { data: setRideData } = await parseApiJson(setRideRes);
-                      if (!setRideRes.ok) {
-                        if (setRideRes.status === 403) {
-                          alertVehicleRegistrationRequired(vk, () => {
-                            setDriverKycScreenVehicleKind(vk);
-                            setScreen('driver-kyc');
-                          });
-                          return;
-                        }
-                        appAlert(
-                          'Hata',
-                          apiErrMsg(setRideData, 'Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.'),
-                        );
-                        return;
-                      }
-                      const baseDd =
-                        user.driver_details && typeof user.driver_details === 'object'
-                          ? { ...(user.driver_details as Record<string, unknown>) }
-                          : {};
-                      const mergedDd = { ...baseDd, vehicle_kind: vk };
-                      const u: User = {
-                        ...user,
-                        role: 'driver',
-                        driver_details: mergedDd as User['driver_details'],
-                      };
-                      const savedUser = await saveUser(u);
-                      setUser(savedUser);
-                      setSelectedRole('driver');
-                      setRideVehicleKind(vk);
-                      try {
-                        await AsyncStorage.setItem(`last_role_${user.id}`, 'driver');
-                      } catch {
-                        /* ignore */
-                      }
-                      setScreen('dashboard');
-                      void requestLocationPermission();
-                    })();
+                    if (!onSwitchToDriverPanel) {
+                      appAlert('Hata', 'Sürücü paneli açılamadı. Lütfen tekrar deneyin.');
+                      return;
+                    }
+                    void onSwitchToDriverPanel(!!activeTag);
                     return;
                   }
                   setPassengerIdleOfferChannel('normal');
@@ -13566,6 +13605,14 @@ function PassengerDashboard({
                   setRoutePickerStep('pickup');
                   setDestinationPickerPhase('search');
                   setShowDestinationPicker(true);
+                }}
+                onDriverPanelPress={() => {
+                  playTapSound();
+                  if (!onSwitchToDriverPanel) {
+                    appAlert('Hata', 'Sürücü paneli açılamadı. Lütfen tekrar deneyin.');
+                    return;
+                  }
+                  void onSwitchToDriverPanel(!!activeTag);
                 }}
               />
             </GlassSurface>

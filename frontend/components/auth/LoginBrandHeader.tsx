@@ -37,13 +37,13 @@ export function LoginBrandHeader({
 
   const leylekColorStyle: TextStyle = isPremium
     ? premiumLightText
-      ? { color: tokens.text.primary }
+      ? { color: '#0D1117' }
       : styles.wordmarkLeylekPremium
     : styles.wordmarkLeylekDefault;
 
   const tagColorStyle: TextStyle = isPremium
     ? premiumLightText
-      ? { color: tokens.accent.primary }
+      ? { color: '#00D4AA' }
       : styles.wordmarkTagPremium
     : styles.wordmarkTagDefault;
 
@@ -94,14 +94,24 @@ export function LoginBrandHeader({
       </Text>
     ) : null;
 
+    const logoFrameStyle: ViewStyle | null = premiumLightText
+      ? {
+          backgroundColor: tokens.accent.glowLow,
+          borderColor: tokens.accent.glowMid,
+        }
+      : null;
+
     return (
       <View style={[styles.cluster, clusterStyle]}>
-        <View style={styles.logoRow}>
-          <Image
-            source={require('../../assets/images/leylek-logo-premium.png')}
-            style={[styles.logo, isCompact && styles.logoCompact, isShort && styles.logoShort]}
-            resizeMode="contain"
-          />
+        <View style={[styles.logoRow, premiumLightText && styles.logoRowLight]}>
+          <View style={[styles.logoWell, logoFrameStyle]}>
+            <Image
+              source={require('../../assets/images/leylek-logo-premium.png')}
+              style={[styles.logo, isCompact && styles.logoCompact, isShort && styles.logoShort]}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+            />
+          </View>
         </View>
         {wordmarkBlock}
         {titleBlock}
@@ -149,6 +159,18 @@ const styles = StyleSheet.create({
   logoRow: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  logoRowLight: {
+    paddingHorizontal: 4,
+  },
+  logoWell: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'transparent',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   wordmarkRow: {
     flexDirection: 'row',

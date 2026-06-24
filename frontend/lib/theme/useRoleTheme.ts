@@ -42,6 +42,8 @@ export type RoleLightSurfaces = {
   roleCardDescActiveDriver: TextStyle;
   roleCheckBadge: ViewStyle;
   roleStatusStripCompact: ViewStyle;
+  roleStatusPill: ViewStyle;
+  roleStatusPillCompact: ViewStyle;
   roleStatusTitleCompactInline: TextStyle;
   roleChangeRolePillSecondary: ViewStyle;
   roleChangeRoleLabelSecondary: TextStyle;
@@ -163,7 +165,17 @@ function buildRoleLightSurfaces(tokens: LhThemeTokens): RoleLightSurfaces {
       borderColor: tokens.borderColors.cockpitPanel,
       borderTopColor: tokens.borderColors.cockpitPanelTop,
     },
-    roleStatusTitleCompactInline: { color: tokens.text.primary },
+    roleStatusPill: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    roleStatusPillCompact: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    roleStatusTitleCompactInline: { color: tokens.text.primary, fontWeight: '800' },
     roleChangeRolePillSecondary: {
       backgroundColor: tokens.bg.glass,
       borderColor: tokens.border.default,
