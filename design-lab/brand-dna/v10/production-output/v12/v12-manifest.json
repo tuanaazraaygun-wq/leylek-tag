@@ -1,0 +1,63 @@
+{
+  "masterVersion": "v12.0.0-inapp",
+  "generatedAt": "2026-06-24T17:27:04.953444+00:00",
+  "spec": {
+    "ringScale": 0.94,
+    "glowAlpha": 0.5,
+    "metalBoost": 1.1
+  },
+  "exports": [
+    {
+      "path": "frontend/assets/images/leylek-logo-premium-dark.png",
+      "variant": "logo.symbol.dark.transparent.inapp",
+      "sha256": "002dad19106d896ee60ba973663c74ec1da65412c6d492beb91b8a00d9eb1d52",
+      "px": 512
+    },
+    {
+      "path": "frontend/assets/images/leylek-logo-premium-light.png",
+      "variant": "logo.symbol.light.transparent.inapp",
+      "sha256": "4ffd01eb3dfea837c04983b506fb06be13d6eb79ffca6678ef64b63236826ce3",
+      "px": 512
+    }
+  ],
+  "validation": {
+    "dark": {
+      "label": "dark",
+      "has_alpha": true,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "corners_transparent": true,
+      "bbox": [
+        44,
+        31,
+        467,
+        481
+      ],
+      "opaque_pixels_outside_bbox": 0,
+      "dark_pixels_outside_symbol_on_white": 0
+    },
+    "light": {
+      "label": "light",
+      "has_alpha": true,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "corners_transparent": true,
+      "bbox": [
+        44,
+        31,
+        467,
+        481
+      ],
+      "opaque_pixels_outside_bbox": 0,
+      "dark_pixels_outside_symbol_on_white": 0
+    }
+  }
+}

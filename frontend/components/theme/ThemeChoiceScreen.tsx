@@ -23,7 +23,8 @@ import type { LhThemeTokens, ThemeMode } from '../../lib/theme/types';
 import { tapButtonHaptic } from '../../utils/touchHaptics';
 import * as Haptics from 'expo-haptics';
 
-const LOGO = require('../../assets/images/leylek-logo-premium.png');
+const LOGO_PREMIUM_DARK = require('../../assets/images/leylek-logo-premium-dark.png');
+const LOGO_PREMIUM_LIGHT = require('../../assets/images/leylek-logo-premium-light.png');
 
 type FirstRunThemeMode = 'dark' | 'light';
 
@@ -77,6 +78,7 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
     [selectedMode],
   );
   const isLightPreview = selectedMode === 'light';
+  const logoSource = isLightPreview ? LOGO_PREMIUM_LIGHT : LOGO_PREMIUM_DARK;
 
   const padH = Math.min(22, Math.max(14, Math.round(winW * 0.045)));
   const columnW = Math.min(400, winW - padH * 2);
@@ -126,7 +128,7 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
         >
           <View style={styles.brandCluster}>
             <Image
-              source={LOGO}
+              source={logoSource}
               style={styles.logo}
               resizeMode="contain"
               accessibilityIgnoresInvertColors

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Image, Text, View, StyleSheet, ViewStyle } from 'react-native';
 import { useAuthTheme } from './premiumAuthChrome';
 
@@ -17,8 +17,9 @@ export type LoginBrandHeaderProps = {
 
 const LHIS_DEFAULT_CAPTION = 'Güvenli yolculuk paylaşımı';
 
-/** Premium Family A — same asset on light/dark auth; dark plate reads on both themes. */
-const LOGO_PREMIUM = require('../../assets/images/leylek-logo-premium.png');
+/** V12 in-app masters — transparent symbol; baked V11 plate stays on splash/icon only. */
+const LOGO_PREMIUM_DARK = require('../../assets/images/leylek-logo-premium-dark.png');
+const LOGO_PREMIUM_LIGHT = require('../../assets/images/leylek-logo-premium-light.png');
 
 export function LoginBrandHeader({
   usableWidth,
@@ -30,6 +31,10 @@ export function LoginBrandHeader({
   subtitleVariant = 'brand',
 }: LoginBrandHeaderProps) {
   const { isAuthLight } = useAuthTheme();
+  const logoSource = useMemo(
+    () => (isAuthLight ? LOGO_PREMIUM_LIGHT : LOGO_PREMIUM_DARK),
+    [isAuthLight],
+  );
   const clusterStyle: ViewStyle = {
     width: usableWidth,
     maxWidth: usableWidth,
@@ -106,7 +111,7 @@ export function LoginBrandHeader({
       <View style={[styles.cluster, clusterStyle]}>
         <View style={styles.logoRow}>
           <Image
-            source={LOGO_PREMIUM}
+            source={logoSource}
             style={[styles.logo, isCompact && styles.logoCompact, isShort && styles.logoShort]}
             resizeMode="contain"
             accessibilityIgnoresInvertColors
@@ -132,9 +137,10 @@ export function LoginBrandHeader({
     <View style={[styles.cluster, clusterStyle]}>
       <View style={styles.logoRow}>
         <Image
-          source={LOGO_PREMIUM}
+          source={logoSource}
           style={[styles.logo, isCompact && styles.logoCompact, isShort && styles.logoShort]}
           resizeMode="contain"
+          accessibilityIgnoresInvertColors
         />
       </View>
       {wordmarkBlock}
