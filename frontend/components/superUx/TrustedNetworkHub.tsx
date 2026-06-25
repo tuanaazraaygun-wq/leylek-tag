@@ -30,6 +30,8 @@ import {
   fetchSuggestedContributionTl,
   getActiveTrustedDirectRequest,
   isDriverVehicleCompatibleWithPreference,
+  notifyTrustedDriverAvailability,
+  type TrustedDirectNotifyTemplate,
   type TrustedDirectRequestRow,
   type TrustedDirectRouteContext,
 } from '../../lib/trustedDirectApi';
@@ -66,6 +68,15 @@ import {
   TDM_REQUEST_BLOCKED_TITLE,
   TDM_UNAVAILABLE_HINT,
   TDM_VEHICLE_MISMATCH,
+  TDM_NOTIFY_CANCEL,
+  TDM_NOTIFY_FAILED,
+  TDM_NOTIFY_OPTION_AVAILABLE,
+  TDM_NOTIFY_OPTION_KIZILAY,
+  TDM_NOTIFY_OPTION_NEARBY,
+  TDM_NOTIFY_RATE_LIMITED,
+  TDM_NOTIFY_SEND,
+  TDM_NOTIFY_SHEET_TITLE,
+  TDM_NOTIFY_SUCCESS,
   type TrustedHubRole,
 } from '../../lib/trustedHubCopy';
 import TrustedConnectionRow from './TrustedConnectionRow';
@@ -177,6 +188,22 @@ function TrustedNetworkHub({
   const [priceError, setPriceError] = useState<string | null>(null);
   const [orphanPending, setOrphanPending] = useState<TrustedDirectRequestRow | null>(null);
   const [orphanCancelling, setOrphanCancelling] = useState(false);
+  const [notifyTarget, setNotifyTarget] = useState<TrustedConnectionItem | null>(null);
+  const [notifyTemplate, setNotifyTemplate] = useState<TrustedDirectNotifyTemplate>('available_now');
+  const [notifySending, setNotifySending] = useState(false);
+  const [notifyFeedback, setNotifyFeedback] = useState<{
+    error?: string;
+    success?: string;
+  } | null>(null);
+
+  const notifyTemplateOptions = useMemo(
+    (): { id: TrustedDirectNotifyTemplate; label: string }[] => [
+      { id: 'available_now', label: TDM_NOTIFY_OPTION_AVAILABLE },
+      { id: 'heading_kizilay', label: TDM_NOTIFY_OPTION_KIZILAY },
+      { id: 'nearby_ready', label: TDM_NOTIFY_OPTION_NEARBY },
+    ],
+    [],
+  );
 
   const showTdmUi =
     role === 'passenger' && tdmEnabled === true && !!routeContext && !hasActiveTag;
@@ -351,6 +378,44 @@ function TrustedNetworkHub({
     setPriceError(null);
   }, []);
 
+  const handleNotifyPress = useCallback((item: TrustedConnectionItem) => {
+    if (actingId != null) return;
+    setNotifyTarget(item);
+    setNotifyTemplate('available_now');
+  }, [actingId]);
+
+  const closeNotifySheet = useCallback(() => {
+    if (notifySending) return;
+    setNotifyTarget(null);
+  }, [notifySending]);
+
+  const handleConfirmNotify = useCallback(async () => {
+    if (!notifyTarget || notifySending) return;
+    const passengerId = String(notifyTarget.counterparty.user_id || '').trim();
+    const connectionId = String(notifyTarget.connection_id || '').trim();
+    if (!passengerId || !connectionId) return;
+
+    setNotifySending(true);
+    setNotifyFeedback(null);
+    clearActionFeedback();
+    const result = await notifyTrustedDriverAvailability({
+      passenger_id: passengerId,
+      relationship_connection_id: connectionId,
+      message_template: notifyTemplate,
+    });
+    setNotifySending(false);
+
+    if (result.ok === false) {
+      const msg =
+        result.message === TDM_NOTIFY_RATE_LIMITED ? TDM_NOTIFY_RATE_LIMITED : TDM_NOTIFY_FAILED;
+      setNotifyFeedback({ error: msg });
+      return;
+    }
+
+    setNotifyTarget(null);
+    setNotifyFeedback({ success: TDM_NOTIFY_SUCCESS });
+  }, [clearActionFeedback, notifySending, notifyTarget, notifyTemplate]);
+
   const handleConfirmContribution = useCallback(async () => {
     if (!contributionTarget || !routeContext || !tdmSession) return;
 
@@ -411,7 +476,14 @@ function TrustedNetworkHub({
   const hasIncoming = incoming.length > 0;
   const hasOutgoing = outgoing.length > 0;
   const hasAnyData = hasConnections || hasIncoming || hasOutgoing;
-  const showActionBanner = isReady && (!!actionError || !!actionSuccess);
+  const bannerError = actionError || notifyFeedback?.error || null;
+  const bannerSuccess = actionSuccess || notifyFeedback?.success || null;
+  const showActionBanner = isReady && (!!bannerError || !!bannerSuccess);
+
+  const handleClearActionBanner = useCallback(() => {
+    clearActionFeedback();
+    setNotifyFeedback(null);
+  }, [clearActionFeedback]);
 
   const displayConnections = useMemo(() => {
     if (role !== 'passenger') return connections;
@@ -516,25 +588,25 @@ function TrustedNetworkHub({
           style={[
             styles.actionBanner,
             trLt?.actionBanner,
-            actionError ? styles.actionBannerError : styles.actionBannerSuccess,
-            actionError ? trLt?.actionBannerError : trLt?.actionBannerSuccess,
+            bannerError ? styles.actionBannerError : styles.actionBannerSuccess,
+            bannerError ? trLt?.actionBannerError : trLt?.actionBannerSuccess,
           ]}
-          onPress={clearActionFeedback}
+          onPress={handleClearActionBanner}
           accessibilityRole="text"
         >
           <Ionicons
-            name={actionError ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+            name={bannerError ? 'alert-circle-outline' : 'checkmark-circle-outline'}
             size={16}
-            color={actionError ? ui.errorIcon : ui.successBanner}
+            color={bannerError ? ui.errorIcon : ui.successBanner}
           />
           <Text
             style={[
               styles.actionBannerText,
-              actionError ? styles.actionBannerTextError : styles.actionBannerTextSuccess,
+              bannerError ? styles.actionBannerTextError : styles.actionBannerTextSuccess,
             ]}
             numberOfLines={2}
           >
-            {actionError || actionSuccess}
+            {bannerError || bannerSuccess}
           </Text>
         </Pressable>
       ) : null}
@@ -651,6 +723,12 @@ function TrustedNetworkHub({
                       tdmRequestBusy={tdmSession?.isCreating === true}
                       tdmAvailability={tdmRow.availability}
                       onRequestDirect={showTdmUi ? handleRequestDirectPress : undefined}
+                      notifyPassengerVisible={role === 'driver' && item.role === 'passenger'}
+                      notifyPassengerDisabled={actionsDisabled}
+                      notifyPassengerBusy={
+                        notifySending && notifyTarget?.connection_id === item.connection_id
+                      }
+                      onNotifyPassenger={role === 'driver' ? handleNotifyPress : undefined}
                     />
                     {showTdmUi && item.role === 'driver' && tdmRow.helperMessage ? (
                       <Text style={styles.tdmRowHint}>{tdmRow.helperMessage}</Text>
@@ -754,6 +832,63 @@ function TrustedNetworkHub({
             />
             <Pressable style={[styles.modalCancelBtn, trLt?.modalCancelBtn]} onPress={closeContributionModal}>
               <Text style={styles.modalCancelText}>{TDM_CONTRIBUTION_CANCEL}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={notifyTarget != null}
+        animationType="slide"
+        transparent
+        onRequestClose={closeNotifySheet}
+      >
+        <View style={[styles.modalBackdrop, trLt?.modalBackdrop]}>
+          <View style={[styles.modalCard, trLt?.modalCard]}>
+            <Text style={styles.modalTitle}>{TDM_NOTIFY_SHEET_TITLE}</Text>
+            <View style={styles.notifyOptions}>
+              {notifyTemplateOptions.map((opt) => {
+                const selected = notifyTemplate === opt.id;
+                return (
+                  <Pressable
+                    key={opt.id}
+                    style={[
+                      styles.notifyOption,
+                      trLt?.stepperBtn,
+                      selected && styles.notifyOptionSelected,
+                    ]}
+                    onPress={() => setNotifyTemplate(opt.id)}
+                    disabled={notifySending}
+                  >
+                    <Ionicons
+                      name={selected ? 'radio-button-on' : 'radio-button-off'}
+                      size={18}
+                      color={selected ? ui.accent : ui.textMuted}
+                    />
+                    <Text
+                      style={[
+                        styles.notifyOptionText,
+                        selected && styles.notifyOptionTextSelected,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <PremiumGradientCtaButton
+              label={TDM_NOTIFY_SEND}
+              onPress={() => void handleConfirmNotify()}
+              disabled={notifySending}
+              busy={notifySending}
+            />
+            <Pressable
+              style={[styles.modalCancelBtn, trLt?.modalCancelBtn]}
+              onPress={closeNotifySheet}
+              disabled={notifySending}
+            >
+              <Text style={styles.modalCancelText}>{TDM_NOTIFY_CANCEL}</Text>
             </Pressable>
           </View>
         </View>
@@ -1148,5 +1283,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: PREMIUM_TEXT_MUTED,
+  },
+  notifyOptions: {
+    gap: 8,
+  },
+  notifyOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: PREMIUM_BORDER_SLATE,
+  },
+  notifyOptionSelected: {
+    borderColor: 'rgba(34, 211, 238, 0.42)',
+  },
+  notifyOptionText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    lineHeight: 20,
+  },
+  notifyOptionTextSelected: {
+    color: PREMIUM_TEXT_SOFT,
+    fontWeight: '700',
   },
 });

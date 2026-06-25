@@ -14825,6 +14825,228 @@ async def post_trusted_direct_invite_decline_http(
         ) from e
 
 
+class TrustedDirectNotifyAvailabilityBody(BaseModel):
+    passenger_id: str
+    relationship_connection_id: str
+    message_template: Literal["available_now", "heading_kizilay", "nearby_ready"]
+
+
+_TDM_NOTIFY_TYPE = "trusted_driver_available"
+_TDM_NOTIFY_TITLE = "LeylekTAG Sürücü Bildirimi"
+_TDM_NOTIFY_PASSENGER_DAILY_MAX = 6
+_TDM_NOTIFY_PAIR_DAILY_MAX = 2
+
+
+def _trusted_actor_role_in_row(actor_norm: str, row: dict) -> Optional[str]:
+    ini = str(row.get("initiator_id") or "").strip().lower()
+    if ini == actor_norm:
+        return str(row.get("initiator_role") or "").strip().lower()
+    cp = str(row.get("counterparty_id") or "").strip().lower()
+    if cp == actor_norm:
+        return str(row.get("counterparty_role") or "").strip().lower()
+    return None
+
+
+def _user_display_name_for_tdm_notify(user_row: dict) -> str:
+    first = str(user_row.get("first_name") or "").strip()
+    name = str(user_row.get("name") or "").strip()
+    return first or _push_first_name(name, max_len=32) or name or "Sürücü"
+
+
+def _tdm_notify_body_for_template(driver_name: str, template: str) -> str:
+    templates = {
+        "available_now": f"{driver_name} şu anda müsait. İstek gönderebilirsiniz.",
+        "heading_kizilay": f"{driver_name} Kızılay yönüne gidiyor. İstek gönderebilirsiniz.",
+        "nearby_ready": f"{driver_name} yakınlarda. İstek gönderebilirsiniz.",
+    }
+    body = templates.get(str(template or "").strip().lower())
+    if not body:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "validation_error", "message": "Geçersiz bildirim şablonu"},
+        )
+    return body
+
+
+def _tdm_notify_availability_rate_limit_or_raise(passenger_id: str, body: str) -> None:
+    passenger_norm = str(passenger_id or "").strip().lower()
+    if not passenger_norm:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "validation_error", "message": "Yolcu kimliği geçersiz"},
+        )
+    now = datetime.now(timezone.utc)
+    cutoff_30m = (now - timedelta(minutes=30)).replace(microsecond=0).isoformat()
+    cutoff_24h = (now - timedelta(hours=24)).replace(microsecond=0).isoformat()
+    msg = "Bu yolcuya kısa süre önce bildirim gönderdiniz."
+
+    try:
+        pair_30m = (
+            supabase.table("notifications_log")
+            .select("id", count="exact")
+            .eq("type", _TDM_NOTIFY_TYPE)
+            .eq("user_id", passenger_norm)
+            .eq("body", body)
+            .gte("created_at", cutoff_30m)
+            .execute()
+        )
+        if int(pair_30m.count or 0) >= 1:
+            raise HTTPException(
+                status_code=429,
+                detail={"code": "rate_limited", "message": msg},
+            )
+
+        pair_24h = (
+            supabase.table("notifications_log")
+            .select("id", count="exact")
+            .eq("type", _TDM_NOTIFY_TYPE)
+            .eq("user_id", passenger_norm)
+            .eq("body", body)
+            .gte("created_at", cutoff_24h)
+            .execute()
+        )
+        if int(pair_24h.count or 0) >= _TDM_NOTIFY_PAIR_DAILY_MAX:
+            raise HTTPException(
+                status_code=429,
+                detail={"code": "rate_limited", "message": msg},
+            )
+
+        passenger_24h = (
+            supabase.table("notifications_log")
+            .select("id", count="exact")
+            .eq("type", _TDM_NOTIFY_TYPE)
+            .eq("user_id", passenger_norm)
+            .gte("created_at", cutoff_24h)
+            .execute()
+        )
+        if int(passenger_24h.count or 0) >= _TDM_NOTIFY_PASSENGER_DAILY_MAX:
+            raise HTTPException(
+                status_code=429,
+                detail={"code": "rate_limited", "message": msg},
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "tdm_notify_availability_rate_limit passenger=%s err=%s",
+            _mask_log_id(passenger_norm),
+            exc,
+        )
+
+
+async def _trusted_direct_notify_availability_impl(
+    actor_id: str,
+    passenger_id: str,
+    connection_id: str,
+    message_template: str,
+) -> dict:
+    actor_norm = str(actor_id or "").strip().lower()
+    passenger_norm = _normalize_trusted_uuid(passenger_id)
+    conn_id = _normalize_trusted_uuid(connection_id)
+    if not actor_norm or not passenger_norm or not conn_id:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "validation_error", "message": "Geçersiz istek"},
+        )
+
+    blocked = _get_bilateral_blocked_user_ids(actor_norm)
+    if passenger_norm in blocked:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "blocked_pair", "message": "Bu yolcuyla bildirim gönderemezsiniz"},
+        )
+
+    conn_res = (
+        supabase.table("trusted_connections")
+        .select(
+            "id, initiator_id, counterparty_id, initiator_role, counterparty_role, status"
+        )
+        .eq("id", conn_id)
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+    rows = conn_res.data or []
+    if not rows or not isinstance(rows[0], dict):
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "not_found", "message": "Güven bağlantısı bulunamadı"},
+        )
+    row = rows[0]
+    actor_role = _trusted_actor_role_in_row(actor_norm, row)
+    other_id, other_role = _trusted_counterparty_user_id(actor_norm, row)
+    if actor_role != "driver" or other_role != "passenger" or other_id != passenger_norm:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "forbidden", "message": "Bu işlem için uygun değilsiniz"},
+        )
+
+    user_res = (
+        supabase.table("users")
+        .select("id, name, first_name")
+        .eq("id", actor_norm)
+        .limit(1)
+        .execute()
+    )
+    user_row = (user_res.data or [None])[0]
+    if not user_row or not isinstance(user_row, dict):
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "not_found", "message": "Sürücü profili bulunamadı"},
+        )
+
+    driver_name = _user_display_name_for_tdm_notify(user_row)
+    body_text = _tdm_notify_body_for_template(driver_name, message_template)
+    _tdm_notify_availability_rate_limit_or_raise(passenger_norm, body_text)
+
+    push_data = {
+        "type": _TDM_NOTIFY_TYPE,
+        "driver_id": actor_norm,
+        "connection_id": conn_id,
+        "message_template": str(message_template).strip().lower(),
+        "action": "open_trusted_hub",
+    }
+    sent = await send_trip_push_and_log(
+        passenger_norm,
+        _TDM_NOTIFY_TYPE,
+        _TDM_NOTIFY_TITLE,
+        body_text,
+        push_data,
+    )
+    return {"sent": bool(sent)}
+
+
+@api_router.post("/trusted-direct/notify-availability")
+async def post_trusted_direct_notify_availability_http(
+    body: TrustedDirectNotifyAvailabilityBody,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Direct — sürücü yolcuya müsaitlik bildirimi (manuel push)."""
+    _require_trusted_direct_match_http()
+    await require_eligible_user(actor_id, action="trusted_direct_notify_availability")
+    try:
+        result = await _trusted_direct_notify_availability_impl(
+            actor_id,
+            body.passenger_id,
+            body.relationship_connection_id,
+            body.message_template,
+        )
+        return {"success": True, **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_direct_notify_availability actor=%s passenger=%s err=%s",
+            _mask_log_id(actor_id),
+            _mask_log_id(body.passenger_id),
+            e,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Müsaitlik bildirimi gönderilemedi",
+        ) from e
+
+
 @api_router.get("/admin/reports")
 async def get_all_reports(status: str = None, limit: int = 50):
     """Admin: Tüm şikayetleri getir"""

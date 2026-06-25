@@ -60,6 +60,9 @@ const PUSH_ROUTING_DATA_KEYS = [
   'is_dispatch',
   'is_broadcast',
   'is_rolling_batch',
+  'driver_id',
+  'connection_id',
+  'message_template',
 ] as const;
 
 /** FCM/APNs ham payload — iOS tap/initial bazen nested `data` veya JSON string taşır. */
@@ -292,6 +295,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     const tripScreenTypes = new Set(['call', 'qr']);
     const opensTripWithSession = (tripScreenTypes.has(t) || t === 'trip') && !!sid;
+
+    if (t === 'trusted_driver_available') {
+      navigateCancelledRef.current = false;
+      void (async () => {
+        if (navigateCancelledRef.current) return;
+        router.push('/trusted-network?role=passenger' as Href);
+        clearLastTappedNotification();
+      })();
+      return () => {
+        navigateCancelledRef.current = true;
+      };
+    }
 
     if (opensTripWithSession) {
       navigateCancelledRef.current = false;

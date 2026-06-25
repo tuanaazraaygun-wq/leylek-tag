@@ -19,6 +19,7 @@ EXPO_OFFERS_CHANNEL_TYPES = frozenset(
         "trip_completed",
         "driver_accepted",
         "ride_completed",
+        "trusted_driver_available",
     }
 )
 

@@ -22,6 +22,7 @@ import {
   CONFIRM_REVOKE_TITLE,
   formatTieInsightLine,
   TDM_REQUEST_BUSY,
+  TDM_NOTIFY_CTA,
 } from '../../lib/trustedHubCopy';
 import type {
   TrustedConnectionItem,
@@ -115,6 +116,10 @@ type TrustedConnectionRowProps = {
   tdmRequestBusy?: boolean;
   tdmAvailability?: TdmDriverAvailability | null;
   onRequestDirect?: (item: TrustedConnectionItem) => void;
+  notifyPassengerVisible?: boolean;
+  notifyPassengerDisabled?: boolean;
+  notifyPassengerBusy?: boolean;
+  onNotifyPassenger?: (item: TrustedConnectionItem) => void;
 };
 
 function TrustedConnectionRow({
@@ -128,6 +133,10 @@ function TrustedConnectionRow({
   tdmRequestBusy = false,
   tdmAvailability = null,
   onRequestDirect,
+  notifyPassengerVisible = false,
+  notifyPassengerDisabled = false,
+  notifyPassengerBusy = false,
+  onNotifyPassenger,
 }: TrustedConnectionRowProps) {
   const cp = item.counterparty;
   const displayName = (cp.display_name || '').trim() || 'Kullanıcı';
@@ -179,6 +188,18 @@ function TrustedConnectionRow({
     if (tdmDisabled || !onRequestDirect) return;
     onRequestDirect(item);
   }, [item, onRequestDirect, tdmDisabled]);
+
+  const showNotifyCta =
+    notifyPassengerVisible &&
+    hubRole === 'driver' &&
+    item.role === 'passenger' &&
+    typeof onNotifyPassenger === 'function';
+  const notifyDisabled = disabled || notifyPassengerDisabled || notifyPassengerBusy;
+
+  const handleNotifyPress = useCallback(() => {
+    if (notifyDisabled || !onNotifyPassenger) return;
+    onNotifyPassenger(item);
+  }, [item, notifyDisabled, onNotifyPassenger]);
 
   return (
     <View style={styles.row} accessibilityRole="text">
@@ -259,6 +280,28 @@ function TrustedConnectionRow({
               >
                 {tdmButtonLabel}
               </Text>
+            </Pressable>
+          )
+        ) : null}
+        {showNotifyCta ? (
+          notifyPassengerBusy ? (
+            <View style={styles.tdmBusy}>
+              <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [
+                styles.notifyBtn,
+                notifyDisabled && styles.notifyBtnDisabled,
+                pressed && !notifyDisabled && styles.notifyBtnPressed,
+              ]}
+              onPress={handleNotifyPress}
+              disabled={notifyDisabled}
+              accessibilityRole="button"
+              accessibilityLabel={TDM_NOTIFY_CTA}
+              accessibilityState={{ disabled: notifyDisabled }}
+            >
+              <Text style={styles.notifyBtnText}>{TDM_NOTIFY_CTA}</Text>
             </Pressable>
           )
         ) : null}
@@ -467,6 +510,25 @@ const styles = StyleSheet.create({
     width: 92,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  notifyBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+    backgroundColor: 'rgba(8, 47, 73, 0.35)',
+  },
+  notifyBtnDisabled: {
+    opacity: 0.45,
+  },
+  notifyBtnPressed: {
+    opacity: 0.88,
+  },
+  notifyBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: PREMIUM_AUTH_CYAN,
   },
   removeBtn: {
     alignSelf: 'center',

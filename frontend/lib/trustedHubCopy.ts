@@ -251,6 +251,16 @@ export const TDM_ORPHAN_CANCEL = 'İsteği iptal et';
 export const TDM_ORPHAN_PICK_ROUTE = 'Yeni rota seç';
 export const TDM_ORPHAN_CLOSE = 'Kapat';
 export const TDM_PENDING_ROW_HINT = 'Başka bir istek bekleniyor.';
+export const TDM_NOTIFY_CTA = 'Bildirim gönder';
+export const TDM_NOTIFY_SHEET_TITLE = 'Yolcuya müsaitlik bildirimi gönder';
+export const TDM_NOTIFY_OPTION_AVAILABLE = 'Şu anda müsaitim';
+export const TDM_NOTIFY_OPTION_KIZILAY = 'Kızılay yönüne gidiyorum';
+export const TDM_NOTIFY_OPTION_NEARBY = 'Yakınlardayım, istek gönderebilirsin';
+export const TDM_NOTIFY_SEND = 'Gönder';
+export const TDM_NOTIFY_CANCEL = 'Vazgeç';
+export const TDM_NOTIFY_SUCCESS = 'Bildirim gönderildi';
+export const TDM_NOTIFY_RATE_LIMITED = 'Bu yolcuya kısa süre önce bildirim gönderdiniz.';
+export const TDM_NOTIFY_FAILED = 'Bildirim gönderilemedi. Lütfen tekrar deneyin.';
 export const TDM_GENERIC_ERROR = 'İşlem tamamlanamadı. Lütfen tekrar deneyin.';
 
 export const TDM_DRIVER_INVITE_TITLE = 'Güven ağından doğrudan istek';

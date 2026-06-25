@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { API_BASE_URL } from './backendConfig';
 import { getPersistedAccessToken } from './sessionToken';
+import { TDM_NOTIFY_RATE_LIMITED } from './trustedHubCopy';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/json' };
 export const TDM_GET_TIMEOUT_MS = 8000;
@@ -393,6 +394,12 @@ function userMessageFromParsedError(
     }
     return { code: 'CONFLICT', message: 'İstek şu an gönderilemiyor' };
   }
+  if (status === 429) {
+    if (code === 'rate_limited' || rawLower.includes('rate_limit')) {
+      return { code: 'CONFLICT', message: TDM_NOTIFY_RATE_LIMITED };
+    }
+    return { code: 'CONFLICT', message: TDM_NOTIFY_RATE_LIMITED };
+  }
   if (status === 422) {
     return { code: 'VALIDATION', message: 'Bilgiler eksik veya geçersiz' };
   }
@@ -572,6 +579,29 @@ export async function cancelTrustedDirectRequest(
   const res = await tdmPost<TrustedDirectCancelResponse>(`/trusted-direct/request/${id}/cancel`);
   if (res.ok === false) return res;
   return ok(normalizeRequestRow(res.data.request as Record<string, unknown>));
+}
+
+export type TrustedDirectNotifyTemplate =
+  | 'available_now'
+  | 'heading_kizilay'
+  | 'nearby_ready';
+
+export type TrustedDirectNotifyAvailabilityResponse = {
+  success: true;
+  sent: boolean;
+};
+
+export async function notifyTrustedDriverAvailability(payload: {
+  passenger_id: string;
+  relationship_connection_id: string;
+  message_template: TrustedDirectNotifyTemplate;
+}): Promise<TrustedDirectApiResult<{ sent: boolean }>> {
+  const res = await tdmPost<TrustedDirectNotifyAvailabilityResponse>(
+    '/trusted-direct/notify-availability',
+    payload,
+  );
+  if (res.ok === false) return res;
+  return ok({ sent: Boolean(res.data.sent) });
 }
 
 export async function resolvePersistedPassengerUserId(): Promise<string | null> {
