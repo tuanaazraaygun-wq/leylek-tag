@@ -581,10 +581,7 @@ export async function cancelTrustedDirectRequest(
   return ok(normalizeRequestRow(res.data.request as Record<string, unknown>));
 }
 
-export type TrustedDirectNotifyTemplate =
-  | 'available_now'
-  | 'heading_kizilay'
-  | 'nearby_ready';
+export type TrustedDirectNotifyTemplate = 'available_now' | 'nearby_ready';
 
 export type TrustedDirectNotifyAvailabilityResponse = {
   success: true;

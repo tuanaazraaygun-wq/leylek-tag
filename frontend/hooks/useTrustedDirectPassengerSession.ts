@@ -14,27 +14,14 @@ import {
   type TrustedDirectRequestRow,
   type TrustedDirectRouteContext,
 } from '../lib/trustedDirectApi';
-import {
-  TDM_TERMINAL_CANCELLED,
-  TDM_TERMINAL_DECLINED,
-  TDM_TERMINAL_NO_RESPONSE,
-} from '../lib/trustedHubCopy';
+import { TDM_MATCHING_TIMEOUT } from '../lib/trustedHubCopy';
 
-function terminalMessageForRequestStatus(
-  status: string | null | undefined,
-): string {
-  const st = String(status || '').trim().toLowerCase();
-  if (st === 'cancelled') {
-    return TDM_TERMINAL_CANCELLED;
-  }
-  if (st === 'expired') {
-    return TDM_TERMINAL_NO_RESPONSE;
-  }
-  if (st === 'declined') {
-    return TDM_TERMINAL_DECLINED;
-  }
-  return TDM_TERMINAL_DECLINED;
-}
+const TDM_ACCEPT_GRACE_MS = TDM_POLL_INTERVAL_MS;
+
+export type TrustedDirectTerminalDeclinedPayload = {
+  reason: 'declined';
+  responderLabel: string | null;
+};
 
 function maxMatchingPollsForInterval(pollIntervalMs: number): number {
   return Math.max(1, Math.ceil(TDM_MATCHING_TIMEOUT_MS / pollIntervalMs));
@@ -55,6 +42,7 @@ export type UseTrustedDirectPassengerSessionOptions = {
   hasActiveTag: boolean;
   pollIntervalMs?: number;
   onMatched: (tagId: string) => void;
+  onTerminalDeclined?: (payload: TrustedDirectTerminalDeclinedPayload) => void;
 };
 
 function isPendingResponderStatus(status: string | null | undefined): boolean {
@@ -92,6 +80,7 @@ export function useTrustedDirectPassengerSession(
     hasActiveTag,
     pollIntervalMs = TDM_POLL_INTERVAL_MS,
     onMatched,
+    onTerminalDeclined,
   } = options;
 
   const [status, setStatus] = useState<TrustedDirectPassengerSessionStatus>('idle');
@@ -120,6 +109,9 @@ export function useTrustedDirectPassengerSession(
   const hasActiveTagRef = useRef(hasActiveTag);
   const pollIntervalMsRef = useRef(pollIntervalMs);
   const onMatchedRef = useRef(onMatched);
+  const onTerminalDeclinedRef = useRef(onTerminalDeclined);
+  const responderLabelRef = useRef<string | null>(null);
+  const terminalNotifiedRef = useRef(false);
   const prevEnabledRef = useRef(false);
   const prevHasActiveTagRef = useRef(false);
 
@@ -129,7 +121,12 @@ export function useTrustedDirectPassengerSession(
     hasActiveTagRef.current = hasActiveTag;
     pollIntervalMsRef.current = pollIntervalMs;
     onMatchedRef.current = onMatched;
-  }, [userId, enabled, hasActiveTag, pollIntervalMs, onMatched]);
+    onTerminalDeclinedRef.current = onTerminalDeclined;
+  }, [userId, enabled, hasActiveTag, pollIntervalMs, onMatched, onTerminalDeclined]);
+
+  useEffect(() => {
+    responderLabelRef.current = responderLabel;
+  }, [responderLabel]);
 
   useEffect(() => {
     requestRef.current = request;
@@ -157,7 +154,25 @@ export function useTrustedDirectPassengerSession(
     setIsCreating(false);
     setIsCancelling(false);
     setIsRestoring(false);
+    terminalNotifiedRef.current = false;
   }, []);
+
+  const finishTerminalDeclined = useCallback(
+    (generation: number) => {
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return;
+      }
+      if (terminalNotifiedRef.current) {
+        return;
+      }
+      terminalNotifiedRef.current = true;
+      stopPolling();
+      const label = responderLabelRef.current?.trim() || null;
+      onTerminalDeclinedRef.current?.({ reason: 'declined', responderLabel: label });
+      resetLocal();
+    },
+    [resetLocal, stopPolling],
+  );
 
   const finishTerminal = useCallback(
     (message: string, generation: number) => {
@@ -179,9 +194,20 @@ export function useTrustedDirectPassengerSession(
 
   const finishMatchingTimeout = useCallback(
     (generation: number) => {
-      finishTerminal(TDM_TERMINAL_NO_RESPONSE, generation);
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return;
+      }
+      stopPolling();
+      setRequest(null);
+      setResponderLabel(null);
+      setPollErrorMessage(null);
+      setIsCreating(false);
+      setIsCancelling(false);
+      setIsRestoring(false);
+      setStatus('idle');
+      setErrorMessage(TDM_MATCHING_TIMEOUT);
     },
-    [finishTerminal],
+    [stopPolling],
   );
 
   const enterMatchingPhase = useCallback(
@@ -220,36 +246,114 @@ export function useTrustedDirectPassengerSession(
         return;
       }
       if (isTerminalRequestStatus(nextRequest.status)) {
-        finishTerminal(terminalMessageForRequestStatus(nextRequest.status), generation);
+        if (String(nextRequest.status || '').trim().toLowerCase() === 'declined') {
+          finishTerminalDeclined(generation);
+          return;
+        }
+        finishTerminal('İstek yanıtlanmadı veya sona erdi.', generation);
         return;
       }
       enterMatchingPhase(generation);
     },
-    [enterMatchingPhase, finishTerminal],
+    [enterMatchingPhase, finishTerminal, finishTerminalDeclined],
   );
 
-  const resolveActiveTagOrTerminal = useCallback(
-    async (generation: number, terminalMessage: string): Promise<boolean> => {
+  const probePendingAbsentOutcome = useCallback(
+    async (generation: number) => {
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return;
+      }
+      if (hasActiveTagRef.current) {
+        stopPolling();
+        return;
+      }
+
       const uid = String(userIdRef.current || '').trim();
       if (!uid) {
-        finishTerminal(terminalMessage, generation);
-        return true;
+        return;
       }
 
-      const tagResult = await fetchPassengerActiveTagForBootstrap(uid);
+      const checkTag = async (): Promise<'abort' | 'retry' | string | null> => {
+        const tagResult = await fetchPassengerActiveTagForBootstrap(uid);
+        if (!mountedRef.current || generation !== generationRef.current) {
+          return 'abort';
+        }
+        if (tagResult.ok === false) {
+          if (
+            tagResult.code === 'NETWORK' ||
+            tagResult.code === 'SERVER' ||
+            tagResult.code === 'PARSE'
+          ) {
+            setPollErrorMessage(userFacingPollError(tagResult));
+            return 'retry';
+          }
+          if (isHardPollStopCode(tagResult.code)) {
+            stopPolling();
+            setStatus('error');
+            setErrorMessage(mapTdmUserFacingError(tagResult));
+            return 'abort';
+          }
+          return null;
+        }
+        const tagId = String(tagResult.data?.id || '').trim();
+        return tagId || null;
+      };
+
+      const tagIdFirst = await checkTag();
+      if (tagIdFirst === 'abort' || tagIdFirst === 'retry') {
+        return;
+      }
+      if (typeof tagIdFirst === 'string' && tagIdFirst) {
+        handleMatchedTag(tagIdFirst, generation);
+        return;
+      }
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, TDM_ACCEPT_GRACE_MS);
+      });
       if (!mountedRef.current || generation !== generationRef.current) {
-        return true;
+        return;
       }
 
-      if (tagResult.ok && tagResult.data?.id) {
-        handleMatchedTag(tagResult.data.id, generation);
-        return true;
+      const tagIdGrace = await checkTag();
+      if (tagIdGrace === 'abort' || tagIdGrace === 'retry') {
+        return;
+      }
+      if (typeof tagIdGrace === 'string' && tagIdGrace) {
+        handleMatchedTag(tagIdGrace, generation);
+        return;
       }
 
-      finishTerminal(terminalMessage, generation);
-      return true;
+      const activeResult = await getActiveTrustedDirectRequest();
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return;
+      }
+
+      if (activeResult.ok === false) {
+        if (
+          activeResult.code === 'NETWORK' ||
+          activeResult.code === 'SERVER' ||
+          activeResult.code === 'PARSE'
+        ) {
+          setPollErrorMessage(userFacingPollError(activeResult));
+          return;
+        }
+        if (isHardPollStopCode(activeResult.code)) {
+          stopPolling();
+          setStatus('error');
+          setErrorMessage(mapTdmUserFacingError(activeResult));
+        }
+        return;
+      }
+
+      if (activeResult.data) {
+        applyPendingRequest(activeResult.data, generation);
+        return;
+      }
+
+      finishTerminalDeclined(generation);
     },
-    [finishTerminal, handleMatchedTag],
+    [applyPendingRequest, finishTerminalDeclined, handleMatchedTag, stopPolling],
   );
 
   const pollPendingOnce = useCallback(
@@ -273,13 +377,13 @@ export function useTrustedDirectPassengerSession(
       }
 
       if (!result.data) {
-        await resolveActiveTagOrTerminal(generation, TDM_TERMINAL_DECLINED);
+        await probePendingAbsentOutcome(generation);
         return;
       }
 
       applyPendingRequest(result.data, generation);
     },
-    [applyPendingRequest, resolveActiveTagOrTerminal, stopPolling],
+    [applyPendingRequest, probePendingAbsentOutcome, stopPolling],
   );
 
   const pollMatchingOnce = useCallback(

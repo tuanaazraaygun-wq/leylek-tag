@@ -254,8 +254,28 @@ export const TDM_PENDING_ROW_HINT = 'Başka bir istek bekleniyor.';
 export const TDM_NOTIFY_CTA = 'Bildirim gönder';
 export const TDM_NOTIFY_SHEET_TITLE = 'Yolcuya müsaitlik bildirimi gönder';
 export const TDM_NOTIFY_OPTION_AVAILABLE = 'Şu anda müsaitim';
-export const TDM_NOTIFY_OPTION_KIZILAY = 'Kızılay yönüne gidiyorum';
 export const TDM_NOTIFY_OPTION_NEARBY = 'Yakınlardayım, istek gönderebilirsin';
+export const TDM_TERMINAL_DECLINED_TITLE = '{name} şu anda müsait değil';
+export const TDM_TERMINAL_DECLINED_BODY =
+  '{name} bu yol paylaşım isteğini şu anda kabul edemedi. Müsait olduğunda size güven ağından müsaitlik bildirimi gönderebilir. Bu sırada diğer sürücülerinize istek gönderebilirsiniz.';
+export const TDM_TERMINAL_DECLINED_PRIMARY = 'Diğer sürücülere bak';
+export const TDM_TERMINAL_DECLINED_SECONDARY = 'Tamam';
+
+function tdmResponderDisplayName(responderLabel?: string | null): string {
+  const name = (responderLabel || '').trim();
+  return name || 'Sürücü';
+}
+
+export function formatTdmTerminalDeclinedAlert(responderLabel?: string | null): {
+  title: string;
+  body: string;
+} {
+  const name = tdmResponderDisplayName(responderLabel);
+  return {
+    title: TDM_TERMINAL_DECLINED_TITLE.replace('{name}', name),
+    body: TDM_TERMINAL_DECLINED_BODY.replace(/\{name\}/g, name),
+  };
+}
 export const TDM_NOTIFY_SEND = 'Gönder';
 export const TDM_NOTIFY_CANCEL = 'Vazgeç';
 export const TDM_NOTIFY_SUCCESS = 'Bildirim gönderildi';

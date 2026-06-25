@@ -71,7 +71,6 @@ import {
   TDM_NOTIFY_CANCEL,
   TDM_NOTIFY_FAILED,
   TDM_NOTIFY_OPTION_AVAILABLE,
-  TDM_NOTIFY_OPTION_KIZILAY,
   TDM_NOTIFY_OPTION_NEARBY,
   TDM_NOTIFY_RATE_LIMITED,
   TDM_NOTIFY_SEND,
@@ -199,7 +198,6 @@ function TrustedNetworkHub({
   const notifyTemplateOptions = useMemo(
     (): { id: TrustedDirectNotifyTemplate; label: string }[] => [
       { id: 'available_now', label: TDM_NOTIFY_OPTION_AVAILABLE },
-      { id: 'heading_kizilay', label: TDM_NOTIFY_OPTION_KIZILAY },
       { id: 'nearby_ready', label: TDM_NOTIFY_OPTION_NEARBY },
     ],
     [],

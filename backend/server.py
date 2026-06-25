@@ -14828,7 +14828,7 @@ async def post_trusted_direct_invite_decline_http(
 class TrustedDirectNotifyAvailabilityBody(BaseModel):
     passenger_id: str
     relationship_connection_id: str
-    message_template: Literal["available_now", "heading_kizilay", "nearby_ready"]
+    message_template: Literal["available_now", "nearby_ready"]
 
 
 _TDM_NOTIFY_TYPE = "trusted_driver_available"
@@ -14856,7 +14856,6 @@ def _user_display_name_for_tdm_notify(user_row: dict) -> str:
 def _tdm_notify_body_for_template(driver_name: str, template: str) -> str:
     templates = {
         "available_now": f"{driver_name} şu anda müsait. İstek gönderebilirsiniz.",
-        "heading_kizilay": f"{driver_name} Kızılay yönüne gidiyor. İstek gönderebilirsiniz.",
         "nearby_ready": f"{driver_name} yakınlarda. İstek gönderebilirsiniz.",
     }
     body = templates.get(str(template or "").strip().lower())

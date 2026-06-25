@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import TrustedNetworkHub from '../components/superUx/TrustedNetworkHub';
 import TrustedDirectWaitingOverlay from '../components/superUx/TrustedDirectWaitingOverlay';
-import { useTrustedDirectPassengerSession } from '../hooks/useTrustedDirectPassengerSession';
+import { appAlert } from '../contexts/AppAlertContext';
+import {
+  useTrustedDirectPassengerSession,
+  type TrustedDirectTerminalDeclinedPayload,
+} from '../hooks/useTrustedDirectPassengerSession';
 import {
   clearTrustedDirectRouteContext,
   fetchPassengerActiveTagForBootstrap,
@@ -11,7 +15,12 @@ import {
   probeTrustedDirectAvailable,
   resolvePersistedPassengerUserId,
 } from '../lib/trustedDirectApi';
-import type { TrustedHubRole } from '../lib/trustedHubCopy';
+import {
+  formatTdmTerminalDeclinedAlert,
+  TDM_TERMINAL_DECLINED_PRIMARY,
+  TDM_TERMINAL_DECLINED_SECONDARY,
+  type TrustedHubRole,
+} from '../lib/trustedHubCopy';
 
 function parseHubRole(raw: string | string[] | undefined): TrustedHubRole {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -66,15 +75,35 @@ export default function TrustedNetworkRoute() {
     [router],
   );
 
+  const handleTerminalDeclined = useCallback(
+    (payload: TrustedDirectTerminalDeclinedPayload) => {
+      const { title, body } = formatTdmTerminalDeclinedAlert(payload.responderLabel);
+      appAlert(
+        title,
+        body,
+        [
+          { text: TDM_TERMINAL_DECLINED_SECONDARY, style: 'cancel' },
+          { text: TDM_TERMINAL_DECLINED_PRIMARY, style: 'default' },
+        ],
+        { tone: 'info' },
+      );
+    },
+    [],
+  );
+
   const tdmSession = useTrustedDirectPassengerSession({
     enabled: hubRole === 'passenger' && tdmEnabled === true && !!routeContext && !hasActiveTag,
     userId,
     routeContext,
     hasActiveTag,
     onMatched: handleMatched,
+    onTerminalDeclined: handleTerminalDeclined,
   });
 
   const handleCancelWaiting = useCallback(() => {
+    if (tdmSession.status === 'matching') {
+      return;
+    }
     void tdmSession.cancel();
   }, [tdmSession]);
 
