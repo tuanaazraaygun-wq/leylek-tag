@@ -1,4 +1,4 @@
--- tags.type: Martı vs Muhabbet. INSERT her zaman type göndermeli; DB default YOK.
+-- tags.type: normal=Leylek TAG ride vs Muhabbet. INSERT her zaman type göndermeli; DB default YOK.
 -- Idempotent: önceki sürümde DEFAULT 'normal' varsa kaldırılır.
 
 ALTER TABLE public.tags
@@ -11,7 +11,7 @@ WHERE type IS NULL OR trim(both from type) = '';
 ALTER TABLE public.tags
   ALTER COLUMN type SET NOT NULL;
 
-COMMENT ON COLUMN public.tags.type IS 'normal=Martı; muhabbet=Leylek Muhabbeti. INSERT zorunlu; default yok.';
+COMMENT ON COLUMN public.tags.type IS 'normal=Leylek TAG ride; muhabbet=Leylek Muhabbeti. INSERT zorunlu; default yok.';
 
 DO $$
 BEGIN

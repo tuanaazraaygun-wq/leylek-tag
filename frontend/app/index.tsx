@@ -7865,7 +7865,7 @@ function PassengerDashboard({
     })();
   }, [user?.id]);
   
-  // 🆕 MARTI TAG - Fiyat Teklifi State'leri
+  // Offer flow — fiyat teklifi state'leri
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [priceInfo, setPriceInfo] = useState<{
     distance_km: number;
@@ -10929,7 +10929,7 @@ function PassengerDashboard({
     }
   };
 
-  // ÇAĞRI BUTONU - MARTI TAG: Fiyat hesapla ve modal aç
+  // ÇAĞRI BUTONU — offer flow: fiyat hesapla ve modal aç
   const handleCallButton = async () => {
     playTapSound();
     void playUiTapSound();
@@ -11083,7 +11083,7 @@ function PassengerDashboard({
     }
   };
   
-  // MARTI TAG: Fiyat teklifi gönder — önce backend tag oluşturur, rolling dispatch tetiklenir; sonra bekleme UI
+  // Offer flow: fiyat teklifi gönder — önce backend tag oluşturur, rolling dispatch tetiklenir; sonra bekleme UI
   const submitPassengerPriceOfferCore = async () => {
     if (!destination || !priceInfo || !selectedPrice || !user?.id) {
       patchRideCreateDiag({
@@ -11366,7 +11366,7 @@ function PassengerDashboard({
             passenger_payment_method: 'cash',
           });
         }
-        perfLog('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', resolvedTagId);
+        perfLog('🚀 Offer flow: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', resolvedTagId);
         passengerPostForceEndRef.current = false;
       } catch (err) {
         perfLog('Backend kayıt hatası:', err);
@@ -13809,7 +13809,7 @@ function PassengerDashboard({
               </TouchableOpacity>
             ) : null}
             
-            {/* 🆕 MARTI TAG - Fiyat Teklif Modal */}
+            {/* Offer flow — fiyat teklif modal */}
             <Modal
               visible={showPriceModal}
               transparent={true}
@@ -16631,7 +16631,7 @@ function DriverDashboard({
           dropoff_lng: data.dropoff_lng,
           dropoff_address: data.dropoff_address || dropoffLabel,
           dropoff_location: dropoffLabel,
-          // 🆕 MARTI TAG - Yolcu fiyat teklifi
+          // Offer flow — yolcu fiyat teklifi
           offered_price: data.offered_price || 0,
           distance_km: tripKm ?? 0,
           estimated_minutes: tripDur || 0,
@@ -18159,7 +18159,7 @@ function DriverDashboard({
         });
 
         setActiveTag(null);
-        // Bekleyen Marti / socket teklifleri `active-tag` boşken de geçerlidir; `setRequests([])` flicker üretirdi (polling ~2.5s).
+        // Bekleyen ride offer / socket teklifleri `active-tag` boşken de geçerlidir; `setRequests([])` flicker üretirdi (polling ~2.5s).
         try {
           perfLog(
             JSON.stringify({
@@ -21924,7 +21924,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // 🆕 MARTI TAG — Fiyat / ödeme sheet (premium glass; logic değişmez)
+  // Offer flow — fiyat / ödeme sheet (premium glass; logic değişmez)
   priceModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(2, 6, 23, 0.55)',

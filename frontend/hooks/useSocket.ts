@@ -668,19 +668,19 @@ export default function useSocket({
     // Sürücü room'una giden teklif; yolcu room'una gitmez. Rol yanlış yazılsa bile kaçırmamak için her zaman dinle.
     socket.on('new_passenger_offer', handleNewTag);
     socket.on('tag_cancelled', handleTagCancelledPlain);
-    socket.on('passenger_offer_cancelled', handlePassengerOfferCancelledEvt); // 🆕 MARTI TAG
-    socket.on('passenger_offer_taken', handlePassengerOfferTakenEvt); // 🆕 MARTI TAG - Başka sürücü aldı
+    socket.on('passenger_offer_cancelled', handlePassengerOfferCancelledEvt); // offer flow
+    socket.on('passenger_offer_taken', handlePassengerOfferTakenEvt); // offer flow — başka sürücü aldı
     socket.on('passenger_offer_revoked', handlePassengerOfferRevokedEvt); // soft revoke → onRemoveOffer (30s min)
     socket.on('remove_offer', handleRemoveOfferRolling); // Rolling batch — sürücü UI’si onRemoveOffer ile min. görünürlük
     socket.on('tag_updated', handleTagUpdated);
     socket.on('tag_matched', handleTagMatched);
-    socket.on('offer_accepted_success', handleTagMatched); // 🆕 MARTI TAG - Sürücü kabul etti
+    socket.on('offer_accepted_success', handleTagMatched); // offer flow — sürücü kabul etti
     
     socket.on('new_offer', handleNewOffer);
     socket.on('offer_accepted', handleOfferAccepted);
     socket.on('offer_rejected', handleOfferRejected);
     socket.on('offer_sent_ack', handleOfferSentAck);
-    socket.on('driver_matched', handleTagMatched); // 🆕 MARTI TAG - Yolcuya sürücü eşleşti
+    socket.on('driver_matched', handleTagMatched); // offer flow — yolcuya sürücü eşleşti
     socket.on('ride_accepted', handleRideAccepted);
     socket.on('ride_matched', handleRideMatched);
     socket.on('driver_on_the_way', handleDriverOnTheWay);
@@ -739,7 +739,7 @@ export default function useSocket({
       socket.off('remove_offer', handleRemoveOfferRolling);
       socket.off('tag_updated', handleTagUpdated);
       socket.off('tag_matched', handleTagMatched);
-      socket.off('offer_accepted_success', handleTagMatched); // 🆕 MARTI TAG
+      socket.off('offer_accepted_success', handleTagMatched); // offer flow
       socket.off('driver_matched', handleTagMatched);
       socket.off('ride_accepted', handleRideAccepted);
       socket.off('ride_matched', handleRideMatched);
@@ -883,7 +883,7 @@ export default function useSocket({
     dropoff_location: string;
     dropoff_lat: number;
     dropoff_lng: number;
-    // 🆕 MARTI TAG parametreleri
+    // offer flow parametreleri
     offered_price?: number;
     distance_km?: number;
     estimated_minutes?: number;
@@ -935,7 +935,7 @@ export default function useSocket({
     contextEmitRejectOffer(data);
   }, [contextEmitRejectOffer]);
 
-  // 🆕 MARTI TAG: Sürücü teklifi kabul — backend driver_accept_offer (connect-safe emit)
+  // offer flow: sürücü teklifi kabul — backend driver_accept_offer (connect-safe emit)
   const emitDriverAcceptOffer = useCallback(
     (data: { tag_id: string; driver_id: string; driver_name?: string; trip_id?: string }) => {
       contextEmitDriverAcceptOffer({
@@ -1066,7 +1066,7 @@ export default function useSocket({
     emitSendOffer,
     emitAcceptOffer,
     emitRejectOffer,
-    emitDriverAcceptOffer, // 🆕 MARTI TAG
+    emitDriverAcceptOffer, // offer flow
     // Konum
     emitLocationUpdate,
     emitDriverLocationUpdate,

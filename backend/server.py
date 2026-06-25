@@ -261,7 +261,7 @@ _OFFER_ROUTINE_SOCKET_EVENTS = frozenset({
 def _is_offer_routine_socket_event(event_name: str) -> bool:
     return str(event_name or "").strip() in _OFFER_ROUTINE_SOCKET_EVENTS
 
-# tags.type: Martı yolculuğu vs Muhabbet (aktif yolculuk/dispatch yalnız TAG_TYPE_NORMAL)
+# tags.type: normal ride (Leylek TAG) vs Muhabbet (aktif yolculuk/dispatch yalnız TAG_TYPE_NORMAL)
 TAG_TYPE_NORMAL = "normal"
 TAG_TYPE_MUHABBET = "muhabbet"
 
@@ -17894,7 +17894,7 @@ async def get_driver_active_tag(driver_id: str = None, user_id: str = None):
 @api_router.get("/driver/dispatch-pending-offer")
 async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str = None):
     """
-    Sıralı dispatch: Bu sürücüye 'sent' durumunda bekleyen Martı teklifi (uygulama resume).
+    Sıralı dispatch: Bu sürücüye 'sent' durumunda bekleyen normal ride offer (uygulama resume).
     """
     try:
         did = driver_id or user_id
@@ -24157,7 +24157,7 @@ async def match_accept_cleanup_foreign_offers(
     )
 
 
-# Socket event: MARTI TAG - Sürücü teklifi kabul eder (Uber-style: trip lock → push → socket)
+# Socket event: driver offer flow — sürücü teklifi kabul eder (Uber-style: trip lock → push → socket)
 @sio.on("driver_accept_offer")
 async def handle_driver_accept_offer(sid, data):
     """
@@ -25054,7 +25054,7 @@ async def mark_messages_read(tag_id: str, user_id: str):
         logger.error(f"❌ Mark read error: {e}")
         return {"success": False, "error": str(e)}
 
-# ==================== MARTI TAG - FİYAT HESAPLAMA ====================
+# ==================== RIDE OFFER CALCULATION ====================
 
 def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """İki nokta arası mesafe (km) - Kuş uçuşu"""
@@ -25913,7 +25913,7 @@ async def _create_ride_offer_execute(
 
 @api_router.post("/ride/create-offer")
 async def create_ride_offer(http_request: Request):
-    """Martı TAG — yolcu teklifi; gövde JSON, Request üzerinden okunur."""
+    """Leylek TAG teklif akışı — yolcu teklifi; gövde JSON, Request üzerinden okunur."""
     payload = await _parse_create_ride_offer_json(http_request)
     return await _create_ride_offer_execute(payload, auth_user_id=None)
 
@@ -25945,7 +25945,7 @@ async def create_ride(http_request: Request):
 @api_router.post("/ride/accept")
 async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request = None):
     """
-    Martı TAG - Sürücü teklifi kabul eder
+    Leylek TAG teklif akışı — sürücü teklifi kabul eder
     İLK KABUL EDEN KAZANIR - Atomik işlem
     Yolcu araç tercihi ile sürücü vehicle_kind eşleşmezse kabul edilmez.
     """
@@ -26208,7 +26208,7 @@ async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request 
 @api_router.get("/ride/available-offers")
 async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km: float = 20):
     """
-    Martı TAG - Sürücü için mevcut teklifleri getir
+    Leylek TAG teklif akışı — sürücü için mevcut teklifleri getir
     Sadece 'waiting' durumundaki ve yakındaki teklifler
     """
     try:
@@ -26683,7 +26683,7 @@ async def admin_full_dashboard(admin_phone: str):
         except Exception as _nud:
             logger.warning(f"new_users_today count: {_nud}")
         
-        # Trip istatistikleri (yalnız Martı / type=normal)
+        # Trip istatistikleri (yalnız normal ride / type=normal)
         completed_today = (
             supabase.table("tags")
             .select("id", count="exact")

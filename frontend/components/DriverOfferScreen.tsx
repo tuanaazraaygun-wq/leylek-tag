@@ -1058,7 +1058,7 @@ export interface PassengerRequest {
   trip_distance_km?: number;
   time_to_passenger_min?: number;
   trip_duration_min?: number;
-  // 🆕 MARTI TAG
+  // offer flow
   offered_price?: number;
   notes?: string;
   created_at?: string;
@@ -1104,7 +1104,7 @@ function isDriverOfferNoLongerAvailable(res: Response, errMsg: string, rawText: 
   );
 }
 
-// Yolcu Request Kartı Bileşeni - MARTI TAG MODELİ
+// Yolcu Request Kartı Bileşeni — offer flow modeli
 function RequestCard({ 
   request, 
   driverLocation,
