@@ -6,6 +6,7 @@ from typing import Any, Mapping, Optional
 EXPO_OFFERS_CHANNEL_TYPES = frozenset(
     {
         "new_offer",
+        "trusted_direct_invite",
         "match_found",
         "match_confirmed",
         "kyc_approved",

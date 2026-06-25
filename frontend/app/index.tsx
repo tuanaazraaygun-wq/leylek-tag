@@ -15762,6 +15762,7 @@ function DriverDashboard({
     notification: driverForegroundOfferNotification,
   } = useNotifications();
   const lastOfferPushNotificationIdRef = useRef<string | null>(null);
+  const lastTdmPushNotificationIdRef = useRef<string | null>(null);
 
   const fetchAndAppendOfferFromTagId = useCallback(async (tagId: string): Promise<boolean> => {
     if (forceEndLockRef.current) {
@@ -18444,6 +18445,43 @@ function DriverDashboard({
     hasActiveTag: Boolean(activeTag),
     onMatched: handleTrustedDirectDriverMatched,
   });
+
+  // 🔔 TDM invite push — tap (trusted_direct_invite; normal new_offer/tag_id akışına girmez)
+  useEffect(() => {
+    const data = lastTappedNotificationData as Record<string, unknown> | null | undefined;
+    if (!data) return;
+    if (String(data.type || '').trim().toLowerCase() !== 'trusted_direct_invite') return;
+    clearLastTappedNotification();
+    setScreen('dashboard');
+    if (trustedDirectDriverEnabled) {
+      void trustedDirectDriverSession.refresh();
+    }
+  }, [
+    lastTappedNotificationData,
+    clearLastTappedNotification,
+    trustedDirectDriverEnabled,
+    trustedDirectDriverSession.refresh,
+    setScreen,
+  ]);
+
+  // 🔔 TDM invite push — foreground (tıklamadan refresh; ses modal pending ile gelir)
+  useEffect(() => {
+    const n = driverForegroundOfferNotification;
+    if (!n?.request) return;
+    const raw = n.request.content?.data as Record<string, unknown> | undefined;
+    if (!raw) return;
+    if (String(raw.type || '').trim().toLowerCase() !== 'trusted_direct_invite') return;
+    const nid = n.request.identifier;
+    if (lastTdmPushNotificationIdRef.current === nid) return;
+    lastTdmPushNotificationIdRef.current = nid;
+    if (trustedDirectDriverEnabled) {
+      void trustedDirectDriverSession.refresh();
+    }
+  }, [
+    driverForegroundOfferNotification,
+    trustedDirectDriverEnabled,
+    trustedDirectDriverSession.refresh,
+  ]);
 
   useEffect(() => {
     if (!quickMatchDriverEnabled) return;

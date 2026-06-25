@@ -14557,6 +14557,46 @@ async def post_trusted_direct_request_http(
         )
         idempotent = bool(result.pop("idempotent_replay", False))
         payload = {"success": True, **result}
+
+        if not idempotent:
+            invite_row = (result.get("invite") or {}) if isinstance(result, dict) else {}
+            request_row = (result.get("request") or {}) if isinstance(result, dict) else {}
+            driver_id = str(
+                invite_row.get("responder_id") or request_row.get("responder_id") or ""
+            ).strip()
+            invite_id = str(invite_row.get("id") or "").strip()
+            request_id = str(request_row.get("id") or "").strip()
+            requester_id = str(request_row.get("requester_id") or actor_id or "").strip()
+
+            if driver_id and invite_id and request_id:
+                pickup = str(request_row.get("pickup_label") or "").strip()
+                dropoff = str(request_row.get("dropoff_label") or "").strip()
+                body = (
+                    f"{pickup} → {dropoff}".strip(" →")
+                    if pickup or dropoff
+                    else "Güvenilir bağlantınızdan yeni istek"
+                )
+                try:
+                    asyncio.create_task(
+                        send_trip_push_and_log(
+                            driver_id,
+                            "trusted_direct_invite",
+                            "Güven ağından doğrudan istek",
+                            body[:72],
+                            _trusted_direct_invite_push_data(
+                                invite_id=invite_id,
+                                request_id=request_id,
+                                requester_id=requester_id,
+                            ),
+                        )
+                    )
+                except Exception as push_err:
+                    logger.warning(
+                        "trusted_direct_invite_push_skipped driver=%s err=%s",
+                        _mask_log_id(driver_id),
+                        push_err,
+                    )
+
         if idempotent:
             return JSONResponse(status_code=200, content=payload)
         return JSONResponse(status_code=201, content=payload)
@@ -18520,6 +18560,22 @@ def _new_offer_push_data_from_offer(offer_data: dict) -> dict:
     if offer_data.get("is_rolling_batch"):
         d["is_rolling_batch"] = True
     return d
+
+
+def _trusted_direct_invite_push_data(
+    *,
+    invite_id: str,
+    request_id: str,
+    requester_id: str,
+) -> dict:
+    """FCM data — tag_id yok; normal new_offer routing'e düşmesin."""
+    return {
+        "type": "trusted_direct_invite",
+        "invite_id": str(invite_id or "").strip(),
+        "request_id": str(request_id or "").strip(),
+        "requester_id": str(requester_id or "").strip(),
+        "source": "trusted_direct",
+    }
 
 
 def build_call_push_payload(

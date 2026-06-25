@@ -39,6 +39,10 @@ export type TappedNotificationData = { type?: string; tag_id?: string; action?: 
 const PUSH_ROUTING_DATA_KEYS = [
   'type',
   'tag_id',
+  'invite_id',
+  'request_id',
+  'requester_id',
+  'source',
   'detail_type',
   'action',
   'offer_id',
@@ -103,6 +107,9 @@ function routingTapDedupeKey(normalized: Record<string, unknown>): string {
   const typeLo = String(normalized.type || '').trim().toLowerCase();
   if (typeLo === 'incoming_call') {
     return `${typeLo}:${String(normalized.call_id || '').trim()}`;
+  }
+  if (typeLo === 'trusted_direct_invite') {
+    return `${typeLo}:${String(normalized.invite_id || '').trim()}`;
   }
   return `${typeLo}:${String(
     normalized.tag_id || normalized.conversation_id || normalized.session_id || '',
