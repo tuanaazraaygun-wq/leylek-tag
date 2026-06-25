@@ -1,6 +1,12 @@
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { API_BASE_URL } from './backendConfig';
 import { getPersistedAccessToken } from './sessionToken';
+import {
+  TDM_DRIVER_STATUS_BUSY,
+  TDM_DRIVER_STATUS_OFFLINE,
+  TDM_DRIVER_STATUS_ONLINE,
+  TDM_REQUEST_CTA,
+} from './trustedHubCopy';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/json' };
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -351,4 +357,112 @@ export async function revokeTrustedConnection(
 ): Promise<TrustedRevokeMutationResponse> {
   const id = encodeURIComponent(String(connectionId || '').trim());
   return trustedNetworkPost<TrustedRevokeMutationResponse>(`/trusted/connections/${id}/revoke`);
+}
+
+export type TdmDriverUiState = 'online' | 'busy' | 'offline';
+
+export type TdmDriverAvailability = {
+  eligible: boolean;
+  uiState: TdmDriverUiState;
+  statusLabel: string;
+  buttonLabel: string;
+  blockReason: string | null;
+  helperMessage: string | null;
+};
+
+function tdmOfflineAvailability(): TdmDriverAvailability {
+  return {
+    eligible: false,
+    uiState: 'offline',
+    statusLabel: TDM_DRIVER_STATUS_OFFLINE,
+    buttonLabel: TDM_DRIVER_STATUS_OFFLINE,
+    blockReason: TDM_DRIVER_STATUS_OFFLINE,
+    helperMessage: null,
+  };
+}
+
+function tdmBusyAvailability(): TdmDriverAvailability {
+  return {
+    eligible: false,
+    uiState: 'busy',
+    statusLabel: TDM_DRIVER_STATUS_BUSY,
+    buttonLabel: TDM_DRIVER_STATUS_BUSY,
+    blockReason: TDM_DRIVER_STATUS_BUSY,
+    helperMessage: null,
+  };
+}
+
+/** Canlı backend: trust_offer_eligible hep false, reason trust_offer_not_enabled. */
+const LEGACY_TRUST_OFFER_BLOCK_REASON = 'trust_offer_not_enabled';
+
+function isLegacyTrustOfferNotEnabledGate(radar: TrustedConnectionRadar): boolean {
+  if (radar.trust_offer_eligible === true) return false;
+  return (
+    String(radar.offer_block_reason || '').trim().toLowerCase() ===
+    LEGACY_TRUST_OFFER_BLOCK_REASON
+  );
+}
+
+/**
+ * Eski sözleşme fallback — radar_state / radar_label ile presence.
+ * Yeni backend trust_offer_eligible=true döndüğünde bu dal çalışmaz.
+ */
+function resolveLegacyTdmDriverAvailability(
+  radar: TrustedConnectionRadar,
+): TdmDriverAvailability {
+  const state = String(radar.radar_state || '').trim();
+  const label = String(radar.radar_label || '').trim();
+
+  if (state === 'TRUST_ON_TRIP' || label === 'Yolculukta') {
+    return tdmBusyAvailability();
+  }
+
+  if (state === 'TRUST_READY' || label === 'Şu anda müsait') {
+    return {
+      eligible: true,
+      uiState: 'online',
+      statusLabel: TDM_DRIVER_STATUS_ONLINE,
+      buttonLabel: TDM_REQUEST_CTA,
+      blockReason: null,
+      helperMessage: null,
+    };
+  }
+
+  // TRUST_OFFLINE | TRUST_STALE | TRUST_UNKNOWN | eksik state
+  return tdmOfflineAvailability();
+}
+
+/** Trusted Direct row gate — canonical UI state from GET /trusted/connections radar. */
+export function resolveTdmDriverAvailability(
+  item: TrustedConnectionItem,
+): TdmDriverAvailability {
+  const radar = item.radar;
+  if (!radar) {
+    return tdmOfflineAvailability();
+  }
+
+  if (radar.trust_offer_eligible === true) {
+    return {
+      eligible: true,
+      uiState: 'online',
+      statusLabel: TDM_DRIVER_STATUS_ONLINE,
+      buttonLabel: TDM_REQUEST_CTA,
+      blockReason: null,
+      helperMessage: null,
+    };
+  }
+
+  if (isLegacyTrustOfferNotEnabledGate(radar)) {
+    return resolveLegacyTdmDriverAvailability(radar);
+  }
+
+  const state = String(radar.radar_state || '').trim();
+  const block = String(radar.offer_block_reason || '').trim().toLowerCase();
+
+  if (state === 'TRUST_ON_TRIP' || block === 'driver_busy') {
+    return tdmBusyAvailability();
+  }
+
+  // Not offer-eligible: never surface radar_label ("Şu anda müsait") in UI.
+  return tdmOfflineAvailability();
 }

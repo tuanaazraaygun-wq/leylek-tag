@@ -46,6 +46,10 @@ export type JourneyChromeLightSurfaces = {
   mapLoadingText: TextStyle;
   webFallback: ViewStyle;
   navManeuverBanner: ViewStyle;
+  navManeuverBannerStage: TextStyle;
+  navManeuverBannerManeuver: TextStyle;
+  navManeuverStreet: TextStyle;
+  navManeuverIconCircle: ViewStyle;
   trustedAddCompactChip: ViewStyle;
   trustedAddCompactChipMuted: ViewStyle;
   trustedAddCompactChipError: ViewStyle;
@@ -74,7 +78,12 @@ export type JourneyChromeLightSurfaces = {
   tripBannerBtnPrimary: ViewStyle;
   tripBannerBtnSecondary: ViewStyle;
   tripBannerHintAccent: TextStyle;
+  topPhaseChipText: TextStyle;
+  topLiveChipText: TextStyle;
+  paxTopLiveHintShell: ViewStyle;
+  paxTopLiveHintText: TextStyle;
   matchedRouteLineText: TextStyle;
+  matchedRouteLineLabelText: TextStyle;
   matchedPriceChipText: TextStyle;
   matchedNearChipText: TextStyle;
   paxLiveChipText: TextStyle;
@@ -115,6 +124,8 @@ const JOURNEY_UI_DARK: JourneyUiColors = {
 function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLightSurfaces {
   const dangerBg = 'rgba(220, 38, 38, 0.08)';
   const dangerBorder = 'rgba(220, 38, 38, 0.28)';
+  const topInkPrimary = 'rgba(15, 23, 42, 0.92)';
+  const topInkMuted = 'rgba(51, 65, 85, 0.88)';
 
   return {
     topRouteShell: {
@@ -142,8 +153,32 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
     mapLoadingText: { color: tokens.text.muted },
     webFallback: { backgroundColor: tokens.bg.canvas },
     navManeuverBanner: {
-      backgroundColor: tokens.bg.elevated,
-      borderBottomColor: tokens.border.default,
+      backgroundColor: 'rgba(255, 255, 255, 0.96)',
+      borderBottomColor: 'rgba(19, 78, 74, 0.18)',
+      borderColor: 'rgba(19, 78, 74, 0.14)',
+      borderWidth: 0.5,
+      shadowColor: 'rgba(15, 23, 42, 0.14)',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 1,
+      shadowRadius: 14,
+      elevation: 10,
+    },
+    navManeuverBannerStage: {
+      color: 'rgba(15, 118, 110, 0.88)',
+      fontWeight: '800',
+    },
+    navManeuverBannerManeuver: {
+      color: tokens.text.primary,
+      fontWeight: '800',
+    },
+    navManeuverStreet: {
+      color: tokens.text.muted,
+      fontWeight: '600',
+    },
+    navManeuverIconCircle: {
+      backgroundColor: 'rgba(240, 253, 250, 0.98)',
+      borderColor: 'rgba(13, 148, 136, 0.38)',
+      borderWidth: 1.5,
     },
     trustedAddCompactChip: {
       backgroundColor: tokens.bg.elevated,
@@ -261,10 +296,44 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
       borderColor: tokens.border.default,
     },
     tripBannerHintAccent: { color: tokens.accent.primary },
-    matchedRouteLineText: { color: tokens.text.primary },
+    topPhaseChipText: {
+      color: topInkPrimary,
+      fontWeight: '800',
+      letterSpacing: 0.7,
+      textTransform: 'uppercase',
+    },
+    topLiveChipText: {
+      color: topInkPrimary,
+      fontWeight: '700',
+      letterSpacing: 0.25,
+    },
+    paxTopLiveHintShell: {
+      alignSelf: 'flex-start',
+      marginRight: 0,
+      marginLeft: 0,
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    paxTopLiveHintText: {
+      color: topInkPrimary,
+      fontWeight: '700',
+      textAlign: 'left',
+      letterSpacing: 0.12,
+    },
+    matchedRouteLineText: {
+      color: topInkPrimary,
+      fontWeight: '700',
+      letterSpacing: 0.08,
+    },
+    matchedRouteLineLabelText: {
+      color: topInkMuted,
+      fontWeight: '700',
+      letterSpacing: 0.35,
+    },
     matchedPriceChipText: { color: tokens.accent.primary, fontWeight: '700' },
-    matchedNearChipText: { color: tokens.text.primary, fontWeight: '600' },
-    paxLiveChipText: { color: tokens.accent.primary, fontWeight: '700' },
+    matchedNearChipText: { color: topInkPrimary, fontWeight: '700' },
+    paxLiveChipText: { color: topInkPrimary, fontWeight: '700', letterSpacing: 0.35 },
     driverNavChipLabelText: { color: tokens.text.primary },
     trustedAddChipText: { color: tokens.accent.primary },
     trustedAddChipMutedText: { color: tokens.text.muted },

@@ -75,9 +75,6 @@ export default function TrustedNetworkRoute() {
   });
 
   const handleCancelWaiting = useCallback(() => {
-    if (tdmSession.status === 'matching') {
-      return;
-    }
     void tdmSession.cancel();
   }, [tdmSession]);
 

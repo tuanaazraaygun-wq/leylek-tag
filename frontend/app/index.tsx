@@ -71,7 +71,6 @@ import {
   probeTrustedDirectDriverAvailable,
   registerTrustedDirectBootstrapHandler,
   setTrustedDirectRouteContext,
-  TDM_DRIVER_IDLE_REFRESH_MS,
   type TrustedDirectRouteContext,
 } from '../lib/trustedDirectApi';
 import DriverQuickMatchInviteCard from '../components/superUx/DriverQuickMatchInviteCard';
@@ -156,6 +155,23 @@ import {
 } from '../lib/tripPaymentApi';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 import {
+  getActiveTagResumeSnapshot,
+  invalidateActiveTagResumeSnapshot,
+  isActiveTagResumeSnapshotStale,
+  getCachedActiveTagResumeSnapshot,
+  type GetActiveTagResumeSnapshotOptions,
+} from '../lib/activeTripResumeCoordinator';
+import {
+  isRealtimeHealthy,
+  resolvePassengerActiveTagPollMs,
+  resolveDriverLoadDataPollMs,
+  resolveQmTdmIdleRefreshMs,
+  shouldSkipIdleDriverOfferPolls,
+  logPollGateSkip,
+  logPollGateForceRefresh,
+  type RealtimeHealthSnapshot,
+} from '../lib/realtimePollGate';
+import {
   deriveNormalizedQueryFromDisplayName,
   learnAddressFromMapConfirm,
 } from '../lib/placesLearnApi';
@@ -165,6 +181,8 @@ import {
   BOARDING_NEAR_EXIT_M,
   BOARDING_QR_EARLY_SCAN_M,
   BOARDING_STABLE_MS,
+  BOARDING_GUIDANCE_STABLE_MS,
+  BOARDING_EARLY_SCAN_CTA_STABLE_MS,
   BOARDING_DECLINE_COOLDOWN_MS,
   BOARDING_DECLINE_COOLDOWN_LONG_MS,
   BOARDING_DECLINES_BEFORE_BANNER_ONLY,
@@ -573,9 +591,8 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
   perfLog('TAG_DRIVER_RESUME_AFTER_LOGIN_START', { userId: loggedInUser.id });
 
   try {
-    const enc = encodeURIComponent(loggedInUser.id);
-    const dr = await fetch(`${API_URL}/driver/active-tag?user_id=${enc}`);
-    const dj = (await dr.json().catch(() => ({}))) as Record<string, unknown>;
+    const snap = await getActiveTagResumeSnapshot(loggedInUser.id);
+    const dj = snap.driver.json;
     const dTag = dj?.tag as Record<string, unknown> | undefined;
     const rawSt = dTag?.status;
     const st = dTag ? _normTagStatus(dTag.status) : '';
@@ -708,32 +725,37 @@ function _resumePriorityForDriver(st: string): number {
 
 type TryResumeActiveMatchResult = { resumed: boolean; role?: 'passenger' | 'driver' };
 
-/** loadUser / resume: dashboard `loadActiveTag` ile aynı API (ön bellek / CDN); state yine dashboard effect ile dolar. */
+/**
+ * loadUser / resume: dashboard `loadActiveTag` ile aynı API (ön bellek / CDN).
+ * Coordinator zaten her iki active-tag’i çektiyse ek HTTP atılmaz.
+ */
 async function loadActiveTagForUserResume(
   userId: string,
   role: 'passenger' | 'driver',
+  options?: GetActiveTagResumeSnapshotOptions,
 ): Promise<void> {
-  const enc = encodeURIComponent(userId);
-  const url =
-    role === 'passenger'
-      ? `${API_URL}/passenger/active-tag?user_id=${enc}`
-      : `${API_URL}/driver/active-tag?user_id=${enc}`;
-  perfLog('LOAD_ACTIVE_TAG_AFTER_RESUME', { userId, role, url });
-  await fetch(url).catch((e) => console.warn('[resume] loadActiveTag (network)', e));
+  const snap = await getActiveTagResumeSnapshot(userId, options);
+  const side = role === 'passenger' ? snap.passenger : snap.driver;
+  perfLog('LOAD_ACTIVE_TAG_AFTER_RESUME', {
+    userId,
+    role,
+    coordinator: true,
+    responseOk: side.responseOk,
+    age_ms: Date.now() - snap.fetchedAt,
+  });
 }
 
 /** UI subtitle / spinner yalnızca gerçekten resumable tag varken (primary resume ile aynı kriter). */
-async function probeResumableActiveMatchSession(userId: string): Promise<boolean> {
+async function probeResumableActiveMatchSession(
+  userId: string,
+  options?: GetActiveTagResumeSnapshotOptions,
+): Promise<boolean> {
   const uid = String(userId || '').trim();
   if (!uid) return false;
-  const enc = encodeURIComponent(uid);
   try {
-    const [pr, dr] = await Promise.all([
-      fetch(`${API_URL}/passenger/active-tag?user_id=${enc}`),
-      fetch(`${API_URL}/driver/active-tag?user_id=${enc}`),
-    ]);
-    const pj = (await pr.json().catch(() => ({}))) as Record<string, unknown>;
-    const dj = (await dr.json().catch(() => ({}))) as Record<string, unknown>;
+    const snap = await getActiveTagResumeSnapshot(uid, options);
+    const pj = snap.passenger.json;
+    const dj = snap.driver.json;
     const pTag = pj?.tag as Record<string, unknown> | undefined;
     const dTag = dj?.tag as Record<string, unknown> | undefined;
     const pOk = pTag ? _passengerTagResumable(pj, pTag) : false;
@@ -752,18 +774,15 @@ async function tryResumeActiveMatchSession(
     setSelectedRole: (r: 'passenger' | 'driver') => void;
     setScreen: (s: AppScreen) => void;
   },
+  options?: GetActiveTagResumeSnapshotOptions,
 ): Promise<TryResumeActiveMatchResult> {
   const uid = parsedUser.id;
   if (!uid) return { resumed: false };
   perfLog('TRY_RESUME_START', { userId: uid });
-  const enc = encodeURIComponent(uid);
   try {
-    const [pr, dr] = await Promise.all([
-      fetch(`${API_URL}/passenger/active-tag?user_id=${enc}`),
-      fetch(`${API_URL}/driver/active-tag?user_id=${enc}`),
-    ]);
-    const pj = (await pr.json().catch(() => ({}))) as Record<string, unknown>;
-    const dj = (await dr.json().catch(() => ({}))) as Record<string, unknown>;
+    const snap = await getActiveTagResumeSnapshot(uid, options);
+    const pj = snap.passenger.json;
+    const dj = snap.driver.json;
     const pTag = pj?.tag as Record<string, unknown> | undefined;
     const dTag = dj?.tag as Record<string, unknown> | undefined;
     const pOk = pTag ? _passengerTagResumable(pj, pTag) : false;
@@ -2022,20 +2041,14 @@ export default function App() {
 
       if (!legalWasAccepted || isMainAdmin) return;
 
-      const uid = encodeURIComponent(parsedUser.id);
-      const t = 6000;
-
       try {
-        const [pr, dr] = await Promise.all([
-          fetchWithTimeout(`${API_URL}/passenger/active-tag?user_id=${uid}`, { timeoutMs: t }),
-          fetchWithTimeout(`${API_URL}/driver/active-tag?user_id=${uid}`, { timeoutMs: t }),
-        ]);
-        const pj = pr?.ok ? ((await pr.json().catch(() => null)) as Record<string, unknown> | null) : null;
-        const dj = dr?.ok ? ((await dr.json().catch(() => null)) as Record<string, unknown> | null) : null;
+        const snap = await getActiveTagResumeSnapshot(parsedUser.id, { timeoutMs: 6000 });
+        const pj = snap.passenger.json;
+        const dj = snap.driver.json;
         const pTag = pj?.tag as Record<string, unknown> | undefined;
         const dTag = dj?.tag as Record<string, unknown> | undefined;
-        const pOk = pTag && pj ? _passengerTagResumable(pj, pTag) : false;
-        const dOk = dTag && dj ? _driverTagResumable(dj, dTag) : false;
+        const pOk = pTag ? _passengerTagResumable(pj, pTag) : false;
+        const dOk = dTag ? _driverTagResumable(dj, dTag) : false;
         if (!pOk && !dOk) return;
 
         let role: 'passenger' | 'driver' | null = null;
@@ -2490,12 +2503,20 @@ export default function App() {
         if (!u?.id) return;
         void (async () => {
           try {
-            const resumeRes = await tryResumeActiveMatchSession(u, {
-              saveUser,
-              setUser,
-              setSelectedRole,
-              setScreen,
-            });
+            const forceRefresh = isActiveTagResumeSnapshotStale(
+              getCachedActiveTagResumeSnapshot(),
+              u.id,
+            );
+            const resumeRes = await tryResumeActiveMatchSession(
+              u,
+              {
+                saveUser,
+                setUser,
+                setSelectedRole,
+                setScreen,
+              },
+              forceRefresh ? { forceRefresh: true } : undefined,
+            );
             if (resumeRes.resumed && u.id && resumeRes.role) {
               await loadActiveTagForUserResume(u.id, resumeRes.role);
             }
@@ -2547,6 +2568,7 @@ export default function App() {
       /* ignore */
     }
     sessionResumeProbedRef.current = false;
+    invalidateActiveTagResumeSnapshot(user?.id);
     setUser(null);
     setScreen('login');
     setShowDestinationPicker(false);
@@ -7795,6 +7817,8 @@ function PassengerDashboard({
     getIncomingCallData,
     incomingCallPresentToken,
     ensureSocketRegistered,
+    isConnected: passengerSocketConnected,
+    isRegistered: passengerSocketRegistered,
   } = useSocketContext();
   
   // 🆕 Chat State'leri (Yolcu)
@@ -8018,6 +8042,7 @@ function PassengerDashboard({
   /** Sürücü yakın — üst bilgi bandı (sürücü tarafındaki yolcu-yakın bandı ile aynı mantık, modal/scan tüketimiyle bağımsız) */
   const [passengerBoardingGuidanceNearBanner, setPassengerBoardingGuidanceNearBanner] = useState(false);
   const passengerBoardingGuidanceStableSinceRef = useRef<number | null>(null);
+  const passengerBoardingEarlyGuidanceStableSinceRef = useRef<number | null>(null);
   const passengerBoardingStableSinceRef = useRef<number | null>(null);
   const passengerBoardingCooldownUntilRef = useRef(0);
   const passengerBoardingDeclineCountRef = useRef(0);
@@ -9595,24 +9620,40 @@ function PassengerDashboard({
 
   // ❌ ESKİ POLLING KALDIRILDI - Supabase Realtime ile değiştirildi (yukarıda)
 
+  const passengerRealtimeHealth = useMemo<RealtimeHealthSnapshot>(
+    () => ({
+      isConnected: passengerSocketConnected,
+      isRegistered: passengerSocketRegistered,
+    }),
+    [passengerSocketConnected, passengerSocketRegistered],
+  );
+
   const getPassengerPollIntervalMs = useCallback(() => {
     const statusRaw = String(activeTag?.status ?? '').trim().toLowerCase();
     const hasBoardingSignals = Boolean(activeTag?.boarding_confirmed_at || activeTag?.started_at);
+    let baseMs = 2000;
     if (statusRaw === 'matched' || statusRaw === 'in_progress' || hasBoardingSignals) {
-      return 2000;
-    }
-    if (
+      baseMs = 2000;
+    } else if (
       statusRaw === 'waiting' ||
       statusRaw === 'searching' ||
       statusRaw === 'pending' ||
       statusRaw === 'requested' ||
       statusRaw === 'new'
     ) {
-      return 3500;
+      baseMs = 3500;
     }
-    // Güvenli fallback: mevcut davranışa yakın kal.
-    return 2000;
-  }, [activeTag?.status, activeTag?.boarding_confirmed_at, activeTag?.started_at]);
+    const inActiveTrip =
+      statusRaw === 'matched' ||
+      statusRaw === 'in_progress' ||
+      hasBoardingSignals;
+    return resolvePassengerActiveTagPollMs(baseMs, passengerRealtimeHealth, { inActiveTrip });
+  }, [
+    activeTag?.status,
+    activeTag?.boarding_confirmed_at,
+    activeTag?.started_at,
+    passengerRealtimeHealth,
+  ]);
 
   const shouldSkipPassengerPollingTick = useCallback(() => {
     const statusRaw = String(activeTag?.status ?? '').trim().toLowerCase();
@@ -9631,6 +9672,7 @@ function PassengerDashboard({
       status: activeTag?.status ?? null,
       boarding_confirmed: !!activeTag?.boarding_confirmed_at,
       started_at: activeTag?.started_at ?? null,
+      socket_healthy: isRealtimeHealthy(passengerRealtimeHealth),
     });
 
     pollingIntervalRef.current = setInterval(() => {
@@ -9674,6 +9716,7 @@ function PassengerDashboard({
     activeTag?.started_at,
     getPassengerPollIntervalMs,
     shouldSkipPassengerPollingTick,
+    passengerRealtimeHealth,
   ]);
 
   const loadActiveTag = async () => {
@@ -9917,6 +9960,16 @@ function PassengerDashboard({
     }
   };
 
+  useEffect(() => {
+    if (!user?.id) return;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      logPollGateForceRefresh('passenger_active_tag', 'app_foreground');
+      void loadActiveTag();
+    });
+    return () => subscription.remove();
+  }, [user?.id]);
+
   const handleQuickMatchMatched = useCallback(
     async (_tagId: string) => {
       void playMatchChimeSound();
@@ -10060,6 +10113,15 @@ function PassengerDashboard({
           boarding_confirmed_at: boardingAt,
         };
       });
+      perfLog('QR_STATE_APPLIED', {
+        tag_id: tid,
+        source:
+          String(payload?.status ?? '').trim().toLowerCase() === 'in_progress' &&
+          typeof payload?.boarding_confirmed_at === 'string' &&
+          payload.boarding_confirmed_at.trim().length > 0
+            ? 'verify_payload'
+            : 'optimistic',
+      });
       setPassengerBoardingPromptVisible(false);
       setPassengerBoardingReminderBannerVisible(false);
 
@@ -10092,17 +10154,16 @@ function PassengerDashboard({
           }
           return;
         }
-        // Verify cevabı yeterli — socket birincil; tek gecikmeli active-tag yedek senkron
+        // Verify cevabı yeterli — socket birincil; active-tag yedek senkron arka planda (UI bloklamaz)
         setTimeout(() => {
-          void loadActiveTag().then(() => {
-            perfLog(
-              'BOARDING_VERIFY_REFRESH_DONE',
-              JSON.stringify({ tag_id: tid, deferred: true }),
-            );
-          }).catch((e) => {
-            console.warn('BOARDING_VERIFY_REFRESH', e);
-          });
-        }, 2500);
+          void loadActiveTag()
+            .then(() => {
+              perfLog('BOARDING_VERIFY_REFRESH_DONE', JSON.stringify({ tag_id: tid, deferred: true }));
+            })
+            .catch((e) => {
+              console.warn('BOARDING_VERIFY_REFRESH', e);
+            });
+        }, 1200);
       })();
 
       return true;
@@ -10118,6 +10179,7 @@ function PassengerDashboard({
     passengerBoardingDriverReissuePendingRef.current = false;
     passengerBoardingQrIssuedSigRef.current = null;
     passengerBoardingGuidanceStableSinceRef.current = null;
+    passengerBoardingEarlyGuidanceStableSinceRef.current = null;
     setPassengerBoardingGuidanceNearBanner(false);
     setPassengerBoardingReminderBannerVisible(false);
   }, [activeTag?.id]);
@@ -10149,6 +10211,7 @@ function PassengerDashboard({
     passengerBoardingDeclineCountRef.current = 0;
     passengerBoardingStableSinceRef.current = null;
     passengerBoardingGuidanceStableSinceRef.current = null;
+    passengerBoardingEarlyGuidanceStableSinceRef.current = null;
     setPassengerBoardingGuidanceNearBanner(false);
     passengerBoardingDriverReissuePendingRef.current = true;
     setPassengerBoardingReminderBannerVisible(false);
@@ -10212,7 +10275,7 @@ function PassengerDashboard({
     driverLocation,
   ]);
 
-  /** Guidance banner — BOARDING_NEAR_ENTER_M + BOARDING_STABLE_MS (prompt ile aynı eşik, erken QR değil) */
+  /** Guidance banner — ≤100m hızlı CTA; ≤200m erken CTA (mesafe guard'ları korunur) */
   useEffect(() => {
     if (passengerBoardingScanVisible) return;
     if (!activeTag || activeTag.status !== 'matched') return;
@@ -10220,18 +10283,33 @@ function PassengerDashboard({
     const tick = () => {
       if (!userLocation || !driverLocation) {
         passengerBoardingGuidanceStableSinceRef.current = null;
+        passengerBoardingEarlyGuidanceStableSinceRef.current = null;
         setPassengerBoardingGuidanceNearBanner(false);
         return;
       }
       const d = haversineMetersLatLng(userLocation, driverLocation);
       if (d <= BOARDING_NEAR_ENTER_M) {
+        passengerBoardingEarlyGuidanceStableSinceRef.current = null;
         if (passengerBoardingGuidanceStableSinceRef.current == null) {
           passengerBoardingGuidanceStableSinceRef.current = Date.now();
-        } else if (Date.now() - passengerBoardingGuidanceStableSinceRef.current >= BOARDING_STABLE_MS) {
+        } else if (
+          Date.now() - passengerBoardingGuidanceStableSinceRef.current >= BOARDING_GUIDANCE_STABLE_MS
+        ) {
           setPassengerBoardingGuidanceNearBanner(true);
         }
-      } else if (d >= BOARDING_NEAR_EXIT_M) {
+      } else if (d <= BOARDING_QR_EARLY_SCAN_M) {
         passengerBoardingGuidanceStableSinceRef.current = null;
+        if (passengerBoardingEarlyGuidanceStableSinceRef.current == null) {
+          passengerBoardingEarlyGuidanceStableSinceRef.current = Date.now();
+        } else if (
+          Date.now() - passengerBoardingEarlyGuidanceStableSinceRef.current >=
+          BOARDING_EARLY_SCAN_CTA_STABLE_MS
+        ) {
+          setPassengerBoardingGuidanceNearBanner(true);
+        }
+      } else {
+        passengerBoardingGuidanceStableSinceRef.current = null;
+        passengerBoardingEarlyGuidanceStableSinceRef.current = null;
         setPassengerBoardingGuidanceNearBanner(false);
       }
     };
@@ -12743,18 +12821,6 @@ function PassengerDashboard({
             {/* CANLI HARİTA - Tam Ekran (Yolcu) - SADECE MATCHED/IN_PROGRESS'DE */}
             {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
               <View style={styles.fullScreenMapContainer}>
-                <GlassSurface variant="panel" style={styles.passengerTripPhaseShell} borderRadius={LDS_RADIUS.lg}>
-                  <View style={styles.passengerTripPhaseBlock}>
-                    <PremiumText variant="step" style={styles.passengerTripPhaseStep}>
-                      {activeTag.status === 'in_progress' ? 'Yolculuk devam ediyor' : 'Buluşma'}
-                    </PremiumText>
-                    <PremiumText variant="caption" muted style={styles.passengerTripPhaseCaption}>
-                      {activeTag.status === 'in_progress'
-                        ? 'Güvenli yolculuk · Varışa doğru'
-                        : 'Sürücün yolda · Biniş QR\u2019ını hazırla'}
-                    </PremiumText>
-                  </View>
-                </GlassSurface>
                 {isForceEndAwaitingCounterpartyAsInitiator(activeTag?.end_request, user?.id) ? (
                   <View style={styles.passengerTripBannerWrap} pointerEvents="box-none">
                     <GlassSurface
@@ -15666,6 +15732,8 @@ function DriverDashboard({
     getIncomingCallData: driverGetIncomingCallData,
     incomingCallPresentToken: driverIncomingCallPresentToken,
     ensureSocketRegistered: driverEnsureSocketRegistered,
+    isConnected: driverSocketConnected,
+    isRegistered: driverSocketRegistered,
   } = useSocketContext();
 
   const handleDriverAcceptFlowStart = useCallback(async (tagId: string) => {
@@ -17418,18 +17486,27 @@ function DriverDashboard({
 
   useEffect(() => {
     perfLog('🔄 Sürücü polling başlatıldı');
+    const driverRealtimeHealth: RealtimeHealthSnapshot = {
+      isConnected: driverSocketConnected,
+      isRegistered: driverSocketRegistered,
+    };
+    const intervalMs = resolveDriverLoadDataPollMs(driverRealtimeHealth);
+    perfLog('DRIVER_POLL_INTERVAL_MS', {
+      interval_ms: intervalMs,
+      socket_healthy: isRealtimeHealthy(driverRealtimeHealth),
+    });
     // Android 16 gibi cihazlarda aşırı istek ANR/çökme yaratabileceği için polling frekansını düşürüyoruz.
     loadData().catch((e) => perfLog('loadData polling error:', e));
     const interval = setInterval(() => {
       loadData().catch((e) => perfLog('loadData polling error:', e));
-    }, 2500); // Socket kaçırırsa dispatch-pending-offer ile yakala
+    }, intervalMs); // Socket kaçırırsa dispatch-pending-offer ile yakala
     driverDataPollingIntervalRef.current = interval;
     return () => {
       perfLog('🔄 Sürücü polling durduruldu');
       clearInterval(interval);
       driverDataPollingIntervalRef.current = null;
     };
-  }, [user?.id]);
+  }, [user?.id, driverSocketConnected, driverSocketRegistered]);
 
   useEffect(() => {
     const tid = activeTag?.id;
@@ -17828,22 +17905,51 @@ function DriverDashboard({
     };
   }, [user?.id, emitDriverLocationUpdate, driverLiveMapNavigationMode]);
 
-  const loadData = async () => {
+  const loadData = async (opts?: { forceRefresh?: boolean }) => {
     if (forceEndLockRef.current) {
       logPollingSkippedForceEndLock('driver', 'loadData_entry');
       return;
     }
+    const driverRealtimeHealth: RealtimeHealthSnapshot = {
+      isConnected: driverSocketConnected,
+      isRegistered: driverSocketRegistered,
+    };
     const trip = await loadActiveTag();
     const st = String(trip?.status || '').toLowerCase();
     const busy =
       trip &&
       (st === 'matched' || st === 'in_progress' || st === 'driver_on_the_way');
     if (!busy) {
-      await loadDispatchPendingOffer();
-      await loadRequests();
+      if (
+        shouldSkipIdleDriverOfferPolls(driverRealtimeHealth, opts?.forceRefresh)
+      ) {
+        logPollGateSkip('driver_dispatch_pending', {
+          socket_healthy: true,
+        });
+        logPollGateSkip('driver_requests', { socket_healthy: true });
+      } else {
+        if (opts?.forceRefresh) {
+          logPollGateForceRefresh('driver_dispatch_pending', 'explicit');
+          logPollGateForceRefresh('driver_requests', 'explicit');
+        }
+        await loadDispatchPendingOffer();
+        await loadRequests();
+      }
     }
   };
   loadDriverDashboardDataRef.current = loadData;
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      logPollGateForceRefresh('driver_load_data', 'app_foreground');
+      loadData({ forceRefresh: true }).catch((e) =>
+        perfLog('loadData foreground error:', e),
+      );
+    });
+    return () => subscription.remove();
+  }, [user?.id, driverSocketConnected, driverSocketRegistered]);
 
   /** Sıralı dispatch: uygulama resume / polling ile DB'deki aktif teklifi listeye ekle */
   const loadDispatchPendingOffer = async () => {
@@ -18343,26 +18449,54 @@ function DriverDashboard({
     if (!quickMatchDriverEnabled) return;
     if (quickMatchDriverSession.status !== 'idle') return;
 
+    const driverRealtimeHealth: RealtimeHealthSnapshot = {
+      isConnected: driverSocketConnected,
+      isRegistered: driverSocketRegistered,
+    };
+    const intervalMs = resolveQmTdmIdleRefreshMs(driverRealtimeHealth);
+    perfLog('QM_IDLE_REFRESH_INTERVAL_MS', {
+      interval_ms: intervalMs,
+      socket_healthy: isRealtimeHealthy(driverRealtimeHealth),
+    });
+
     const timer = setInterval(() => {
       void quickMatchDriverSession.refresh();
-    }, 3500);
+    }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [quickMatchDriverEnabled, quickMatchDriverSession.status, quickMatchDriverSession.refresh]);
+  }, [
+    quickMatchDriverEnabled,
+    quickMatchDriverSession.status,
+    quickMatchDriverSession.refresh,
+    driverSocketConnected,
+    driverSocketRegistered,
+  ]);
 
   useEffect(() => {
     if (!trustedDirectDriverEnabled) return;
     if (trustedDirectDriverSession.status !== 'idle') return;
 
+    const driverRealtimeHealth: RealtimeHealthSnapshot = {
+      isConnected: driverSocketConnected,
+      isRegistered: driverSocketRegistered,
+    };
+    const intervalMs = resolveQmTdmIdleRefreshMs(driverRealtimeHealth);
+    perfLog('TDM_IDLE_REFRESH_INTERVAL_MS', {
+      interval_ms: intervalMs,
+      socket_healthy: isRealtimeHealthy(driverRealtimeHealth),
+    });
+
     const timer = setInterval(() => {
       void trustedDirectDriverSession.refresh();
-    }, TDM_DRIVER_IDLE_REFRESH_MS);
+    }, intervalMs);
 
     return () => clearInterval(timer);
   }, [
     trustedDirectDriverEnabled,
     trustedDirectDriverSession.status,
     trustedDirectDriverSession.refresh,
+    driverSocketConnected,
+    driverSocketRegistered,
   ]);
 
   const quickMatchDriverOverlayVisible =

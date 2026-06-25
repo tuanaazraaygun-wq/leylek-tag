@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 TAG_TYPE_NORMAL = "normal"
 OFFER_BLOCK_REASON = "trust_offer_not_enabled"
+OFFER_BLOCK_BUSY = "driver_busy"
+OFFER_BLOCK_OFFLINE = "driver_offline"
+OFFER_BLOCK_STALE = "location_stale"
+OFFER_BLOCK_UNAVAILABLE = "driver_unavailable"
 PASSENGER_CP_BLOCK_REASON = "passenger_radar_v2"
 
 STALE_LOCATION_MAX_AGE_SEC = 15 * 60
@@ -236,6 +240,31 @@ def _is_quick_match_ready_driver(
     return True
 
 
+def _trust_offer_eligibility(
+    state: str,
+    *,
+    busy: bool,
+    driver_row: dict,
+    peer_stale: bool,
+) -> tuple[bool, str]:
+    if (
+        state == "TRUST_READY"
+        and not busy
+        and driver_row.get("driver_online") is True
+        and not peer_stale
+        and _coords_pair(driver_row) is not None
+        and _driver_kyc_approved(driver_row)
+    ):
+        return True, ""
+    if state == "TRUST_ON_TRIP" or busy:
+        return False, OFFER_BLOCK_BUSY
+    if state == "TRUST_OFFLINE" or driver_row.get("driver_online") is not True:
+        return False, OFFER_BLOCK_OFFLINE
+    if peer_stale or state == "TRUST_STALE":
+        return False, OFFER_BLOCK_STALE
+    return False, OFFER_BLOCK_UNAVAILABLE
+
+
 def unknown_radar(*, offer_block_reason: str = OFFER_BLOCK_REASON) -> dict:
     label, subtitle = _radar_copy("TRUST_UNKNOWN", "UNKNOWN")
     return {
@@ -277,6 +306,12 @@ def build_driver_connection_radar(
             distance_band = "UNKNOWN"
 
         label, subtitle = _radar_copy(state, distance_band)
+        trust_offer_eligible, offer_block_reason = _trust_offer_eligibility(
+            state,
+            busy=busy,
+            driver_row=driver_row,
+            peer_stale=peer_stale,
+        )
         return {
             "schema_version": SCHEMA_VERSION,
             "radar_state": state,
@@ -291,8 +326,8 @@ def build_driver_connection_radar(
                 peer_stale=peer_stale,
                 state=state,
             ),
-            "trust_offer_eligible": False,
-            "offer_block_reason": OFFER_BLOCK_REASON,
+            "trust_offer_eligible": trust_offer_eligible,
+            "offer_block_reason": offer_block_reason or None,
         }
     except Exception as exc:
         logger.warning("trusted_radar build_driver err=%s", type(exc).__name__)

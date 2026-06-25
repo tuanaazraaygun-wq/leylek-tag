@@ -24,6 +24,9 @@ const GLASS_BORDER = 'rgba(34, 211, 238, 0.2)';
 const GLASS_FILL = 'rgba(16, 26, 43, 0.48)';
 const CYAN_SHADOW = 'rgba(34, 211, 238, 0.45)';
 
+/** V12 in-app transparent master — same family as login (no baked V11 plate). */
+const LOGO_PREMIUM_DARK = require('../assets/images/leylek-logo-premium-dark.png');
+
 interface SplashScreenProps {
   onFinish: () => void;
 }
@@ -456,7 +459,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
             ]}
           >
             <Image
-              source={require('../assets/images/leylek-logo-premium.png')}
+              source={LOGO_PREMIUM_DARK}
               style={{ width: LOGO_BOX, height: LOGO_BOX }}
               resizeMode="contain"
               onError={(e) => {
@@ -608,9 +611,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.4,
         shadowRadius: 32,
       },
-      android: {
-        elevation: 12,
-      },
+      android: {},
       default: {},
     }),
   },

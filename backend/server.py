@@ -134,6 +134,7 @@ from services.location_mock_policy import (
 from services.relationship_match_engine import (
     RmeDriverBusyError,
     RmeDriverInvitePendingError,
+    RmeDriverOfflineError,
     RmeExpiredError,
     RmeFeatureDisabledError,
     RmeIdempotencyConflictError,
@@ -14494,6 +14495,14 @@ def _raise_trusted_direct_match_http(exc: Exception) -> None:
                 "message": str(exc) or RmeDriverBusyError.message,
             },
         ) from exc
+    if isinstance(exc, RmeDriverOfflineError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "driver_offline",
+                "message": str(exc) or RmeDriverOfflineError.message,
+            },
+        ) from exc
     if isinstance(exc, RmePassengerBusyError):
         raise HTTPException(
             status_code=409,
@@ -14562,6 +14571,7 @@ async def post_trusted_direct_request_http(
         RmeIdempotencyConflictError,
         RmeConnectionNotActiveError,
         RmeDriverBusyError,
+        RmeDriverOfflineError,
         RmeDriverInvitePendingError,
     ) as exc:
         _raise_trusted_direct_match_http(exc)
@@ -42998,7 +43008,9 @@ async def driver_go_online(user_id: str, request: Request = None):
             await require_eligible_user(resolved_go or user_id, action="driver_go_online")
         except HTTPException as guard_exc:
             return {"success": False, "detail": guard_exc.detail}
-        result = supabase.table("users").select("phone, driver_active_until, driver_details").eq("id", user_id).execute()
+        result = supabase.table("users").select(
+            "phone, driver_active_until, driver_details, latitude, longitude, last_location_update"
+        ).eq("id", user_id).execute()
         if not result.data:
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
         
@@ -43037,15 +43049,42 @@ async def driver_go_online(user_id: str, request: Request = None):
             except Exception:
                 return {"success": False, "detail": "Paket süresi kontrol edilemedi"}
         
-        supabase.table("users").update({
+        now_go = datetime.utcnow().isoformat()
+        go_online_update: dict = {
             "driver_online": True,
-            "updated_at": datetime.utcnow().isoformat()
-        }).eq("id", user_id).execute()
+            "updated_at": now_go,
+        }
+        loc_refresh_reason = "missing_coords"
+        loc_refreshed = False
+        if _user_coords_missing(user.get("latitude"), user.get("longitude")):
+            loc_refresh_reason = "missing_coords"
+        else:
+            try:
+                la = float(user.get("latitude"))
+                lo = float(user.get("longitude"))
+            except (TypeError, ValueError):
+                loc_refresh_reason = "invalid_coords"
+            else:
+                if not (math.isfinite(la) and math.isfinite(lo)):
+                    loc_refresh_reason = "invalid_coords"
+                elif la == 0.0 and lo == 0.0:
+                    loc_refresh_reason = "invalid_coords"
+                elif not (-90.0 <= la <= 90.0 and -180.0 <= lo <= 180.0):
+                    loc_refresh_reason = "invalid_coords"
+                else:
+                    go_online_update["last_location_update"] = now_go
+                    loc_refresh_reason = "valid_coords"
+                    loc_refreshed = True
+
+        supabase.table("users").update(go_online_update).eq("id", user_id).execute()
 
         try:
+            presence_row = {**user, "driver_online": True}
+            if loc_refreshed:
+                presence_row["last_location_update"] = now_go
             driver_presence.upsert_driver_presence_from_user_row(
                 user_id,
-                {**user, "driver_online": True},
+                presence_row,
                 reason="go-online",
             )
         except Exception:
@@ -43057,6 +43096,12 @@ async def driver_go_online(user_id: str, request: Request = None):
         except Exception:
             pass
 
+        logger.info(
+            "driver_go_online_location_refresh user_id=%s refreshed=%s reason=%s",
+            _mask_log_id(user_id),
+            loc_refreshed,
+            loc_refresh_reason,
+        )
         logger.info(f"🟢 Sürücü online oldu: {user_id}")
         return {"success": True, "message": "Online oldunuz"}
     except Exception as e:

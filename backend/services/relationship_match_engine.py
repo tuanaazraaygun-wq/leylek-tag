@@ -142,6 +142,14 @@ class RmeDriverBusyError(Exception):
         super().__init__(message or self.message)
 
 
+class RmeDriverOfflineError(Exception):
+    code = "driver_offline"
+    message = "Sürücü çevrimdışı."
+
+    def __init__(self, message: Optional[str] = None) -> None:
+        super().__init__(message or self.message)
+
+
 class RmePassengerBusyError(Exception):
     code = "passenger_busy"
     message = "Yolcu başka bir yolculukta."
@@ -671,6 +679,21 @@ def _build_create_replay_response(
     }
 
 
+def _load_user_row(supabase, user_id: str) -> Optional[dict]:
+    uid = _norm_user_id(user_id)
+    if not uid:
+        return None
+    result = (
+        supabase.table("users")
+        .select("id, driver_online")
+        .eq("id", uid)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
+
+
 def _assert_driver_available_for_create(
     supabase,
     responder_id: str,
@@ -678,6 +701,9 @@ def _assert_driver_available_for_create(
     driver_busy_fn: DriverBusyFn,
 ) -> None:
     expire_stale_pending_invites_for_responder(supabase, responder_id)
+    responder_row = _load_user_row(supabase, responder_id)
+    if not responder_row or responder_row.get("driver_online") is not True:
+        raise RmeDriverOfflineError()
     if driver_busy_fn(responder_id):
         raise RmeDriverBusyError()
     pending_invite = get_pending_invite_for_responder(supabase, responder_id)

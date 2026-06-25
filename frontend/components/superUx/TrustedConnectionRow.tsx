@@ -22,11 +22,12 @@ import {
   CONFIRM_REVOKE_TITLE,
   formatTieInsightLine,
   TDM_REQUEST_BUSY,
-  TDM_REQUEST_CTA,
 } from '../../lib/trustedHubCopy';
 import type {
   TrustedConnectionItem,
   TrustedConnectionRadarState,
+  TdmDriverAvailability,
+  TdmDriverUiState,
 } from '../../lib/trustedNetworkApi';
 import type { TrustedHubRole } from '../../lib/trustedHubCopy';
 
@@ -50,10 +51,23 @@ function resolveRadarDotStyle(state: TrustedConnectionRadarState | undefined) {
   }
 }
 
+function resolveTdmDotStyle(uiState: TdmDriverUiState) {
+  switch (uiState) {
+    case 'online':
+      return styles.tdmDotOnline;
+    case 'busy':
+      return styles.tdmDotBusy;
+    default:
+      return styles.tdmDotOffline;
+  }
+}
+
 function shouldShowRadarInsight(
   hubRole: TrustedHubRole | undefined,
   item: TrustedConnectionItem,
+  tdmAvailability: TdmDriverAvailability | null | undefined,
 ): boolean {
+  if (tdmAvailability) return false;
   if (!item.radar) return false;
   if (hubRole === 'passenger' && item.role === 'driver') return true;
   return false;
@@ -99,6 +113,7 @@ type TrustedConnectionRowProps = {
   tdmRequestVisible?: boolean;
   tdmRequestDisabled?: boolean;
   tdmRequestBusy?: boolean;
+  tdmAvailability?: TdmDriverAvailability | null;
   onRequestDirect?: (item: TrustedConnectionItem) => void;
 };
 
@@ -111,6 +126,7 @@ function TrustedConnectionRow({
   tdmRequestVisible = false,
   tdmRequestDisabled = false,
   tdmRequestBusy = false,
+  tdmAvailability = null,
   onRequestDirect,
 }: TrustedConnectionRowProps) {
   const cp = item.counterparty;
@@ -126,13 +142,16 @@ function TrustedConnectionRow({
     cp.vehicle_kind === 'motorcycle' ? 'car-sport-outline' : 'car-outline';
   const isBusy = actingId === item.connection_id;
   const disabled = actionsDisabled || (actingId != null && !isBusy);
-  const showRadar = shouldShowRadarInsight(hubRole, item);
+  const showRadar = shouldShowRadarInsight(hubRole, item, tdmAvailability);
   const radarInsightLine = showRadar && item.radar ? buildRadarInsightLine(item.radar) : null;
   const radarState = showRadar ? item.radar?.radar_state : undefined;
   const tieInsightLine =
     showRadar && item.tie
       ? formatTieInsightLine(item.tie, radarInsightLine)
       : null;
+  const showTdmStatus = tdmAvailability != null && tdmRequestVisible;
+  const tdmUiState = tdmAvailability?.uiState;
+  const showPresenceDot = showTdmStatus && tdmUiState != null;
 
   const handleRevokePress = useCallback(() => {
     if (disabled || isBusy || !onRevoke) return;
@@ -152,6 +171,9 @@ function TrustedConnectionRow({
     item.role === 'driver' &&
     typeof onRequestDirect === 'function';
   const tdmDisabled = disabled || tdmRequestDisabled || tdmRequestBusy;
+  const tdmButtonLabel = tdmRequestBusy
+    ? TDM_REQUEST_BUSY
+    : tdmAvailability?.buttonLabel ?? 'İstek gönder';
 
   const handleRequestPress = useCallback(() => {
     if (tdmDisabled || !onRequestDirect) return;
@@ -162,7 +184,9 @@ function TrustedConnectionRow({
     <View style={styles.row} accessibilityRole="text">
       <View style={styles.avatarWrap}>
         <TrustedAvatar displayName={displayName} photoUri={cp.profile_photo} />
-        {showRadar && radarState ? (
+        {showPresenceDot ? (
+          <View style={[styles.tdmDot, resolveTdmDotStyle(tdmUiState!)]} />
+        ) : showRadar && radarState ? (
           <View style={[styles.radarDot, resolveRadarDotStyle(radarState)]} />
         ) : null}
       </View>
@@ -188,6 +212,18 @@ function TrustedConnectionRow({
             </Text>
           ) : null}
         </View>
+        {showTdmStatus && tdmAvailability?.statusLabel ? (
+          <PremiumText
+            variant="caption"
+            style={[
+              styles.tdmStatusLine,
+              tdmAvailability.eligible ? styles.tdmStatusOnline : styles.tdmStatusMuted,
+            ]}
+            numberOfLines={1}
+          >
+            {tdmAvailability.statusLabel}
+          </PremiumText>
+        ) : null}
         {radarInsightLine ? (
           <PremiumText variant="caption" muted style={styles.radarInsight} numberOfLines={2}>
             {radarInsightLine}
@@ -209,17 +245,19 @@ function TrustedConnectionRow({
             <Pressable
               style={({ pressed }) => [
                 styles.tdmBtn,
-                tdmDisabled && styles.tdmBtnDisabled,
+                tdmDisabled ? styles.tdmBtnDisabled : styles.tdmBtnReady,
                 pressed && !tdmDisabled && styles.tdmBtnPressed,
               ]}
               onPress={handleRequestPress}
               disabled={tdmDisabled}
               accessibilityRole="button"
-              accessibilityLabel={tdmRequestBusy ? TDM_REQUEST_BUSY : TDM_REQUEST_CTA}
+              accessibilityLabel={tdmButtonLabel}
               accessibilityState={{ disabled: tdmDisabled }}
             >
-              <Text style={styles.tdmBtnText}>
-                {tdmRequestBusy ? TDM_REQUEST_BUSY : TDM_REQUEST_CTA}
+              <Text
+                style={[styles.tdmBtnText, tdmDisabled ? styles.tdmBtnTextDisabled : styles.tdmBtnTextReady]}
+              >
+                {tdmButtonLabel}
               </Text>
             </Pressable>
           )
@@ -286,6 +324,30 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(11, 18, 32, 0.98)',
   },
+  tdmDot: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: 'rgba(11, 18, 32, 0.98)',
+  },
+  tdmDotOnline: {
+    backgroundColor: 'rgba(52, 211, 153, 0.98)',
+    shadowColor: 'rgba(52, 211, 153, 0.95)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  tdmDotBusy: {
+    backgroundColor: 'rgba(251, 191, 36, 0.95)',
+  },
+  tdmDotOffline: {
+    backgroundColor: 'rgba(100, 116, 139, 0.82)',
+  },
   radarDotReady: {
     backgroundColor: 'rgba(52, 211, 153, 0.95)',
   },
@@ -344,6 +406,17 @@ const styles = StyleSheet.create({
   star: {
     color: 'rgba(251, 191, 36, 0.92)',
   },
+  tdmStatusLine: {
+    marginTop: 2,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  tdmStatusOnline: {
+    color: 'rgba(52, 211, 153, 0.95)',
+  },
+  tdmStatusMuted: {
+    color: PREMIUM_TEXT_MUTED,
+  },
   radarInsight: {
     marginTop: 2,
     lineHeight: 16,
@@ -359,20 +432,33 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tdmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
     paddingVertical: 7,
     paddingHorizontal: 10,
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
+    minWidth: 92,
+  },
+  tdmBtnReady: {
     borderColor: 'rgba(34, 211, 238, 0.35)',
     backgroundColor: 'rgba(8, 47, 73, 0.35)',
   },
   tdmBtnText: {
     fontSize: 12,
     fontWeight: '800',
+  },
+  tdmBtnTextReady: {
     color: PREMIUM_AUTH_CYAN,
   },
+  tdmBtnTextDisabled: {
+    color: 'rgba(148, 163, 184, 0.92)',
+  },
   tdmBtnDisabled: {
-    opacity: 0.5,
+    borderColor: 'rgba(100, 116, 139, 0.42)',
+    backgroundColor: 'rgba(51, 65, 85, 0.38)',
   },
   tdmBtnPressed: {
     opacity: 0.88,

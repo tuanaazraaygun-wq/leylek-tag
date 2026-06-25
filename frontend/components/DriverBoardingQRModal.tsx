@@ -16,10 +16,11 @@ import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
+import { perfLog } from '../utils/perfDiagLog';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 
 const QR_FETCH_TIMEOUT_MS = 9000;
-const QR_SLOW_RETRY_MS = 8000;
+const QR_SLOW_RETRY_MS = 3000;
 
 type Props = {
   visible: boolean;
@@ -70,6 +71,7 @@ export default function DriverBoardingQRModal({
     if (!isRetry) {
       setQrString(null);
     }
+    perfLog('QR_DRIVER_FETCH_START', { tag_id: tagId, retry: isRetry });
     console.log('BOARDING_QR_REQUESTED', { tag_id: tagId, retry: isRetry });
 
     slowRetryTimerRef.current = setTimeout(() => {
@@ -113,6 +115,7 @@ export default function DriverBoardingQRModal({
         setQrString(json.qr_string);
         setShowSlowRetry(false);
         clearSlowRetryTimer();
+        perfLog('QR_DRIVER_FETCH_SUCCESS', { tag_id: tagId, retry: isRetry });
       } else {
         setError(json.detail || 'Karekod alınamadı');
       }
@@ -135,6 +138,8 @@ export default function DriverBoardingQRModal({
 
   useEffect(() => {
     if (visible) {
+      setLoading(true);
+      setShowSlowRetry(false);
       void waitForPersistedAccessToken();
       void fetchCode(false);
     } else {
@@ -250,17 +255,15 @@ export default function DriverBoardingQRModal({
                       Biniş kodu hazırlanıyor
                     </PremiumText>
                     <PremiumText variant="caption" muted style={styles.qrCheckpointSubtitle}>
-                      {showSlowRetry ? 'Bağlantı yavaş — tekrar deneyebilirsin' : 'Kısa süre içinde görünecek'}
+                      {showSlowRetry
+                        ? 'Bağlantı yavaş — tekrar deneyebilirsin'
+                        : 'Biniş kodu alınıyor…'}
                     </PremiumText>
                   </View>
                 </View>
 
                 <View style={styles.qrSkeletonBox}>
-                  {loading ? (
-                    <ActivityIndicator size="large" color={ui.activity} />
-                  ) : (
-                    <Ionicons name="qr-code-outline" size={72} color={ui.textMuted} />
-                  )}
+                  <ActivityIndicator size="large" color={ui.activity} />
                 </View>
 
                 {showSlowRetry ? (

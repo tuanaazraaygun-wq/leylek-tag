@@ -22,6 +22,7 @@ import {
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
 import { useTrustedNetworkHub } from '../../hooks/useTrustedNetworkHub';
+import { appAlert } from '../../contexts/AppAlertContext';
 import { PremiumText } from '../../design-system/primitives';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
 import {
@@ -33,7 +34,11 @@ import {
   type TrustedDirectRouteContext,
 } from '../../lib/trustedDirectApi';
 import type { useTrustedDirectPassengerSession } from '../../hooks/useTrustedDirectPassengerSession';
-import type { TrustedConnectionItem } from '../../lib/trustedNetworkApi';
+import {
+  resolveTdmDriverAvailability,
+  type TrustedConnectionItem,
+  type TdmDriverAvailability,
+} from '../../lib/trustedNetworkApi';
 import {
   globalEmptyBody,
   globalEmptyTitle,
@@ -58,6 +63,7 @@ import {
   TDM_ORPHAN_PENDING_TITLE,
   TDM_ORPHAN_PICK_ROUTE,
   TDM_PENDING_ROW_HINT,
+  TDM_REQUEST_BLOCKED_TITLE,
   TDM_UNAVAILABLE_HINT,
   TDM_VEHICLE_MISMATCH,
   type TrustedHubRole,
@@ -76,6 +82,14 @@ export type TrustedNetworkHubProps = {
     ReturnType<typeof useTrustedDirectPassengerSession>,
     'hasPendingRequest' | 'isCreating' | 'errorMessage' | 'create' | 'dismissError'
   > | null;
+};
+
+type TdmRowGate = {
+  disabled: boolean;
+  eligible: boolean;
+  statusLabel: string | null;
+  helperMessage: string | null;
+  availability: TdmDriverAvailability | null;
 };
 
 function isPendingResponderRequest(row: TrustedDirectRequestRow | null | undefined): boolean {
@@ -246,10 +260,91 @@ function TrustedNetworkHub({
     };
   }, [contributionTarget, routeContext]);
 
-  const handleRequestDirectPress = useCallback((item: TrustedConnectionItem) => {
-    if (tdmPendingBlocked || !routeContext || !tdmSession) return;
-    setContributionTarget(item);
-  }, [routeContext, tdmPendingBlocked, tdmSession]);
+  const resolveTdmRowDisabled = useCallback(
+    (item: TrustedConnectionItem): TdmRowGate => {
+      if (!showTdmUi) {
+        return {
+          disabled: true,
+          eligible: false,
+          helperMessage: null,
+          statusLabel: null,
+          availability: null,
+        };
+      }
+      if (tdmPendingBlocked) {
+        return {
+          disabled: true,
+          eligible: false,
+          helperMessage: TDM_PENDING_ROW_HINT,
+          statusLabel: null,
+          availability: null,
+        };
+      }
+      const vehiclePref = routeContext?.vehicle_preference ?? 'car';
+      const driverKind = item.counterparty.vehicle_kind;
+      if (!isDriverVehicleCompatibleWithPreference(driverKind, vehiclePref)) {
+        return {
+          disabled: true,
+          eligible: false,
+          helperMessage: TDM_VEHICLE_MISMATCH,
+          statusLabel: null,
+          availability: null,
+        };
+      }
+
+      const availability = resolveTdmDriverAvailability(item);
+      if (!availability.eligible) {
+        return {
+          disabled: true,
+          eligible: false,
+          statusLabel: availability.statusLabel,
+          helperMessage: null,
+          availability,
+        };
+      }
+
+      return {
+        disabled: false,
+        eligible: true,
+        helperMessage: null,
+        statusLabel: availability.statusLabel,
+        availability,
+      };
+    },
+    [routeContext?.vehicle_preference, showTdmUi, tdmPendingBlocked],
+  );
+
+  const contributionTargetFresh = useMemo(() => {
+    if (!contributionTarget) return null;
+    return (
+      connections.find((c) => c.connection_id === contributionTarget.connection_id) ??
+      contributionTarget
+    );
+  }, [connections, contributionTarget]);
+
+  const contributionModalGate = useMemo((): TdmRowGate | null => {
+    if (!contributionTargetFresh) return null;
+    return resolveTdmRowDisabled(contributionTargetFresh);
+  }, [contributionTargetFresh, resolveTdmRowDisabled]);
+
+  const contributionConfirmBlocked =
+    contributionModalGate != null &&
+    (contributionModalGate.disabled || !contributionModalGate.eligible);
+
+  const handleRequestDirectPress = useCallback(
+    (item: TrustedConnectionItem) => {
+      if (tdmPendingBlocked || !routeContext || !tdmSession) return;
+      const gate = resolveTdmRowDisabled(item);
+      if (gate.disabled || !gate.eligible) {
+        if (gate.helperMessage) {
+          appAlert(TDM_REQUEST_BLOCKED_TITLE, gate.helperMessage);
+        }
+        return;
+      }
+      setContributionTarget(item);
+    },
+    [resolveTdmRowDisabled, routeContext, tdmPendingBlocked, tdmSession],
+  );
 
   const closeContributionModal = useCallback(() => {
     setContributionTarget(null);
@@ -258,12 +353,24 @@ function TrustedNetworkHub({
 
   const handleConfirmContribution = useCallback(async () => {
     if (!contributionTarget || !routeContext || !tdmSession) return;
-    const responderId = String(contributionTarget.counterparty.user_id || '').trim();
-    const connectionId = String(contributionTarget.connection_id || '').trim();
+
+    const freshTarget =
+      connections.find((c) => c.connection_id === contributionTarget.connection_id) ??
+      contributionTarget;
+    const gate = resolveTdmRowDisabled(freshTarget);
+    if (gate.disabled || !gate.eligible) {
+      if (gate.helperMessage) {
+        appAlert(TDM_REQUEST_BLOCKED_TITLE, gate.helperMessage);
+      }
+      return;
+    }
+
+    const responderId = String(freshTarget.counterparty.user_id || '').trim();
+    const connectionId = String(freshTarget.connection_id || '').trim();
     if (!responderId || !connectionId) return;
 
     const vehiclePref = routeContext.vehicle_preference ?? 'car';
-    await tdmSession.create(
+    const created = await tdmSession.create(
       {
         responder_id: responderId,
         relationship_connection_id: connectionId,
@@ -278,28 +385,21 @@ function TrustedNetworkHub({
         idempotency_key: `tdm-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       },
       {
-        responderLabel:
-          (contributionTarget.counterparty.display_name || '').trim() || 'Sürücü',
+        responderLabel: (freshTarget.counterparty.display_name || '').trim() || 'Sürücü',
       },
     );
-    closeContributionModal();
-  }, [closeContributionModal, contributionTarget, contributionTl, routeContext, tdmSession]);
-
-  const resolveTdmRowDisabled = useCallback(
-    (item: TrustedConnectionItem): { disabled: boolean; reason: string | null } => {
-      if (!showTdmUi) return { disabled: true, reason: null };
-      if (tdmPendingBlocked) {
-        return { disabled: true, reason: TDM_PENDING_ROW_HINT };
-      }
-      const vehiclePref = routeContext?.vehicle_preference ?? 'car';
-      const driverKind = item.counterparty.vehicle_kind;
-      if (!isDriverVehicleCompatibleWithPreference(driverKind, vehiclePref)) {
-        return { disabled: true, reason: TDM_VEHICLE_MISMATCH };
-      }
-      return { disabled: false, reason: null };
-    },
-    [routeContext?.vehicle_preference, showTdmUi, tdmPendingBlocked],
-  );
+    if (created) {
+      closeContributionModal();
+    }
+  }, [
+    closeContributionModal,
+    connections,
+    contributionTarget,
+    contributionTl,
+    resolveTdmRowDisabled,
+    routeContext,
+    tdmSession,
+  ]);
 
   const title = hubTitle(role);
   const isReady = status === 'ready';
@@ -348,28 +448,27 @@ function TrustedNetworkHub({
 
   const radarBriefingText = useMemo(() => {
     if (role !== 'passenger') return null;
-    const withRadar = connections.filter((c) => c.role === 'driver' && c.radar != null);
-    if (withRadar.length === 0) return null;
+    const drivers = connections.filter((c) => c.role === 'driver');
+    if (drivers.length === 0) return null;
 
-    let readyCount = 0;
-    let onTripCount = 0;
-    let staleCount = 0;
-    let offlineCount = 0;
+    let eligibleCount = 0;
+    let busyCount = 0;
 
-    for (const item of withRadar) {
-      const state = String(item.radar?.radar_state || '').trim();
-      if (state === 'TRUST_READY') readyCount += 1;
-      else if (state === 'TRUST_ON_TRIP') onTripCount += 1;
-      else if (state === 'TRUST_STALE') staleCount += 1;
-      else if (state === 'TRUST_OFFLINE') offlineCount += 1;
+    for (const item of drivers) {
+      const availability = resolveTdmDriverAvailability(item);
+      if (availability.eligible) {
+        eligibleCount += 1;
+      } else if (availability.uiState === 'busy') {
+        busyCount += 1;
+      }
     }
 
     return formatTrustedRadarBriefing({
       hasRadarData: true,
-      readyCount,
-      onTripCount,
-      staleCount,
-      offlineCount,
+      readyCount: eligibleCount,
+      onTripCount: busyCount,
+      staleCount: 0,
+      offlineCount: 0,
     });
   }, [connections, role]);
 
@@ -550,13 +649,11 @@ function TrustedNetworkHub({
                       tdmRequestVisible={showTdmUi && item.role === 'driver'}
                       tdmRequestDisabled={tdmRow.disabled}
                       tdmRequestBusy={tdmSession?.isCreating === true}
+                      tdmAvailability={tdmRow.availability}
                       onRequestDirect={showTdmUi ? handleRequestDirectPress : undefined}
                     />
-                    {showTdmUi &&
-                    item.role === 'driver' &&
-                    tdmRow.disabled &&
-                    tdmRow.reason ? (
-                      <Text style={styles.tdmRowHint}>{tdmRow.reason}</Text>
+                    {showTdmUi && item.role === 'driver' && tdmRow.helperMessage ? (
+                      <Text style={styles.tdmRowHint}>{tdmRow.helperMessage}</Text>
                     ) : null}
                   </View>
                 );
@@ -631,6 +728,11 @@ function TrustedNetworkHub({
                     {priceError}
                   </PremiumText>
                 ) : null}
+                {contributionConfirmBlocked && contributionModalGate?.helperMessage ? (
+                  <PremiumText variant="caption" style={styles.modalError}>
+                    {contributionModalGate.helperMessage}
+                  </PremiumText>
+                ) : null}
                 {tdmSession?.errorMessage ? (
                   <PremiumText variant="caption" style={styles.modalError}>
                     {tdmSession.errorMessage}
@@ -645,7 +747,8 @@ function TrustedNetworkHub({
                 priceLoading ||
                 contributionTl <= 0 ||
                 tdmSession?.isCreating === true ||
-                !!priceError
+                !!priceError ||
+                contributionConfirmBlocked
               }
               busy={tdmSession?.isCreating === true}
             />
@@ -766,6 +869,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: PREMIUM_TEXT_MUTED,
     lineHeight: 15,
+  },
+  tdmRowStatus: {
+    marginLeft: 14,
+    marginRight: 14,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 15,
+  },
+  tdmRowStatusReady: {
+    color: PREMIUM_AUTH_CYAN,
+  },
+  tdmRowStatusMuted: {
+    color: PREMIUM_TEXT_MUTED,
   },
   orphanPanel: {
     marginHorizontal: 16,

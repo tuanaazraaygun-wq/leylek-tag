@@ -114,7 +114,6 @@ function DriverNavDirectionPointer({ chromeTone = 'dark' }: { chromeTone?: MapMa
       {isLight ? <View style={s.groundShadow} /> : null}
       <View style={s.glowOuter} />
       <View style={s.glowMid} />
-      {isLight ? <View style={s.capsuleBase} /> : null}
       <View style={navDirectionPointerStyles.arrowWrap}>
         <View style={s.arrowHeadStroke} />
         <View style={s.arrowHead} />
@@ -222,7 +221,7 @@ const navDirectionPointerLightStyles = StyleSheet.create({
     width: 28,
     height: 8,
     borderRadius: 14,
-    backgroundColor: 'rgba(15, 23, 42, 0.14)',
+    backgroundColor: 'rgba(15, 23, 42, 0.16)',
     ...(Platform.OS === 'android'
       ? { elevation: 2 }
       : {
@@ -234,38 +233,29 @@ const navDirectionPointerLightStyles = StyleSheet.create({
   },
   glowOuter: {
     position: 'absolute',
-    width: 55,
-    height: 55,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    borderWidth: StyleSheet.hairlineWidth + 0.5,
-    borderColor: 'rgba(0, 212, 170, 0.22)',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 212, 170, 0.42)',
     ...(Platform.OS === 'android'
-      ? { elevation: 5 }
+      ? { elevation: 3 }
       : {
-          shadowColor: 'rgba(15, 23, 42, 0.22)',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.28,
-          shadowRadius: 10,
+          shadowColor: 'rgba(15, 23, 42, 0.16)',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 1,
+          shadowRadius: 5,
         }),
   },
   glowMid: {
     position: 'absolute',
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0, 212, 170, 0.10)',
-    borderWidth: StyleSheet.hairlineWidth + 0.5,
-    borderColor: 'rgba(0, 212, 170, 0.28)',
-  },
-  capsuleBase: {
-    position: 'absolute',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(15, 23, 42, 0.08)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(13, 148, 136, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(15, 118, 110, 0.38)',
   },
   arrowHeadStroke: {
     position: 'absolute',
@@ -278,7 +268,7 @@ const navDirectionPointerLightStyles = StyleSheet.create({
     borderTopWidth: 27,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderTopColor: 'rgba(255, 255, 255, 0.98)',
+    borderTopColor: 'rgba(15, 118, 110, 0.72)',
   },
   arrowHead: {
     width: 0,
@@ -289,14 +279,14 @@ const navDirectionPointerLightStyles = StyleSheet.create({
     borderTopWidth: 25,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderTopColor: '#0F766E',
+    borderTopColor: '#0D9488',
   },
   arrowStem: {
     width: 10,
     height: 9,
     marginTop: -1,
     borderRadius: 2,
-    backgroundColor: '#0D9488',
+    backgroundColor: '#14B8A6',
   },
   coreRing: {
     width: 18,
@@ -304,21 +294,21 @@ const navDirectionPointerLightStyles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: '#FFFFFF',
     borderWidth: 2,
-    borderColor: 'rgba(0, 212, 170, 0.62)',
+    borderColor: '#0F766E',
     alignItems: 'center',
     justifyContent: 'center',
     ...(Platform.OS === 'android'
-      ? { elevation: 1 }
+      ? { elevation: 2 }
       : {
-          shadowColor: 'rgba(15, 23, 42, 0.12)',
+          shadowColor: 'rgba(15, 23, 42, 0.14)',
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.2,
-          shadowRadius: 2,
+          shadowOpacity: 1,
+          shadowRadius: 3,
         }),
   },
   coreDot: {
-    width: 7,
-    height: 7,
+    width: 8,
+    height: 8,
     borderRadius: 4,
     backgroundColor: '#0F766E',
   },
@@ -756,6 +746,36 @@ function formatMatchedRouteLegLine(
   if (mode === 'calculating') return `${prefix} hesaplanıyor…`;
   if (mode === 'unavailable') return `${prefix} —`;
   return `${prefix} ${formatRouteKmMin(distanceKm, durationMin)}`;
+}
+
+/** Light theme — split leg prefix/value for readable route chips (display only). */
+function MatchedRouteLegLineText({
+  line,
+  legPrefix,
+  baseStyle,
+  labelStyle,
+  valueStyle,
+}: {
+  line: string;
+  legPrefix: string;
+  baseStyle: object;
+  labelStyle?: object | null;
+  valueStyle?: object | null;
+}) {
+  if (!labelStyle || !line.startsWith(legPrefix)) {
+    return (
+      <PremiumText variant="caption" style={[baseStyle, valueStyle]} numberOfLines={1}>
+        {line}
+      </PremiumText>
+    );
+  }
+  const valuePart = line.slice(legPrefix.length);
+  return (
+    <Text style={[baseStyle, valueStyle]} numberOfLines={1}>
+      <Text style={labelStyle}>{legPrefix}</Text>
+      {valuePart}
+    </Text>
+  );
 }
 
 /** TAG yolculuk faz etiketi — biniş öncesi/sonrası guardian journey dili */
@@ -2068,32 +2088,52 @@ async function fetchNavDirectionsTrafficHint(
   }
 }
 
+/** Light map — digital teal stack; dark map — premium cyan (değişmez). */
+const NAV_ROUTE_STROKE_LIGHT = {
+  dim: 'rgba(100, 116, 139, 0.48)',
+  bright: '#2DD4BF',
+  hot: '#0F766E',
+} as const;
+
+/** Light active nav — underlay halo for contrast on Google light tiles. */
+const NAV_ROUTE_STROKE_LIGHT_HALO = 'rgba(255, 255, 255, 0.94)';
+
+const NAV_ROUTE_STROKE_DARK = {
+  dim: 'rgba(34, 211, 238, 0.28)',
+  bright: '#22D3EE',
+  hot: 'rgba(243, 248, 255, 0.92)',
+} as const;
+
 /** Buluşma aşaması — premium cyan rota katmanları (dim / parlak / sıcak vurgu). */
-function pickupNavRouteStrokeColors(level: NavTrafficLevel): { dim: string; bright: string; hot: string } {
+function pickupNavRouteStrokeColors(
+  level: NavTrafficLevel,
+  isLight: boolean,
+): { dim: string; bright: string; hot: string } {
+  if (isLight) return NAV_ROUTE_STROKE_LIGHT;
   switch (level) {
     case 'free':
     case 'slow':
     case 'heavy':
-      return {
-        dim: 'rgba(34, 211, 238, 0.28)',
-        bright: '#22D3EE',
-        hot: 'rgba(243, 248, 255, 0.92)',
-      };
+      return NAV_ROUTE_STROKE_DARK;
   }
 }
 
 /** Hedef aşaması — pickup ile aynı premium cyan dil. */
-function destinationNavRouteStrokeColors(level: NavTrafficLevel): { dim: string; bright: string; hot: string } {
+function destinationNavRouteStrokeColors(
+  level: NavTrafficLevel,
+  isLight: boolean,
+): { dim: string; bright: string; hot: string } {
+  if (isLight) return NAV_ROUTE_STROKE_LIGHT;
   switch (level) {
     case 'free':
     case 'slow':
     case 'heavy':
-      return {
-        dim: 'rgba(34, 211, 238, 0.28)',
-        bright: '#22D3EE',
-        hot: 'rgba(243, 248, 255, 0.92)',
-      };
+      return NAV_ROUTE_STROKE_DARK;
   }
+}
+
+function mapRouteStrokeSimple(isLight: boolean): string {
+  return isLight ? NAV_ROUTE_STROKE_LIGHT.bright : NAV_ROUTE_STROKE_DARK.bright;
 }
 
 /** GPS hızına göre hedef zoom (m/s → km/h); bilinmiyorsa yavaş / yakın zoom */
@@ -6370,8 +6410,9 @@ export default function LiveMapView({
     navDriverMapCoord?.longitude,
   ]);
 
-  const pickupNavStroke = pickupNavRouteStrokeColors(navRouteTrafficLevel);
-  const destNavStroke = destinationNavRouteStrokeColors(navRouteTrafficLevel);
+  const pickupNavStroke = pickupNavRouteStrokeColors(navRouteTrafficLevel, isScopeLight);
+  const destNavStroke = destinationNavRouteStrokeColors(navRouteTrafficLevel, isScopeLight);
+  const simpleMapRouteStroke = mapRouteStrokeSimple(isScopeLight);
 
   /** Bunlar `Platform.OS === 'web' || !MapView` erken dönüşünden önce tanımlanmalı (hooks sırası). */
   const driverNavActive = isDriver && navigationMode;
@@ -6704,7 +6745,8 @@ export default function LiveMapView({
         ? price
         : null;
 
-  const driverNavImmersiveMapPaddingTopPx = Math.max(insets.top, 12) + 118;
+  const driverNavImmersiveMapPaddingTopPx =
+    Math.max(insets.top, 12) + (isScopeLight ? 124 : 118);
 
   const showMapLoadingOverlay =
     !driverRideUiModern && !driverNavImmersive && !mapTilesReady && !mapSelfHealVisible;
@@ -6876,27 +6918,63 @@ export default function LiveMapView({
           style={[
             styles.navManeuverBanner,
             styles.navManeuverBannerCompact,
+            isScopeLight ? styles.navManeuverBannerLightFloat : null,
             jLt?.navManeuverBanner,
-            { paddingTop: Math.max(insets.top, 8) + 4 },
+            {
+              paddingTop: Math.max(insets.top, isScopeLight ? 12 : 8) + (isScopeLight ? 10 : 4),
+            },
           ]}
           pointerEvents="none"
         >
-          <Text style={[styles.navManeuverBannerStage, styles.navManeuverBannerStageCompact]}>
+          <Text
+            style={[
+              styles.navManeuverBannerStage,
+              styles.navManeuverBannerStageCompact,
+              isScopeLight ? styles.navManeuverBannerStageLight : null,
+              jLt?.navManeuverBannerStage,
+            ]}
+          >
             {navigationStage === 'pickup' ? 'Buluşmaya gidiyorsunuz' : 'Hedefe gidiyorsunuz'}
           </Text>
-          <View style={[styles.navManeuverBannerRow, styles.navManeuverBannerRowCompact]}>
-            <View style={[styles.navManeuverIconCircle, styles.navManeuverIconCircleCompact]}>
+          <View
+            style={[
+              styles.navManeuverBannerRow,
+              styles.navManeuverBannerRowCompact,
+              isScopeLight ? styles.navManeuverBannerRowLight : null,
+            ]}
+          >
+            <View
+              style={[
+                styles.navManeuverIconCircle,
+                styles.navManeuverIconCircleCompact,
+                isScopeLight ? styles.navManeuverIconCircleLight : null,
+                jLt?.navManeuverIconCircle,
+              ]}
+            >
               <NavManeuverArrowIcon kind={navManeuverUi?.arrowKind ?? 'unknown'} size={44} />
             </View>
             <View style={styles.navManeuverTextCol}>
               <Text
-                style={[styles.navManeuverBannerManeuver, styles.navManeuverBannerManeuverCompact]}
+                style={[
+                  styles.navManeuverBannerManeuver,
+                  styles.navManeuverBannerManeuverCompact,
+                  isScopeLight ? styles.navManeuverBannerManeuverLight : null,
+                  jLt?.navManeuverBannerManeuver,
+                ]}
                 numberOfLines={2}
               >
                 {navManeuverUi?.instructionLine ?? 'Rota hazırlanıyor…'}
               </Text>
               {navManeuverUi?.streetName ? (
-                <Text style={[styles.navManeuverStreet, styles.navManeuverStreetCompact]} numberOfLines={1}>
+                <Text
+                  style={[
+                    styles.navManeuverStreet,
+                    styles.navManeuverStreetCompact,
+                    isScopeLight ? styles.navManeuverStreetLight : null,
+                    jLt?.navManeuverStreet,
+                  ]}
+                  numberOfLines={1}
+                >
                   {navManeuverUi.streetName}
                 </Text>
               ) : null}
@@ -6993,6 +7071,16 @@ export default function LiveMapView({
                     zIndex={8}
                   />
                 ) : null}
+                {isScopeLight && driverNavRouteLayers.bright.length >= 2 ? (
+                  <Polyline
+                    coordinates={driverNavRouteLayers.bright}
+                    strokeWidth={22}
+                    strokeColor={NAV_ROUTE_STROKE_LIGHT_HALO}
+                    lineCap="round"
+                    lineJoin="round"
+                    zIndex={8}
+                  />
+                ) : null}
                 {driverNavRouteLayers.bright.length >= 2 ? (
                   <Polyline
                     coordinates={driverNavRouteLayers.bright}
@@ -7021,14 +7109,26 @@ export default function LiveMapView({
             !driverNavRouteLayers &&
             Array.isArray(meetingRouteCoordinates) &&
             meetingRouteCoordinates.length > 1 && (
-              <Polyline
-                coordinates={meetingRouteCoordinates}
-                strokeWidth={11}
-                strokeColor={pickupNavStroke.bright}
-                lineCap="round"
-                lineJoin="round"
-                zIndex={10}
-              />
+              <>
+                {isScopeLight ? (
+                  <Polyline
+                    coordinates={meetingRouteCoordinates}
+                    strokeWidth={15}
+                    strokeColor={NAV_ROUTE_STROKE_LIGHT_HALO}
+                    lineCap="round"
+                    lineJoin="round"
+                    zIndex={9}
+                  />
+                ) : null}
+                <Polyline
+                  coordinates={meetingRouteCoordinates}
+                  strokeWidth={11}
+                  strokeColor={pickupNavStroke.bright}
+                  lineCap="round"
+                  lineJoin="round"
+                  zIndex={10}
+                />
+              </>
             )}
           {!isDriver &&
             !boardingConfirmed &&
@@ -7036,7 +7136,7 @@ export default function LiveMapView({
             meetingRouteCoordinates.length > 1 && (
               <Polyline
                 coordinates={meetingRouteCoordinates}
-                strokeColor="#22D3EE"
+                strokeColor={simpleMapRouteStroke}
                 strokeWidth={8}
                 lineJoin="round"
                 lineCap="round"
@@ -7051,7 +7151,9 @@ export default function LiveMapView({
               <Polyline
                 coordinates={meetingRouteCoordinates}
                 strokeWidth={7}
-                strokeColor="rgba(34, 211, 238, 0.88)"
+                strokeColor={
+                  isScopeLight ? 'rgba(15, 118, 110, 0.92)' : 'rgba(34, 211, 238, 0.88)'
+                }
                 lineCap="round"
                 lineJoin="round"
                 zIndex={10}
@@ -7069,6 +7171,16 @@ export default function LiveMapView({
                     coordinates={driverNavRouteLayers.dim}
                     strokeWidth={6}
                     strokeColor={destNavStroke.dim}
+                    lineCap="round"
+                    lineJoin="round"
+                    zIndex={8}
+                  />
+                ) : null}
+                {isScopeLight && driverNavRouteLayers.bright.length >= 2 ? (
+                  <Polyline
+                    coordinates={driverNavRouteLayers.bright}
+                    strokeWidth={22}
+                    strokeColor={NAV_ROUTE_STROKE_LIGHT_HALO}
                     lineCap="round"
                     lineJoin="round"
                     zIndex={8}
@@ -7102,7 +7214,7 @@ export default function LiveMapView({
             !(isDriver && navigationMode && navigationStage === 'destination' && driverNavRouteLayers?.palette === 'dest') && (
               <Polyline
                 coordinates={destinationRoute}
-                strokeColor="#22D3EE"
+                strokeColor={simpleMapRouteStroke}
                 strokeWidth={8}
                 {...(Platform.OS === 'ios' ? {} : { lineDashPattern: [12, 6] })}
                 lineJoin="round"
@@ -7459,7 +7571,11 @@ export default function LiveMapView({
                 style={[styles.drvTopPhaseChipShell, jLt?.topPhaseChipShell]}
                 borderRadius={LDS_RADIUS.sm}
               >
-                <PremiumText variant="caption" muted style={styles.drvTopPhaseChip}>
+                <PremiumText
+                  variant="caption"
+                  muted={!jLt}
+                  style={[styles.drvTopPhaseChip, jLt?.topPhaseChipText]}
+                >
                   {driverOpsPhaseLabel(boardingConfirmed, tagStatus)}
                 </PremiumText>
               </GlassSurface>
@@ -7471,7 +7587,11 @@ export default function LiveMapView({
                     borderRadius={LDS_RADIUS.full}
                   >
                     <View style={[styles.drvTopLiveChipDot, jLt?.topLiveChipDot]} />
-                    <PremiumText variant="caption" muted style={styles.drvTopLiveChipText}>
+                    <PremiumText
+                      variant="caption"
+                      muted={!jLt}
+                      style={[styles.drvTopLiveChipText, jLt?.topLiveChipText]}
+                    >
                       Canlı
                     </PremiumText>
                   </GlassSurface>
@@ -7499,13 +7619,13 @@ export default function LiveMapView({
             ]}
           >
             <View style={[styles.matchedTopRouteDot, { backgroundColor: ui.routeDotPrimary }]} />
-            <PremiumText
-              variant="caption"
-              style={[styles.matchedTopRouteLineText, jLt?.matchedRouteLineText]}
-              numberOfLines={1}
-            >
-              {matchedMeetingLine}
-            </PremiumText>
+            <MatchedRouteLegLineText
+              line={matchedMeetingLine}
+              legPrefix="Buluşma"
+              baseStyle={styles.matchedTopRouteLineText}
+              labelStyle={jLt?.matchedRouteLineLabelText}
+              valueStyle={jLt?.matchedRouteLineText}
+            />
           </View>
 
           {destinationLocation ? (
@@ -7517,13 +7637,13 @@ export default function LiveMapView({
               ]}
             >
               <View style={[styles.matchedTopRouteDot, { backgroundColor: ui.routeDotSecondary }]} />
-              <PremiumText
-                variant="caption"
-                style={[styles.matchedTopRouteLineText, jLt?.matchedRouteLineText]}
-                numberOfLines={1}
-              >
-                {matchedDestinationLine}
-              </PremiumText>
+              <MatchedRouteLegLineText
+                line={matchedDestinationLine}
+                legPrefix="Hedef"
+                baseStyle={styles.matchedTopRouteLineText}
+                labelStyle={jLt?.matchedRouteLineLabelText}
+                valueStyle={jLt?.matchedRouteLineText}
+              />
               {nearDestination ? (
                 <GlassSurface
                   variant="plain"
@@ -7740,7 +7860,10 @@ export default function LiveMapView({
                   style={[styles.paxTopPhaseChipShell, jLt?.topPhaseChipShell]}
                   borderRadius={LDS_RADIUS.sm}
                 >
-                  <PremiumText variant="caption" style={styles.paxTopPhaseChip}>
+                  <PremiumText
+                    variant="caption"
+                    style={[styles.paxTopPhaseChip, jLt?.topPhaseChipText]}
+                  >
                     {tagRidePhaseLabel(boardingConfirmed, tagStatus)}
                   </PremiumText>
                 </GlassSurface>
@@ -7779,13 +7902,13 @@ export default function LiveMapView({
               ]}
             >
               <View style={[styles.matchedTopRouteDot, { backgroundColor: ui.routeDotPrimary }]} />
-              <PremiumText
-                variant="caption"
-                style={[styles.matchedTopRouteLineText, jLt?.matchedRouteLineText]}
-                numberOfLines={1}
-              >
-                {matchedMeetingLine}
-              </PremiumText>
+              <MatchedRouteLegLineText
+                line={matchedMeetingLine}
+                legPrefix="Buluşma"
+                baseStyle={styles.matchedTopRouteLineText}
+                labelStyle={jLt?.matchedRouteLineLabelText}
+                valueStyle={jLt?.matchedRouteLineText}
+              />
             </View>
 
             {destinationLocation ? (
@@ -7796,13 +7919,13 @@ export default function LiveMapView({
                 ]}
               >
                 <View style={[styles.matchedTopRouteDot, { backgroundColor: ui.routeDotSecondary }]} />
-                <PremiumText
-                  variant="caption"
-                  style={[styles.matchedTopRouteLineText, jLt?.matchedRouteLineText]}
-                  numberOfLines={1}
-                >
-                  {matchedDestinationLine}
-                </PremiumText>
+                <MatchedRouteLegLineText
+                  line={matchedDestinationLine}
+                  legPrefix="Hedef"
+                  baseStyle={styles.matchedTopRouteLineText}
+                  labelStyle={jLt?.matchedRouteLineLabelText}
+                  valueStyle={jLt?.matchedRouteLineText}
+                />
                 {nearDestination ? (
                   <GlassSurface
                     variant="plain"
@@ -7818,24 +7941,17 @@ export default function LiveMapView({
             ) : null}
           </GlassSurface>
 
-          {matrixStatus ? (
-            <GlassSurface variant="plain" style={[styles.paxTopStatusChip, jLt?.drvTopStatusChip]} borderRadius={LDS_RADIUS.md}>
-              <PremiumText variant="caption" muted style={styles.paxTopMatrixText}>
-                {matrixStatus
-                  .replace('SURUCU', 'SÜRÜCÜ')
-                  .replace('SIZIN', 'SİZİN')
-                  .replace('ICIN', 'İÇİN')}
-              </PremiumText>
-            </GlassSurface>
-          ) : null}
-
           {userLocation && otherLocation && passengerDriverHint ? (
             <GlassSurface
               variant="plain"
-              style={styles.paxTopLiveHintShell}
+              style={[styles.paxTopLiveHintShell, jLt?.paxTopLiveHintShell]}
               borderRadius={LDS_RADIUS.md}
             >
-              <PremiumText variant="caption" muted style={styles.paxTopLiveHint}>
+              <PremiumText
+                variant="caption"
+                muted={!jLt}
+                style={[styles.paxTopLiveHint, jLt?.paxTopLiveHintText]}
+              >
                 {passengerDriverHint}
               </PremiumText>
             </GlassSurface>
@@ -9108,6 +9224,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomLeftRadius: 14,
     borderBottomRightRadius: 14,
+  },
+  navManeuverBannerLightFloat: {
+    left: 10,
+    right: 10,
+    top: 6,
+    borderRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    paddingBottom: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  navManeuverBannerStageLight: {
+    marginBottom: 5,
+    letterSpacing: 0.45,
+  },
+  navManeuverBannerRowLight: {
+    marginTop: 4,
+  },
+  navManeuverIconCircleLight: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginRight: 12,
+  },
+  navManeuverBannerManeuverLight: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  navManeuverStreetLight: {
+    marginTop: 3,
+    fontSize: 13,
   },
   navManeuverBannerStage: {
     color: 'rgba(186, 201, 222, 0.82)',

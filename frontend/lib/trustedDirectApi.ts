@@ -363,8 +363,17 @@ function userMessageFromParsedError(
     return { code: 'NOT_FOUND', message: 'Kayıt bulunamadı' };
   }
   if (status === 409) {
+    if (code === 'driver_offline' || rawLower.includes('driver_offline')) {
+      return { code: 'CONFLICT', message: 'Sürücü çevrimdışı' };
+    }
     if (code === 'driver_busy' || rawLower.includes('driver_busy')) {
-      return { code: 'CONFLICT', message: 'Aktif yolculuğunuz varken davet kabul edilemez' };
+      return { code: 'CONFLICT', message: 'Sürücü şu an meşgul' };
+    }
+    if (code === 'driver_invite_pending' || rawLower.includes('driver_invite_pending')) {
+      return {
+        code: 'CONFLICT',
+        message: 'Sürücü şu anda başka bir isteği yanıtlıyor.',
+      };
     }
     if (code === 'passenger_busy' || rawLower.includes('passenger_busy')) {
       return { code: 'CONFLICT', message: 'Yolcu şu an başka bir eşleşmede' };

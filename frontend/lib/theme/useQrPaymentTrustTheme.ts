@@ -121,6 +121,23 @@ export type TrustHubLightSurfaces = {
   sectionTitle: TextStyle;
 };
 
+/** Trusted Direct passenger waiting + driver invite glass (light LHS). */
+export type TdmModalLightSurfaces = {
+  scrim: ViewStyle;
+  card: ViewStyle;
+  iconOrb: ViewStyle;
+  cancelBtn: ViewStyle;
+  cancelBtnText: TextStyle;
+  pollWarning: ViewStyle;
+  primaryBtn: ViewStyle;
+  primaryBtnText: TextStyle;
+  secondaryBtn: ViewStyle;
+  secondaryBtnText: TextStyle;
+  countdownChip: ViewStyle;
+  contributionValue: TextStyle;
+  errorCard: ViewStyle;
+};
+
 const QPT_UI_DARK: QptUiColors = {
   accent: '#22D3EE',
   textMuted: 'rgba(186,201,222,0.9)',
@@ -413,6 +430,52 @@ function buildTrustHubLightSurfaces(tokens: LhThemeTokens): TrustHubLightSurface
   };
 }
 
+function buildTdmModalLightSurfaces(tokens: LhThemeTokens): TdmModalLightSurfaces {
+  return {
+    scrim: { backgroundColor: tokens.shadow.modal },
+    card: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    iconOrb: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    cancelBtn: {
+      backgroundColor: 'rgba(127, 29, 29, 0.08)',
+      borderColor: 'rgba(220, 38, 38, 0.22)',
+    },
+    cancelBtnText: { color: tokens.status.error },
+    pollWarning: {
+      backgroundColor: 'rgba(245, 158, 11, 0.12)',
+      borderColor: 'rgba(245, 158, 11, 0.28)',
+    },
+    primaryBtn: {
+      backgroundColor: tokens.accent.primary,
+      borderColor: tokens.accent.primaryHover,
+    },
+    primaryBtnText: { color: tokens.text.inverse },
+    secondaryBtn: {
+      backgroundColor: tokens.bg.canvas,
+      borderColor: tokens.border.default,
+    },
+    secondaryBtnText: { color: tokens.text.primary },
+    countdownChip: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    contributionValue: { color: tokens.accent.primary },
+    errorCard: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: 'rgba(248, 113, 113, 0.35)',
+      borderTopColor: 'rgba(248, 113, 113, 0.42)',
+    },
+  };
+}
+
 export function useQrPaymentTrustTheme(scope: QrPaymentTrustScope) {
   const { tokens, resolvedTheme } = useTheme();
   const isScopeLight = isLightThemeScreenEnabled(scope) && resolvedTheme === 'light';
@@ -465,6 +528,11 @@ export function useQrPaymentTrustTheme(scope: QrPaymentTrustScope) {
     [isScopeLight, scope, effectiveTokens],
   );
 
+  const tdmModalSurfaces = useMemo(
+    () => (isScopeLight && scope === 'trust' ? buildTdmModalLightSurfaces(effectiveTokens) : null),
+    [isScopeLight, scope, effectiveTokens],
+  );
+
   return {
     tokens: effectiveTokens,
     isScopeLight,
@@ -473,5 +541,6 @@ export function useQrPaymentTrustTheme(scope: QrPaymentTrustScope) {
     paymentSurfaces,
     ratingSurfaces,
     trustSurfaces,
+    tdmModalSurfaces,
   };
 }

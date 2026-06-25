@@ -14,7 +14,27 @@ import {
   type TrustedDirectRequestRow,
   type TrustedDirectRouteContext,
 } from '../lib/trustedDirectApi';
-import { TDM_MATCHING_TIMEOUT } from '../lib/trustedHubCopy';
+import {
+  TDM_TERMINAL_CANCELLED,
+  TDM_TERMINAL_DECLINED,
+  TDM_TERMINAL_NO_RESPONSE,
+} from '../lib/trustedHubCopy';
+
+function terminalMessageForRequestStatus(
+  status: string | null | undefined,
+): string {
+  const st = String(status || '').trim().toLowerCase();
+  if (st === 'cancelled') {
+    return TDM_TERMINAL_CANCELLED;
+  }
+  if (st === 'expired') {
+    return TDM_TERMINAL_NO_RESPONSE;
+  }
+  if (st === 'declined') {
+    return TDM_TERMINAL_DECLINED;
+  }
+  return TDM_TERMINAL_DECLINED;
+}
 
 function maxMatchingPollsForInterval(pollIntervalMs: number): number {
   return Math.max(1, Math.ceil(TDM_MATCHING_TIMEOUT_MS / pollIntervalMs));
@@ -139,17 +159,30 @@ export function useTrustedDirectPassengerSession(
     setIsRestoring(false);
   }, []);
 
-  const finishMatchingTimeout = useCallback(() => {
-    stopPolling();
-    setRequest(null);
-    setResponderLabel(null);
-    setPollErrorMessage(null);
-    setIsCreating(false);
-    setIsCancelling(false);
-    setIsRestoring(false);
-    setStatus('idle');
-    setErrorMessage(TDM_MATCHING_TIMEOUT);
-  }, [stopPolling]);
+  const finishTerminal = useCallback(
+    (message: string, generation: number) => {
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return;
+      }
+      stopPolling();
+      setRequest(null);
+      setResponderLabel(null);
+      setPollErrorMessage(null);
+      setIsCreating(false);
+      setIsCancelling(false);
+      setIsRestoring(false);
+      setStatus('idle');
+      setErrorMessage(message);
+    },
+    [stopPolling],
+  );
+
+  const finishMatchingTimeout = useCallback(
+    (generation: number) => {
+      finishTerminal(TDM_TERMINAL_NO_RESPONSE, generation);
+    },
+    [finishTerminal],
+  );
 
   const enterMatchingPhase = useCallback(
     (generation: number) => {
@@ -187,14 +220,36 @@ export function useTrustedDirectPassengerSession(
         return;
       }
       if (isTerminalRequestStatus(nextRequest.status)) {
-        stopPolling();
-        resetLocal();
-        setErrorMessage('İstek yanıtlanmadı veya sona erdi.');
+        finishTerminal(terminalMessageForRequestStatus(nextRequest.status), generation);
         return;
       }
       enterMatchingPhase(generation);
     },
-    [enterMatchingPhase, resetLocal, stopPolling],
+    [enterMatchingPhase, finishTerminal],
+  );
+
+  const resolveActiveTagOrTerminal = useCallback(
+    async (generation: number, terminalMessage: string): Promise<boolean> => {
+      const uid = String(userIdRef.current || '').trim();
+      if (!uid) {
+        finishTerminal(terminalMessage, generation);
+        return true;
+      }
+
+      const tagResult = await fetchPassengerActiveTagForBootstrap(uid);
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return true;
+      }
+
+      if (tagResult.ok && tagResult.data?.id) {
+        handleMatchedTag(tagResult.data.id, generation);
+        return true;
+      }
+
+      finishTerminal(terminalMessage, generation);
+      return true;
+    },
+    [finishTerminal, handleMatchedTag],
   );
 
   const pollPendingOnce = useCallback(
@@ -218,13 +273,13 @@ export function useTrustedDirectPassengerSession(
       }
 
       if (!result.data) {
-        enterMatchingPhase(generation);
+        await resolveActiveTagOrTerminal(generation, TDM_TERMINAL_DECLINED);
         return;
       }
 
       applyPendingRequest(result.data, generation);
     },
-    [applyPendingRequest, enterMatchingPhase, stopPolling],
+    [applyPendingRequest, resolveActiveTagOrTerminal, stopPolling],
   );
 
   const pollMatchingOnce = useCallback(
@@ -262,7 +317,7 @@ export function useTrustedDirectPassengerSession(
 
       matchingPollCountRef.current += 1;
       if (matchingPollCountRef.current >= maxMatchingPollsForInterval(pollIntervalMsRef.current)) {
-        finishMatchingTimeout();
+        finishMatchingTimeout(generation);
       }
     },
     [finishMatchingTimeout, handleMatchedTag, stopPolling],
@@ -375,9 +430,9 @@ export function useTrustedDirectPassengerSession(
     async (
       payload: CreateTrustedDirectRequestPayload,
       opts?: { responderLabel?: string },
-    ) => {
+    ): Promise<boolean> => {
       if (createInFlightRef.current) {
-        return;
+        return false;
       }
       if (
         statusRef.current !== 'idle' &&
@@ -385,7 +440,7 @@ export function useTrustedDirectPassengerSession(
         statusRef.current !== 'restoring'
       ) {
         setErrorMessage('Zaten bekleyen bir isteğiniz var.');
-        return;
+        return false;
       }
 
       createInFlightRef.current = true;
@@ -393,13 +448,13 @@ export function useTrustedDirectPassengerSession(
       const active = await getActiveTrustedDirectRequest();
       if (!mountedRef.current) {
         createInFlightRef.current = false;
-        return;
+        return false;
       }
       if (active.ok && active.data && isPendingResponderStatus(active.data.status)) {
         createInFlightRef.current = false;
         applyPendingRequest(active.data, generationRef.current);
         setErrorMessage('Zaten bekleyen bir isteğiniz var.');
-        return;
+        return false;
       }
 
       generationRef.current += 1;
@@ -418,7 +473,7 @@ export function useTrustedDirectPassengerSession(
 
       createInFlightRef.current = false;
       if (!mountedRef.current || generation !== generationRef.current) {
-        return;
+        return false;
       }
 
       setIsCreating(false);
@@ -426,17 +481,41 @@ export function useTrustedDirectPassengerSession(
       if (result.ok === false) {
         setStatus('error');
         setErrorMessage(mapCreateErrorMessage(result));
-        return;
+        return false;
       }
 
       applyPendingRequest(result.data, generation);
+      return true;
     },
     [applyPendingRequest, stopPolling],
   );
 
+  const dismissWaiting = useCallback(
+    (generation: number) => {
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return false;
+      }
+      stopPolling();
+      resetLocal();
+      return true;
+    },
+    [resetLocal, stopPolling],
+  );
+
   const cancel = useCallback(async (): Promise<boolean> => {
+    if (cancelInFlightRef.current) {
+      return false;
+    }
+
     const rid = String(requestRef.current?.id || '').trim();
-    if (!rid || cancelInFlightRef.current) {
+    const phase = statusRef.current;
+
+    if ((phase === 'matching' || phase === 'pending') && !rid) {
+      generationRef.current += 1;
+      return dismissWaiting(generationRef.current);
+    }
+
+    if (!rid) {
       return false;
     }
 
@@ -458,13 +537,16 @@ export function useTrustedDirectPassengerSession(
     setIsCancelling(false);
 
     if (result.ok === false) {
+      if (phase === 'matching') {
+        return dismissWaiting(generation);
+      }
       setErrorMessage(mapTdmUserFacingError(result));
       return false;
     }
 
     resetLocal();
     return true;
-  }, [resetLocal, stopPolling]);
+  }, [dismissWaiting, resetLocal, stopPolling]);
 
   const clear = useCallback(() => {
     generationRef.current += 1;

@@ -230,6 +230,20 @@ export const TDM_WAITING_CREATING_HINT = 'İstek hazırlanıyor…';
 export const TDM_WAITING_CANCEL = 'İsteği iptal et';
 export const TDM_MATCHING_TIMEOUT =
   'Bu istek için eşleşme doğrulanamadı. Sürücü reddetmiş veya süre dolmuş olabilir.';
+export const TDM_TERMINAL_DECLINED = 'Karşı tarafın isteği sonlandı.';
+export const TDM_TERMINAL_NO_RESPONSE = 'Sürücü yanıt vermedi.';
+export const TDM_TERMINAL_CANCELLED = 'İstek iptal edildi.';
+export const TDM_DRIVER_STATUS_ONLINE = 'Çevrimiçi';
+export const TDM_DRIVER_STATUS_BUSY = 'Meşgul';
+export const TDM_DRIVER_STATUS_OFFLINE = 'Çevrimdışı';
+/** Canonical TDM CTA labels — match status when disabled. */
+export const TDM_BUTTON_REQUEST = TDM_REQUEST_CTA;
+export const TDM_BUTTON_BUSY = TDM_DRIVER_STATUS_BUSY;
+export const TDM_BUTTON_OFFLINE = TDM_DRIVER_STATUS_OFFLINE;
+export const TDM_DRIVER_HELPER_OFFLINE = 'Sürücü çevrimdışı';
+export const TDM_DRIVER_HELPER_BUSY = 'Sürücü şu anda yolculukta';
+export const TDM_DRIVER_HELPER_UNAVAILABLE = 'Sürücü şu anda uygun değil';
+export const TDM_REQUEST_BLOCKED_TITLE = 'İstek gönderilemiyor';
 export const TDM_ORPHAN_PENDING_TITLE = 'Bekleyen doğrudan istek';
 export const TDM_ORPHAN_PENDING_BODY =
   'Bekleyen bir doğrudan eşleşme isteğiniz olabilir. Rota bilgisi bu oturumda bulunamadı.';

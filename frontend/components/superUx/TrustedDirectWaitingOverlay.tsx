@@ -8,15 +8,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { CockpitBackground, PremiumText } from '../../design-system/primitives';
-import {
-  PREMIUM_AUTH_CYAN,
-  PREMIUM_BORDER_SLATE,
-  PREMIUM_NAVY_DEEP,
-  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
-  PREMIUM_TEXT_SOFT,
-} from '../auth/premiumAuthStyles';
+import { GlassSurface, PremiumText } from '../../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
+import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../../design-system/tokens/radius';
+import { LDS_SPACING } from '../../design-system/tokens/spacing';
+import { useQrPaymentTrustTheme } from '../../lib/theme/useQrPaymentTrustTheme';
 import {
   TDM_WAITING_CANCEL,
   TDM_WAITING_CREATING_HINT,
@@ -66,7 +63,7 @@ function resolveCopy(
 }
 
 function canCancelPhase(phase: TrustedDirectPassengerSessionStatus): boolean {
-  return phase === 'pending';
+  return phase === 'pending' || phase === 'matching';
 }
 
 function TrustedDirectWaitingOverlay({
@@ -77,6 +74,7 @@ function TrustedDirectWaitingOverlay({
   isCancelling = false,
   onCancel,
 }: TrustedDirectWaitingOverlayProps) {
+  const { tdmModalSurfaces: tdmLt, ui } = useQrPaymentTrustTheme('trust');
   const copy = resolveCopy(phase, responderLabel);
   const showCancel = canCancelPhase(phase);
 
@@ -92,36 +90,61 @@ function TrustedDirectWaitingOverlay({
       }}
     >
       <View style={styles.backdrop}>
-        <LinearGradient
-          colors={['rgba(5, 11, 24, 0.92)', 'rgba(11, 18, 32, 0.96)']}
-          style={StyleSheet.absoluteFill}
-        />
+        <View style={[styles.scrim, tdmLt?.scrim]} pointerEvents="none" />
+
         <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-          <View style={styles.card}>
-            <CockpitBackground />
-            <View style={styles.iconOrb}>
-              <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
+          <GlassSurface
+            variant="panel"
+            borderRadius={LDS_RADIUS.xl}
+            style={[styles.card, tdmLt?.card]}
+          >
+            <View style={[styles.iconOrb, tdmLt?.iconOrb]}>
+              <ActivityIndicator size="large" color={ui.activity} />
             </View>
-            <PremiumText variant="title" style={styles.title}>
+
+            <PremiumText
+              variant="title"
+              style={[styles.title, { color: ui.textSoft }]}
+            >
               {copy.title}
             </PremiumText>
-            <PremiumText variant="body" muted style={styles.body}>
+
+            <PremiumText
+              variant="body"
+              muted
+              style={[styles.body, { color: ui.textMuted }]}
+            >
               {copy.body}
             </PremiumText>
+
             {phase === 'creating' ? (
-              <PremiumText variant="caption" muted style={styles.phaseHint}>
+              <PremiumText
+                variant="caption"
+                muted
+                style={[styles.phaseHint, { color: ui.textMuted }]}
+              >
                 {TDM_WAITING_CREATING_HINT}
               </PremiumText>
             ) : null}
+
             {pollErrorMessage ? (
-              <PremiumText variant="caption" style={styles.pollError}>
-                {pollErrorMessage}
-              </PremiumText>
+              <GlassSurface
+                variant="plain"
+                borderRadius={LDS_RADIUS.sm}
+                style={[styles.pollWarning, tdmLt?.pollWarning]}
+              >
+                <Ionicons name="cloud-offline-outline" size={16} color="#FBBF24" />
+                <PremiumText variant="caption" style={styles.pollErrorText}>
+                  {pollErrorMessage}
+                </PremiumText>
+              </GlassSurface>
             ) : null}
+
             {showCancel ? (
               <Pressable
                 style={({ pressed }) => [
                   styles.cancelBtn,
+                  tdmLt?.cancelBtn,
                   isCancelling && styles.cancelBtnDisabled,
                   pressed && !isCancelling && styles.cancelBtnPressed,
                 ]}
@@ -131,27 +154,35 @@ function TrustedDirectWaitingOverlay({
                 accessibilityLabel={TDM_WAITING_CANCEL}
               >
                 {isCancelling ? (
-                  <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+                  <ActivityIndicator size="small" color={ui.activity} />
                 ) : (
                   <>
                     <Ionicons
                       name="close-circle-outline"
                       size={18}
-                      color="rgba(252, 165, 165, 0.92)"
+                      color={ui.errorIcon}
                     />
-                    <PremiumText variant="label" style={styles.cancelText}>
+                    <PremiumText
+                      variant="label"
+                      style={[styles.cancelText, tdmLt?.cancelBtnText, { color: ui.errorIcon }]}
+                    >
                       {TDM_WAITING_CANCEL}
                     </PremiumText>
                   </>
                 )}
               </Pressable>
             ) : null}
+
             {phase === 'matching' ? (
-              <PremiumText variant="caption" muted style={styles.matchingHint}>
+              <PremiumText
+                variant="caption"
+                muted
+                style={[styles.matchingHint, { color: ui.textMuted }]}
+              >
                 {TDM_WAITING_MATCHING_HINT}
               </PremiumText>
             ) : null}
-          </View>
+          </GlassSurface>
         </SafeAreaView>
       </View>
     </Modal>
@@ -164,22 +195,24 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 20,
-    backgroundColor: PREMIUM_NAVY_DEEP,
+    paddingHorizontal: LDS_SPACING.lg,
+  },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8, 17, 31, 0.82)',
   },
   safe: {
     flex: 1,
     justifyContent: 'center',
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center',
   },
   card: {
-    borderRadius: 20,
-    paddingHorizontal: 22,
-    paddingVertical: 28,
-    gap: 12,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
-    backgroundColor: 'rgba(16, 26, 43, 0.88)',
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingVertical: LDS_SPACING.xl,
+    gap: LDS_SPACING.sm,
+    ...LDS_ELEVATION.cockpit,
   },
   iconOrb: {
     alignSelf: 'center',
@@ -188,15 +221,17 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(34, 211, 238, 0.1)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: PREMIUM_BORDER_SLATE,
-    marginBottom: 4,
+    backgroundColor: 'rgba(5, 11, 24, 0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    marginBottom: LDS_SPACING.xxs,
+    ...LDS_ELEVATION.flat,
   },
   title: {
     textAlign: 'center',
-    color: PREMIUM_TEXT_SOFT,
     fontWeight: '800',
+    letterSpacing: 0.2,
   },
   body: {
     textAlign: 'center',
@@ -206,21 +241,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
-  pollError: {
-    textAlign: 'center',
-    color: 'rgba(251, 191, 36, 0.92)',
+  pollWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
+    borderWidth: LDS_BORDER_WIDTH.thin,
+    borderColor: 'rgba(251, 191, 36, 0.28)',
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+  },
+  pollErrorText: {
+    flex: 1,
+    color: 'rgba(251, 191, 36, 0.95)',
+    lineHeight: 17,
   },
   cancelBtn: {
-    marginTop: 8,
+    marginTop: LDS_SPACING.xxs,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: LDS_SPACING.xs,
     paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: LDS_RADIUS.md,
+    borderWidth: LDS_BORDER_WIDTH.thin,
     borderColor: 'rgba(248, 113, 113, 0.35)',
     backgroundColor: 'rgba(127, 29, 29, 0.18)',
+    minHeight: 48,
   },
   cancelBtnDisabled: {
     opacity: 0.55,
@@ -229,7 +276,6 @@ const styles = StyleSheet.create({
     opacity: 0.88,
   },
   cancelText: {
-    color: 'rgba(252, 165, 165, 0.92)',
     fontWeight: '800',
   },
   matchingHint: {

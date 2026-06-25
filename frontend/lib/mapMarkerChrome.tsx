@@ -10,7 +10,6 @@ import { MAP_MARKER_LIGHT_SIZE_SCALE } from './theme/useMapMarkerTheme';
 const CYAN = '#22D3EE';
 const INK = 'rgba(8, 17, 31, 0.82)';
 const TEAL_RIM = 'rgba(0, 212, 170, 0.32)';
-const TEAL_RIM_SOFT = 'rgba(0, 212, 170, 0.22)';
 
 function lightDimension(base: number, chromeTone: MapMarkerChromeTone): number {
   return chromeTone === 'light' ? Math.round(base * MAP_MARKER_LIGHT_SIZE_SCALE) : base;
@@ -28,7 +27,8 @@ export function MapEntityMarkerImage({
   chromeTone?: MapMarkerChromeTone;
 }) {
   const isLight = chromeTone === 'light';
-  const glow = size + (isLight ? 14 : 12);
+  const glowPad = isLight ? 8 : 12;
+  const glow = size + glowPad;
   return (
     <View
       collapsable={false}
@@ -42,19 +42,11 @@ export function MapEntityMarkerImage({
           isLight && styles.entityGlowLight,
         ]}
       />
-      {isLight ? (
-        <View
-          style={[
-            styles.entityLightCapsule,
-            {
-              width: size + 6,
-              height: size + 6,
-              borderRadius: (size + 6) / 2,
-            },
-          ]}
-        />
-      ) : null}
-      <Image source={source} style={{ width: size, height: size }} resizeMode="contain" />
+      <Image
+        source={source}
+        style={{ width: size, height: size, zIndex: 1 }}
+        resizeMode="contain"
+      />
       <View
         style={[
           styles.entityShadow,
@@ -155,22 +147,17 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(34, 211, 238, 0.28)',
   },
   entityGlowLight: {
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    borderColor: TEAL_RIM_SOFT,
-  },
-  entityLightCapsule: {
-    position: 'absolute',
-    backgroundColor: '#FFFFFF',
-    borderWidth: StyleSheet.hairlineWidth + 1,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
     borderColor: TEAL_RIM,
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(15, 23, 42, 0.12)',
-        shadowOffset: { width: 0, height: 2 },
+        shadowColor: 'rgba(15, 23, 42, 0.14)',
+        shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 1,
-        shadowRadius: 4,
+        shadowRadius: 3,
       },
-      android: { elevation: 3 },
+      android: { elevation: 2 },
       default: {},
     }),
   },

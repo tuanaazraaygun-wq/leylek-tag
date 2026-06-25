@@ -6,8 +6,12 @@ export const BOARDING_NEAR_ENTER_M = 100;
 export const BOARDING_NEAR_EXIT_M = 130;
 /** Yolcu biniş QR taraması — yalnız manuel kamera açma guard'ı (prompt hâlâ BOARDING_NEAR_ENTER_M) */
 export const BOARDING_QR_EARLY_SCAN_M = 200;
-/** Yakınlık sürekli bu kadar ms boyunca "içeride" kalmalı */
-export const BOARDING_STABLE_MS = 10_000;
+/** Yakınlık sürekli bu kadar ms boyunca "içeride" kalmalı — "Araca bindiniz mi?" prompt */
+export const BOARDING_STABLE_MS = 4_000;
+/** ≤100m scan CTA banner — prompt'tan daha kısa bekleme */
+export const BOARDING_GUIDANCE_STABLE_MS = 1_200;
+/** ≤200m erken scan CTA — tam stable penceresinden önce manuel tarama ipucu */
+export const BOARDING_EARLY_SCAN_CTA_STABLE_MS = 2_000;
 /** "Hayır" sonrası otomatik tekrar sormadan önce bekleme */
 export const BOARDING_DECLINE_COOLDOWN_MS = 90_000;
 /** Aynı oturumda birkaç kez hayır sonrası daha uzun bekleme (modal yerine banner) */

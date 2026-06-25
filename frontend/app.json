@@ -144,9 +144,9 @@
       "typedRoutes": true
     },
     "splash": {
-      "image": "./assets/images/leylek-logo-premium.png",
+      "image": "./assets/images/leylek-logo-premium-dark.png",
       "resizeMode": "contain",
-      "backgroundColor": "#131922"
+      "backgroundColor": "#08111F"
     },
     "extra": {
       "router": {},

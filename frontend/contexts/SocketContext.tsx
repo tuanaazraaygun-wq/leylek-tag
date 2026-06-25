@@ -24,6 +24,7 @@ import { publishSocketSessionRefresh } from '../lib/socketSessionRefresh';
 import { emitConversationUpdated, emitTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
 import { normalizeRemotePushRoutingData, useNotifications } from './NotificationContext';
 import { perfLog, perfWarn } from '../utils/perfDiagLog';
+import { touchRealtimeSocketActivity, clearRealtimeSocketActivity } from '../lib/realtimePollGate';
 
 const SOCKET_URL = BACKEND_BASE_URL;
 
@@ -205,12 +206,14 @@ export function getOrCreateSocket(): Socket {
 
   singletonSocket.on('connect', () => {
     const id = singletonSocket?.id;
+    touchRealtimeSocketActivity('connect');
     logSocketProdDiag('connect', { connected: true, hasSocketId: !!id });
     perfLog('[socket] connected', id);
     perfLog(`[socket] connect sid=${id || 'null'}`);
     if (pingInterval) clearInterval(pingInterval);
     pingInterval = setInterval(() => {
       if (singletonSocket?.connected) {
+        touchRealtimeSocketActivity('heartbeat');
         singletonSocket.emit('heartbeat', { timestamp: Date.now() });
       }
     }, 20000);
@@ -231,6 +234,7 @@ export function getOrCreateSocket(): Socket {
   });
 
   singletonSocket.on('disconnect', (reason) => {
+    clearRealtimeSocketActivity();
     perfLog('[socket] disconnect', reason);
     perfLog(`[socket] disconnect sid=${singletonSocket?.id || 'null'} reason=${String(reason || '')}`);
     lastRegisteredSocketSid = null;
@@ -706,6 +710,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     );
     if (ackOk) {
       registerAckOkRef.current = true;
+      touchRealtimeSocketActivity('register_ack');
       lastRegisteredSocketSid = socket.id ?? null;
       lastRegisteredSocketUserId =
         ack?.resolved_user_id != null
@@ -929,6 +934,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       setIsConnected(true);
       setIsRegistered(false);
       registerAckOkRef.current = false;
+      touchRealtimeSocketActivity('provider_connect');
       if (sid && lastSocketIdRef.current !== sid) {
         perfLog('FRONTEND_SOCKET_ID_CHANGED', { socket_id: sid, prev: lastSocketIdRef.current });
         lastSocketIdRef.current = sid;
@@ -939,6 +945,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     };
 
     const handleDisconnect = (reason: string) => {
+      clearRealtimeSocketActivity();
       perfLog('⚠️ [SocketProvider] Socket koptu:', reason);
       setIsConnected(false);
       setIsRegistered(false);

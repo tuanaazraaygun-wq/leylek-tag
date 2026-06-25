@@ -23,6 +23,7 @@ import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
 import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
 import { tapButtonHaptic } from '../utils/touchHaptics';
+import { perfLog } from '../utils/perfDiagLog';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 import { PaymentLegalDisclaimer } from './legal/PaymentLegalDisclaimer';
 
@@ -30,7 +31,8 @@ const { width } = Dimensions.get('window');
 
 /** Çift decode burst — retry’i kilitlemez */
 const TRIP_END_SCAN_BURST_DEDUPE_MS = 120;
-const TRIP_END_SUCCESS_BEAT_MS = 400;
+const TRIP_END_SUCCESS_BEAT_MS = 300;
+const TRIP_END_CAMERA_REUSE_WINDOW_MS = 45_000;
 
 function tripEndSuccessBeatDelay(): Promise<void> {
   return new Promise((resolve) => {
@@ -106,6 +108,8 @@ export default function QRTripEndModal({
   const [pendingDriverId, setPendingDriverId] = useState<string | null>(null);
   const [legacyPaymentPick, setLegacyPaymentPick] = useState<PaymentMethod | null>(null);
   const lastScannedValueRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
+  const lastScanStepLeftAtRef = useRef(0);
+  const hasTripEndCameraSessionRef = useRef(false);
   const mountedRef = useRef(true);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
@@ -132,20 +136,45 @@ export default function QRTripEndModal({
       setPendingDriverId(null);
       setLegacyPaymentPick(null);
       lastScannedValueRef.current = { data: '', ts: 0 };
+    } else {
+      hasTripEndCameraSessionRef.current = false;
+      lastScanStepLeftAtRef.current = Date.now();
     }
   }, [visible, isDriver, showIbanOption, isTrustedDirect]);
 
-  /** Yolcu scan adımına girince kamera oturumunu yenile (visible+scan — IBAN choose sonrası dahil) */
+  /** Yolcu scan adımına girince kamera oturumunu yenile (hızlı yeniden girişte reuse) */
   useEffect(() => {
-    if (!visible || isDriver || passengerStep !== 'scan') return;
-    setCameraSessionKey((k) => k + 1);
-    setCameraReady(false);
+    if (!visible || isDriver) return;
+    if (passengerStep !== 'scan') {
+      lastScanStepLeftAtRef.current = Date.now();
+      return;
+    }
+
+    const reopenWithinReuse =
+      hasTripEndCameraSessionRef.current &&
+      Date.now() - lastScanStepLeftAtRef.current < TRIP_END_CAMERA_REUSE_WINDOW_MS;
+
+    perfLog('QR_MODAL_OPEN', {
+      flow: 'trip_end',
+      tag_id: tagId,
+      reuse_camera: reopenWithinReuse,
+    });
+
+    if (!reopenWithinReuse) {
+      setCameraSessionKey((k) => k + 1);
+      hasTripEndCameraSessionRef.current = true;
+      setCameraReady(false);
+    } else if (hasPermission?.granted) {
+      setCameraReady(true);
+      perfLog('QR_CAMERA_READY', { flow: 'trip_end', tag_id: tagId, reused: true });
+    }
+
     setScanned(false);
     lastScannedValueRef.current = { data: '', ts: 0 };
     if (!hasPermission?.granted) {
       void requestPermission();
     }
-  }, [visible, isDriver, passengerStep, hasPermission?.granted, requestPermission]);
+  }, [visible, isDriver, passengerStep, hasPermission?.granted, requestPermission, tagId]);
 
   const scannerActive =
     !isTrustedDirect &&
@@ -159,6 +188,8 @@ export default function QRTripEndModal({
   const submitCompleteQr = useCallback(
     async (paymentConfirmed: PaymentMethod, driverUserId: string): Promise<CompleteQrOutcome> => {
       setProcessing(true);
+      const verifyStartedAt = Date.now();
+      perfLog('QR_VERIFY_START', { flow: 'trip_end', tag_id: tagId });
       try {
         const response = await fetch(`${API_BASE_URL}/trip/complete-qr`, {
           method: 'POST',
@@ -195,6 +226,11 @@ export default function QRTripEndModal({
         }
 
         if (result.success) {
+          perfLog('QR_VERIFY_SUCCESS', {
+            flow: 'trip_end',
+            tag_id: tagId,
+            elapsed_ms: Date.now() - verifyStartedAt,
+          });
           Vibration.vibrate([0, 100, 50, 100]);
           onComplete(true, driverUserId, result.driver_name || firstName);
           onClose();
@@ -247,6 +283,7 @@ export default function QRTripEndModal({
         return;
       }
       lastScannedValueRef.current = { data: raw, ts: now };
+      perfLog('QR_DETECTED', { flow: 'trip_end', tag_id: tagId });
 
       setScanned(true);
       void tapButtonHaptic();
@@ -718,6 +755,7 @@ export default function QRTripEndModal({
                         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                         onCameraReady={() => {
                           setCameraReady(true);
+                          perfLog('QR_CAMERA_READY', { flow: 'trip_end', tag_id: tagId, reused: false });
                           if (__DEV__) {
                             console.log('[QRTripEndModal] onCameraReady');
                           }
@@ -736,7 +774,7 @@ export default function QRTripEndModal({
                         <View style={styles.cameraStatusOverlay}>
                           <ActivityIndicator size="large" color={qrUi.activity} />
                           <PremiumText variant="caption" muted style={styles.processingText}>
-                            Kamera hazırlanıyor
+                            Kamera açılıyor… QR kodunu çerçeveye hizalayın
                           </PremiumText>
                         </View>
                       ) : null}

@@ -9,11 +9,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { GlassSurface, PremiumText } from '../../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
-import { PREMIUM_AUTH_CYAN, LDS_COLOR_ERROR } from '../../design-system/tokens/color';
+import { LDS_COLOR_ERROR, PREMIUM_AUTH_CYAN } from '../../design-system/tokens/color';
 import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import type { useTrustedDirectDriverSession } from '../../hooks/useTrustedDirectDriverSession';
+import { useDriverTheme } from '../../lib/theme/useDriverTheme';
 import {
   ACTION_ACCEPT,
   ACTION_DECLINE,
@@ -125,10 +126,15 @@ function useInviteCountdown(
 }
 
 function PollWarningBanner() {
+  const { quickMatchSurfaces: qmLt } = useDriverTheme();
   return (
-    <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.pollWarning}>
+    <GlassSurface
+      variant="plain"
+      borderRadius={LDS_RADIUS.sm}
+      style={[styles.pollWarning, qmLt?.pollWarningBanner]}
+    >
       <Ionicons name="cloud-offline-outline" size={16} color="#FBBF24" />
-      <PremiumText variant="caption" muted style={styles.pollWarningText}>
+      <PremiumText variant="caption" style={styles.pollWarningText}>
         {TDM_DRIVER_INVITE_POLL_WARNING}
       </PremiumText>
     </GlassSurface>
@@ -136,12 +142,16 @@ function PollWarningBanner() {
 }
 
 function DecisionHeader() {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   return (
     <View style={styles.phaseBlock}>
-      <PremiumText variant="step" style={styles.title}>
+      <View style={[styles.iconRing, qmLt?.iconRing]}>
+        <Ionicons name="people-outline" size={26} color={ui.trustIcon} />
+      </View>
+      <PremiumText variant="step" style={[styles.phaseStep, { color: ui.accent }]}>
         {TDM_DRIVER_INVITE_TITLE}
       </PremiumText>
-      <PremiumText variant="caption" muted style={styles.subtitle}>
+      <PremiumText variant="caption" muted style={styles.phaseCaption}>
         {TDM_DRIVER_INVITE_SUBTITLE}
       </PremiumText>
     </View>
@@ -159,17 +169,27 @@ function PrimaryButton({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   return (
     <Pressable
-      style={[styles.primaryBtn, disabled && styles.btnDisabled]}
+      style={({ pressed }) => [
+        styles.primaryBtn,
+        qmLt?.primaryBtnWrap,
+        !qmLt && styles.primaryBtnDark,
+        (disabled || loading) && styles.btnDisabled,
+        pressed && !disabled && !loading && styles.primaryBtnPressed,
+      ]}
       onPress={onPress}
       disabled={disabled || loading}
       accessibilityRole="button"
     >
       {loading ? (
-        <ActivityIndicator size="small" color="#08111F" />
+        <ActivityIndicator size="small" color={qmLt ? ui.activity : ui.acceptText} />
       ) : (
-        <PremiumText variant="body" style={styles.primaryBtnText}>
+        <PremiumText
+          variant="body"
+          style={[styles.primaryBtnText, qmLt?.primaryBtnText, !qmLt && styles.primaryBtnTextDark]}
+        >
           {label}
         </PremiumText>
       )}
@@ -188,15 +208,21 @@ function SecondaryButton({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   return (
     <Pressable
-      style={[styles.secondaryBtn, disabled && styles.btnDisabled]}
+      style={({ pressed }) => [
+        styles.secondaryBtn,
+        qmLt?.secondaryBtnWrap,
+        (disabled || loading) && styles.btnDisabled,
+        pressed && !disabled && !loading && styles.secondaryBtnPressed,
+      ]}
       onPress={onPress}
       disabled={disabled || loading}
       accessibilityRole="button"
     >
       {loading ? (
-        <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+        <ActivityIndicator size="small" color={ui.activity} />
       ) : (
         <PremiumText variant="body" muted style={styles.secondaryBtnText}>
           {label}
@@ -221,6 +247,7 @@ function InviteDetailsBlock({
   vehicleLabel: string;
   countdownSec: number | null;
 }) {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   const countdownLabel = formatCountdownLabel(countdownSec);
   const countdownHint = formatCountdownHint(countdownSec);
   const countdownExpired = countdownSec != null && countdownSec <= 0;
@@ -234,7 +261,7 @@ function InviteDetailsBlock({
           Alış noktası
         </PremiumText>
         <View style={styles.routeRow}>
-          <Ionicons name="radio-button-on" size={14} color={PREMIUM_AUTH_CYAN} />
+          <Ionicons name="radio-button-on" size={14} color={ui.activity} />
           <PremiumText variant="body" style={styles.fieldValue} numberOfLines={3}>
             {pickupLabel}
           </PremiumText>
@@ -246,7 +273,7 @@ function InviteDetailsBlock({
           Varış noktası
         </PremiumText>
         <View style={styles.routeRow}>
-          <Ionicons name="location-outline" size={14} color={PREMIUM_AUTH_CYAN} />
+          <Ionicons name="location-outline" size={14} color={ui.activity} />
           <PremiumText variant="body" style={styles.fieldValue} numberOfLines={3}>
             {dropoffLabel}
           </PremiumText>
@@ -259,7 +286,7 @@ function InviteDetailsBlock({
             Mesafe
           </PremiumText>
           <View style={styles.inlineValueRow}>
-            <Ionicons name="navigate-outline" size={14} color={PREMIUM_AUTH_CYAN} />
+            <Ionicons name="navigate-outline" size={14} color={ui.activity} />
             <PremiumText variant="body" style={styles.fieldValue}>
               {distanceLabel}
             </PremiumText>
@@ -270,8 +297,11 @@ function InviteDetailsBlock({
             Katkı
           </PremiumText>
           <View style={styles.inlineValueRow}>
-            <Ionicons name="cash-outline" size={14} color={PREMIUM_AUTH_CYAN} />
-            <PremiumText variant="body" style={styles.contributionValue}>
+            <Ionicons name="cash-outline" size={14} color={ui.activity} />
+            <PremiumText
+              variant="body"
+              style={[styles.contributionValue, qmLt?.contributionValue]}
+            >
               {contributionTl} TL
             </PremiumText>
           </View>
@@ -283,7 +313,7 @@ function InviteDetailsBlock({
           Araç tercihi
         </PremiumText>
         <View style={styles.inlineValueRow}>
-          <Ionicons name="car-outline" size={14} color={PREMIUM_AUTH_CYAN} />
+          <Ionicons name="car-outline" size={14} color={ui.activity} />
           <PremiumText variant="body" style={styles.fieldValue}>
             {vehicleLabel}
           </PremiumText>
@@ -294,11 +324,15 @@ function InviteDetailsBlock({
         {TDM_CONTRIBUTION_DISCLAIMER}
       </PremiumText>
 
-      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.countdownChip}>
+      <GlassSurface
+        variant="plain"
+        borderRadius={LDS_RADIUS.sm}
+        style={[styles.countdownChip, qmLt?.countdownChip]}
+      >
         <Ionicons
           name="timer-outline"
           size={18}
-          color={countdownExpired ? LDS_COLOR_ERROR : countdownUrgent ? '#FBBF24' : PREMIUM_AUTH_CYAN}
+          color={countdownExpired ? LDS_COLOR_ERROR : countdownUrgent ? '#FBBF24' : ui.activity}
         />
         <View style={styles.countdownTextCol}>
           <PremiumText
@@ -316,6 +350,7 @@ function InviteDetailsBlock({
             variant="body"
             style={[
               styles.countdownValue,
+              qmLt?.countdownText,
               countdownExpired && styles.countdownExpired,
               countdownUrgent && styles.countdownUrgent,
             ]}
@@ -335,6 +370,7 @@ export function DriverTrustedDirectInviteCard({
   onDecline,
   onClose,
 }: DriverTrustedDirectInviteCardProps) {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   const invite = session.invite;
   const request = invite?.request;
   const countdownActive = visible && session.status === 'pending' && invite != null;
@@ -409,7 +445,7 @@ export function DriverTrustedDirectInviteCard({
     if (session.status === 'restoring' || session.isRestoring) {
       return (
         <View style={styles.centerCard}>
-          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
+          <ActivityIndicator size="large" color={ui.activity} />
           <PremiumText variant="body" style={styles.loadingTitle}>
             Davet kontrol ediliyor…
           </PremiumText>
@@ -420,7 +456,7 @@ export function DriverTrustedDirectInviteCard({
     if (session.status === 'accepting' || session.isAccepting) {
       return (
         <View style={styles.centerCard}>
-          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
+          <ActivityIndicator size="large" color={ui.activity} />
           <PremiumText variant="body" style={styles.loadingTitle}>
             Eşleşme hazırlanıyor…
           </PremiumText>
@@ -432,15 +468,15 @@ export function DriverTrustedDirectInviteCard({
       return (
         <View style={styles.centerCard}>
           <View style={styles.successIconWrap}>
-            <Ionicons name="checkmark-circle" size={48} color={PREMIUM_AUTH_CYAN} />
+            <Ionicons name="checkmark-circle" size={48} color={ui.accent} />
           </View>
-          <PremiumText variant="step" style={styles.title}>
+          <PremiumText variant="step" style={[styles.title, { color: ui.accent }]}>
             Eşleşme tamamlandı
           </PremiumText>
           <PremiumText variant="caption" muted style={styles.bodyMuted}>
             Buluşma ekranı hazırlanıyor
           </PremiumText>
-          <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} style={styles.matchedSpinner} />
+          <ActivityIndicator size="small" color={ui.activity} style={styles.matchedSpinner} />
         </View>
       );
     }
@@ -449,7 +485,11 @@ export function DriverTrustedDirectInviteCard({
       return (
         <View style={styles.section}>
           {renderPollWarning()}
-          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.errorCard}>
+          <GlassSurface
+            variant="plain"
+            borderRadius={LDS_RADIUS.md}
+            style={[styles.errorCard, qmLt?.errorCard]}
+          >
             <Ionicons name="alert-circle-outline" size={28} color={LDS_COLOR_ERROR} />
             <PremiumText variant="body" muted style={styles.errorBody}>
               {session.errorMessage || 'Doğrudan eşleşme şu an kullanılamıyor.'}
@@ -517,10 +557,14 @@ export function DriverTrustedDirectInviteCard({
       onRequestClose={handleScrimPress}
     >
       <Pressable style={styles.overlay} onPress={handleScrimPress}>
-        <View style={styles.scrim} pointerEvents="none" />
+        <View style={[styles.scrim, qmLt?.scrim]} pointerEvents="none" />
 
         <Pressable style={styles.cardWrap} onPress={(e) => e.stopPropagation()}>
-          <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.card}>
+          <GlassSurface
+            variant="panel"
+            borderRadius={LDS_RADIUS.xl}
+            style={[styles.card, qmLt?.card]}
+          >
             {showDecisionHeader ? <DecisionHeader /> : null}
             {body}
           </GlassSurface>
@@ -540,7 +584,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(8,17,31,0.78)',
+    backgroundColor: 'rgba(8, 17, 31, 0.82)',
   },
   cardWrap: {
     width: '100%',
@@ -559,9 +603,32 @@ const styles = StyleSheet.create({
     marginBottom: LDS_SPACING.md,
     paddingHorizontal: LDS_SPACING.xxs,
   },
+  iconRing: {
+    alignSelf: 'center',
+    width: 56,
+    height: 56,
+    borderRadius: LDS_RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(5, 11, 24, 0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    marginBottom: LDS_SPACING.xs,
+    ...LDS_ELEVATION.flat,
+  },
+  phaseStep: {
+    textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  phaseCaption: {
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   title: {
     textAlign: 'center',
-    color: PREMIUM_AUTH_CYAN,
+    letterSpacing: 0.4,
   },
   subtitle: {
     textAlign: 'center',
@@ -576,9 +643,11 @@ const styles = StyleSheet.create({
   },
   loadingTitle: {
     textAlign: 'center',
+    fontWeight: '700',
   },
   bodyMuted: {
     textAlign: 'center',
+    lineHeight: 18,
   },
   successIconWrap: {
     marginBottom: LDS_SPACING.xxs,
@@ -593,10 +662,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: LDS_SPACING.sm,
     paddingVertical: LDS_SPACING.xs,
     borderWidth: LDS_BORDER_WIDTH.thin,
-    borderColor: LDS_BORDER_COLOR.subtle,
+    borderColor: 'rgba(251, 191, 36, 0.28)',
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
   },
   pollWarningText: {
     flex: 1,
+    color: 'rgba(251, 191, 36, 0.95)',
+    lineHeight: 17,
   },
   detailsBlock: {
     gap: LDS_SPACING.md,
@@ -606,6 +678,8 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     letterSpacing: 0.4,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
   routeRow: {
     flexDirection: 'row',
@@ -619,6 +693,8 @@ const styles = StyleSheet.create({
   },
   fieldValue: {
     flex: 1,
+    fontWeight: '600',
+    lineHeight: 20,
   },
   metricsRow: {
     flexDirection: 'row',
@@ -630,7 +706,7 @@ const styles = StyleSheet.create({
   },
   contributionValue: {
     color: PREMIUM_AUTH_CYAN,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   disclaimer: {
     lineHeight: 18,
@@ -643,6 +719,7 @@ const styles = StyleSheet.create({
     paddingVertical: LDS_SPACING.sm,
     borderWidth: LDS_BORDER_WIDTH.thin,
     borderColor: LDS_BORDER_COLOR.subtle,
+    ...LDS_ELEVATION.chip,
   },
   countdownTextCol: {
     flex: 1,
@@ -650,9 +727,12 @@ const styles = StyleSheet.create({
   },
   countdownHint: {
     letterSpacing: 0.2,
+    lineHeight: 16,
   },
   countdownValue: {
-    fontWeight: '600',
+    fontWeight: '700',
+    color: PREMIUM_AUTH_CYAN,
+    fontVariant: ['tabular-nums'],
   },
   countdownExpired: {
     color: LDS_COLOR_ERROR,
@@ -663,6 +743,7 @@ const styles = StyleSheet.create({
   ctaRow: {
     flexDirection: 'row',
     gap: LDS_SPACING.sm,
+    width: '100%',
   },
   primaryBtn: {
     flex: 1,
@@ -670,12 +751,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 48,
     borderRadius: LDS_RADIUS.md,
-    backgroundColor: PREMIUM_AUTH_CYAN,
     paddingHorizontal: LDS_SPACING.sm,
+    borderWidth: LDS_BORDER_WIDTH.thin,
+  },
+  primaryBtnDark: {
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    borderColor: PREMIUM_AUTH_CYAN,
   },
   primaryBtnText: {
-    color: '#08111F',
     fontWeight: '700',
+  },
+  primaryBtnTextDark: {
+    color: '#08111F',
+  },
+  primaryBtnPressed: {
+    opacity: 0.9,
   },
   secondaryBtn: {
     flex: 1,
@@ -689,6 +779,10 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: {
     textAlign: 'center',
+    fontWeight: '600',
+  },
+  secondaryBtnPressed: {
+    opacity: 0.88,
   },
   btnDisabled: {
     opacity: 0.5,

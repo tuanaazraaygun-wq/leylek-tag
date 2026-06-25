@@ -18,6 +18,7 @@ import { appAlert } from '../contexts/AppAlertContext';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
 import { tapButtonHaptic } from '../utils/touchHaptics';
+import { perfLog } from '../utils/perfDiagLog';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 
 type Props = {
@@ -40,7 +41,9 @@ export type BoardingScanModalProps = Props;
 /** Aynı karede ML Kit’in çift decode etmesi — ms; retry’i engellememek için kısa tutulur */
 const BOARDING_SCAN_BURST_DEDUPE_MS = 120;
 const BOARDING_SCAN_RESCAN_COOLDOWN_MS = 900;
-const BOARDING_SUCCESS_BEAT_MS = 400;
+const BOARDING_SUCCESS_BEAT_MS = 300;
+/** Hızlı yeniden açmada kamera oturumunu koru (cold-start azaltır) */
+const CAMERA_REUSE_WINDOW_MS = 45_000;
 
 function boardingSuccessBeatDelay(): Promise<void> {
   return new Promise((resolve) => {
@@ -70,6 +73,8 @@ export default function BoardingScanModal({
   const verifiedClosingRef = useRef(false);
   const verifyInFlightRef = useRef(false);
   const scannedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastClosedAtRef = useRef(0);
+  const hasOpenedCameraSessionRef = useRef(false);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
 
@@ -87,6 +92,7 @@ export default function BoardingScanModal({
   useEffect(() => {
     if (!visible) {
       closingRef.current = true;
+      lastClosedAtRef.current = Date.now();
       if (mountedRef.current) {
         setCameraReady(false);
       }
@@ -95,8 +101,25 @@ export default function BoardingScanModal({
       }
       return;
     }
-    setCameraSessionKey((k) => k + 1);
-    setCameraReady(false);
+
+    const reopenWithinReuse =
+      hasOpenedCameraSessionRef.current &&
+      Date.now() - lastClosedAtRef.current < CAMERA_REUSE_WINDOW_MS;
+
+    perfLog('QR_MODAL_OPEN', {
+      tag_id: tagId,
+      reuse_camera: reopenWithinReuse,
+    });
+
+    if (!reopenWithinReuse) {
+      setCameraSessionKey((k) => k + 1);
+      hasOpenedCameraSessionRef.current = true;
+      setCameraReady(false);
+    } else if (hasPermission?.granted) {
+      setCameraReady(true);
+      perfLog('QR_CAMERA_READY', { tag_id: tagId, reused: true });
+    }
+
     setScanned(false);
     setProcessing(false);
     setSuccessBeat(false);
@@ -108,7 +131,7 @@ export default function BoardingScanModal({
     if (!hasPermission?.granted) {
       void requestPermission();
     }
-  }, [visible, hasPermission?.granted, requestPermission]);
+  }, [visible, hasPermission?.granted, requestPermission, tagId]);
 
   const canMutateScanState = useCallback(
     () =>
@@ -143,6 +166,8 @@ export default function BoardingScanModal({
       if (canMutateScanState()) {
         setProcessing(true);
       }
+      const verifyStartedAt = Date.now();
+      perfLog('QR_VERIFY_START', { tag_id: tagId });
       try {
         const tok = await waitForPersistedAccessToken();
         if (!tok?.trim()) {
@@ -191,6 +216,10 @@ export default function BoardingScanModal({
           const tag_id =
             (typeof rawTag === 'string' && rawTag.trim()) || propTag || undefined;
           console.log('BOARDING_SCAN_SUCCESS', { tag_id, used_prop_fallback: !rawTag && !!propTag });
+          perfLog('QR_VERIFY_SUCCESS', {
+            tag_id,
+            elapsed_ms: Date.now() - verifyStartedAt,
+          });
           verifiedClosingRef.current = true;
           closingRef.current = true;
           if (canMutateScanState()) {
@@ -292,10 +321,11 @@ export default function BoardingScanModal({
         return;
       }
       lastScannedValueRef.current = { data: d, ts: now };
+      perfLog('QR_DETECTED', { tag_id: tagId });
       setScanned(true);
       await verifyBoarding(d);
     },
-    [cameraReady, scanned, processing, verifyBoarding],
+    [cameraReady, scanned, processing, verifyBoarding, tagId],
   );
 
   const scannerActive = cameraReady && !scanned && !processing && !successBeat;
@@ -372,6 +402,7 @@ export default function BoardingScanModal({
                       return;
                     }
                     setCameraReady(true);
+                    perfLog('QR_CAMERA_READY', { tag_id: tagId, reused: false });
                     if (__DEV__) {
                       console.log('[BoardingScanModal] onCameraReady');
                     }
@@ -390,7 +421,7 @@ export default function BoardingScanModal({
                   <View style={styles.processing}>
                     <ActivityIndicator size="large" color={ui.activity} />
                     <PremiumText variant="caption" muted style={styles.processingText}>
-                      Kamera hazırlanıyor…
+                      Kamera açılıyor… QR kodunu çerçeveye hizalayın
                     </PremiumText>
                   </View>
                 ) : null}
