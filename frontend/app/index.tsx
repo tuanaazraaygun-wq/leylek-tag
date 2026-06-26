@@ -230,7 +230,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
-import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, resetQuickMatchDriverOpsSoundGate, resetDriverOfferSoundGate } from '../utils/sound';
+import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, resetQuickMatchDriverOpsSoundGate, resetDriverOfferSoundGate, preloadTrustedDirectOpsSound } from '../utils/sound';
 import { offerSoundController } from '../lib/offerSoundController';
 import {
   isActiveTripTagStatus,
@@ -18401,6 +18401,7 @@ function DriverDashboard({
   );
 
   const handleTrustedDirectDriverMatched = useCallback(async (_tagId?: string) => {
+    void playMatchChimeSound();
     try {
       await loadActiveTag();
     } catch (error) {
@@ -18451,6 +18452,46 @@ function DriverDashboard({
     hasActiveTag: Boolean(activeTag),
     onMatched: handleTrustedDirectDriverMatched,
   });
+
+  /** TDM ops ses — restore/resume'da bekleyen davet sessiz; yeni invite_id çalar */
+  const tdmOpsRestoreFinishedRef = useRef(false);
+  const tdmOpsResumeBaselineInviteIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!trustedDirectDriverEnabled) {
+      tdmOpsRestoreFinishedRef.current = false;
+      tdmOpsResumeBaselineInviteIdRef.current = null;
+      return;
+    }
+    void preloadTrustedDirectOpsSound();
+  }, [trustedDirectDriverEnabled]);
+
+  useEffect(() => {
+    if (!trustedDirectDriverEnabled) {
+      tdmOpsRestoreFinishedRef.current = false;
+      tdmOpsResumeBaselineInviteIdRef.current = null;
+      return;
+    }
+    if (trustedDirectDriverSession.isRestoring) {
+      tdmOpsRestoreFinishedRef.current = false;
+      return;
+    }
+    if (tdmOpsRestoreFinishedRef.current) {
+      return;
+    }
+    tdmOpsRestoreFinishedRef.current = true;
+    if (trustedDirectDriverSession.status === 'pending') {
+      const baselineId = String(trustedDirectDriverSession.invite?.id || '').trim();
+      if (baselineId) {
+        tdmOpsResumeBaselineInviteIdRef.current = baselineId;
+      }
+    }
+  }, [
+    trustedDirectDriverEnabled,
+    trustedDirectDriverSession.isRestoring,
+    trustedDirectDriverSession.status,
+    trustedDirectDriverSession.invite?.id,
+  ]);
 
   // 🔔 TDM invite push — tap (trusted_direct_invite; normal new_offer/tag_id akışına girmez)
   useEffect(() => {
@@ -19330,10 +19371,7 @@ function DriverDashboard({
 
   /** RC-P0-2B/P0 — global offer alarm loop (QM > TDM > normal; visibility SSOT) */
   useEffect(() => {
-    if (
-      quickMatchDriverSession.isRestoring ||
-      trustedDirectDriverSession.isRestoring
-    ) {
+    if (quickMatchDriverSession.isRestoring) {
       offerSoundController.syncOfferLoop({ key: null, kind: null, visible: false });
       return;
     }
@@ -19357,6 +19395,7 @@ function DriverDashboard({
     const tdmInviteId = String(trustedDirectDriverSession.invite?.id || '').trim();
     const tdmPending =
       trustedDirectDriverEnabled &&
+      tdmOpsRestoreFinishedRef.current &&
       trustedDirectDriverSession.status === 'pending' &&
       !!tdmInviteId;
 

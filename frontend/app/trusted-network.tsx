@@ -21,6 +21,7 @@ import {
   TDM_TERMINAL_DECLINED_SECONDARY,
   type TrustedHubRole,
 } from '../lib/trustedHubCopy';
+import { playMatchChimeSound } from '../utils/sound';
 
 function parseHubRole(raw: string | string[] | undefined): TrustedHubRole {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -68,6 +69,7 @@ export default function TrustedNetworkRoute() {
 
   const handleMatched = useCallback(
     (_tagId: string) => {
+      void playMatchChimeSound();
       clearTrustedDirectRouteContext();
       notifyTrustedDirectBootstrap();
       router.back();

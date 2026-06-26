@@ -299,14 +299,9 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
     applyInvite(result.data, generation);
   }, [applyInvite, stopPolling]);
 
+  /** Push/poll refresh — no restoring status (keeps offerSoundController audible during fetch). */
   const refresh = useCallback(async () => {
     if (!enabledRef.current || hasActiveTagRef.current) {
-      return;
-    }
-
-    const iid = String(inviteRef.current?.id || '').trim();
-    if (!iid) {
-      await restore();
       return;
     }
 
@@ -343,7 +338,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
 
       setPollErrorMessage(mapTdmUserFacingError(result));
     }
-  }, [applyInvite, restore, stopPolling]);
+  }, [applyInvite, stopPolling]);
 
   const accept = useCallback(async (): Promise<boolean> => {
     const iid = String(inviteRef.current?.id || '').trim();

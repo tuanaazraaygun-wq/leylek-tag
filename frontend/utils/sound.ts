@@ -459,6 +459,30 @@ export async function playTrustedDirectOfferAlertBurst(playMs = 2000): Promise<v
   );
 }
 
+let tdmOpsPreloadPromise: Promise<void> | null = null;
+
+/** Patch D1 — warm TDM ops asset + audio mode before first invite burst (driver dashboard). */
+export async function preloadTrustedDirectOpsSound(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (!tdmOpsPreloadPromise) {
+    tdmOpsPreloadPromise = (async () => {
+      try {
+        await loadOfferAlertAudioMode();
+        const { sound } = await Audio.Sound.createAsync(TRUSTED_DIRECT_OPS_SOUND_SOURCE, {
+          shouldPlay: false,
+          volume: TRUSTED_DIRECT_OPS_VOLUME,
+          isLooping: false,
+        });
+        await sound.unloadAsync();
+      } catch (e) {
+        tdmOpsPreloadPromise = null;
+        if (__DEV__) console.warn('preloadTrustedDirectOpsSound', e);
+      }
+    })();
+  }
+  await tdmOpsPreloadPromise;
+}
+
 /** Kabul / eşleşme — teklif alarm playback'ini durdur (chimed/baseline korunur) */
 export async function stopDriverOfferAlarmPlayback(): Promise<void> {
   driverOfferToneCooldownGate.reset();

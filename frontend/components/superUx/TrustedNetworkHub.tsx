@@ -23,6 +23,7 @@ import {
 } from '../auth/premiumAuthStyles';
 import { useTrustedNetworkHub } from '../../hooks/useTrustedNetworkHub';
 import { appAlert } from '../../contexts/AppAlertContext';
+import { tapButtonHaptic } from '../../utils/touchHaptics';
 import { PremiumText } from '../../design-system/primitives';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
 import {
@@ -562,8 +563,11 @@ function TrustedNetworkHub({
 
       <View style={[styles.header, trLt?.header]}>
         <Pressable
-          style={[styles.backBtn, trLt?.backBtn]}
-          onPress={() => router.back()}
+          style={({ pressed }) => [styles.backBtn, trLt?.backBtn, pressed && styles.hubBtnPressed]}
+          onPress={() => {
+            void tapButtonHaptic();
+            router.back();
+          }}
           accessibilityRole="button"
           accessibilityLabel="Geri"
         >
@@ -784,16 +788,30 @@ function TrustedNetworkHub({
               <>
                 <View style={styles.stepperRow}>
                   <Pressable
-                    style={[styles.stepperBtn, trLt?.stepperBtn]}
-                    onPress={() => setContributionTl((v) => Math.max(minContributionTl, v - 10))}
+                    style={({ pressed }) => [
+                      styles.stepperBtn,
+                      trLt?.stepperBtn,
+                      pressed && !(contributionTl <= minContributionTl) && styles.hubBtnPressed,
+                    ]}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      setContributionTl((v) => Math.max(minContributionTl, v - 10));
+                    }}
                     disabled={contributionTl <= minContributionTl}
                   >
                     <Ionicons name="remove" size={22} color={ui.accent} />
                   </Pressable>
                   <Text style={styles.stepperValue}>{contributionTl} ₺</Text>
                   <Pressable
-                    style={[styles.stepperBtn, trLt?.stepperBtn]}
-                    onPress={() => setContributionTl((v) => Math.min(maxContributionTl, v + 10))}
+                    style={({ pressed }) => [
+                      styles.stepperBtn,
+                      trLt?.stepperBtn,
+                      pressed && !(contributionTl >= maxContributionTl) && styles.hubBtnPressed,
+                    ]}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      setContributionTl((v) => Math.min(maxContributionTl, v + 10));
+                    }}
                     disabled={contributionTl >= maxContributionTl}
                   >
                     <Ionicons name="add" size={22} color={ui.accent} />
@@ -828,7 +846,17 @@ function TrustedNetworkHub({
               }
               busy={tdmSession?.isCreating === true}
             />
-            <Pressable style={[styles.modalCancelBtn, trLt?.modalCancelBtn]} onPress={closeContributionModal}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalCancelBtn,
+                trLt?.modalCancelBtn,
+                pressed && styles.hubBtnPressed,
+              ]}
+              onPress={() => {
+                void tapButtonHaptic();
+                closeContributionModal();
+              }}
+            >
               <Text style={[styles.modalCancelText, trLt?.modalCancelText]}>{TDM_CONTRIBUTION_CANCEL}</Text>
             </Pressable>
           </View>
@@ -850,12 +878,16 @@ function TrustedNetworkHub({
                 return (
                   <Pressable
                     key={opt.id}
-                    style={[
+                    style={({ pressed }) => [
                       styles.notifyOption,
                       trLt?.stepperBtn,
                       selected && styles.notifyOptionSelected,
+                      pressed && !notifySending && styles.hubBtnPressed,
                     ]}
-                    onPress={() => setNotifyTemplate(opt.id)}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      setNotifyTemplate(opt.id);
+                    }}
                     disabled={notifySending}
                   >
                     <Ionicons
@@ -884,8 +916,15 @@ function TrustedNetworkHub({
               busy={notifySending}
             />
             <Pressable
-              style={[styles.modalCancelBtn, trLt?.modalCancelBtn]}
-              onPress={closeNotifySheet}
+              style={({ pressed }) => [
+                styles.modalCancelBtn,
+                trLt?.modalCancelBtn,
+                pressed && !notifySending && styles.hubBtnPressed,
+              ]}
+              onPress={() => {
+                void tapButtonHaptic();
+                closeNotifySheet();
+              }}
               disabled={notifySending}
             >
               <Text style={[styles.modalCancelText, trLt?.modalCancelText]}>{TDM_NOTIFY_CANCEL}</Text>
@@ -1310,5 +1349,9 @@ const styles = StyleSheet.create({
   notifyOptionTextSelected: {
     color: PREMIUM_TEXT_SOFT,
     fontWeight: '700',
+  },
+  hubBtnPressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.98 }],
   },
 });

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +24,7 @@ import { isLightThemeScreenEnabled } from '../../lib/featureFlags';
 import { buildThemeTokens } from '../../lib/theme/buildTheme';
 import { useRoleTheme } from '../../lib/theme/useRoleTheme';
 import type { LhThemeTokens } from '../../lib/theme/types';
+import { tapButtonHaptic } from '../../utils/touchHaptics';
 import { premiumAuthStyles as pa } from './premiumAuthStyles';
 
 export type AuthLightSurfaces = {
@@ -320,14 +322,17 @@ export function PremiumGradientCtaButton({
   const grayInactive = !!(disabled && !busy);
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.88}
+    <Pressable
       disabled={muted}
-      onPress={onPress}
-      style={[
+      onPress={() => {
+        void tapButtonHaptic();
+        onPress();
+      }}
+      style={({ pressed }) => [
         ctaStyles.touchable,
         grayInactive ? ctaStyles.touchableDisabled : null,
         touchableStyleOverrides ?? null,
+        !muted && pressed ? ctaStyles.touchablePressed : null,
       ]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
@@ -357,7 +362,7 @@ export function PremiumGradientCtaButton({
           </>
         )}
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -369,6 +374,10 @@ const ctaStyles = StyleSheet.create({
   },
   touchableDisabled: {
     ...LDS_ELEVATION.flat,
+  },
+  touchablePressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.98 }],
   },
   body: {
     alignSelf: 'stretch',

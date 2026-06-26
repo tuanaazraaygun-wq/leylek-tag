@@ -8,7 +8,6 @@ import {
   Alert,
   Modal,
   View,
-  TouchableOpacity,
   StyleSheet,
   Pressable,
   ScrollView,
@@ -19,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { useTheme } from '../hooks/useTheme';
 import { lightThemeEnabled } from '../lib/featureFlags';
+import { tapButtonHaptic } from '../utils/touchHaptics';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_COLOR_ERROR } from '../design-system/tokens/color';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -373,10 +373,9 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
                     const isDest = btn.style === 'destructive';
                     const isPrimary = !isCancel && !isDest;
                     return (
-                      <TouchableOpacity
+                      <Pressable
                         key={`${btn.text}-${idx}`}
-                        activeOpacity={0.88}
-                        style={[
+                        style={({ pressed }) => [
                           styles.btnTouchable,
                           isPrimary && styles.btnPrimaryTouchable,
                           isPrimary && lightStyles?.btnPrimaryTouchable,
@@ -384,8 +383,11 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
                           isCancel && lightStyles?.btnCancelTouchable,
                           isDest && styles.btnDestructiveTouchable,
                           isDest && lightStyles?.btnDestructiveTouchable,
+                          pressed ? styles.btnPressed : null,
+                          pressed && isAlertLight && isCancel ? styles.btnCancelPressedLight : null,
                         ]}
                         onPress={async () => {
+                          void tapButtonHaptic();
                           try {
                             await btn.onPress?.();
                           } finally {
@@ -408,7 +410,7 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
                         >
                           {btn.text}
                         </PremiumText>
-                      </TouchableOpacity>
+                      </Pressable>
                     );
                   })}
                 </View>
@@ -539,5 +541,13 @@ const styles = StyleSheet.create({
   btnDestructiveText: {
     color: LDS_COLOR_ERROR,
     fontWeight: '800',
+  },
+  btnPressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.97 }],
+  },
+  btnCancelPressedLight: {
+    borderColor: 'rgba(34, 211, 238, 0.38)',
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
   },
 });
