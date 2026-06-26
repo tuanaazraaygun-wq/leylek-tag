@@ -6720,7 +6720,7 @@ export default function LiveMapView({
   /** Matrix satırı büyük yön butonu — yalnız etiket/renk; handler aynı (boardingConfirmed). */
   const driverMatrixNavChipLabel = boardingConfirmed ? 'Hedefe Git' : 'Yolcuya Git';
   const driverMatrixNavChipGradientColors = ui.ctaGradient;
-  const driverMatrixNavChipIconColor = ui.accent;
+  const driverMatrixNavChipIconColor = ui.matchedNavIcon;
 
   const driverExternalMapsIconRow =
     isDriver && !driverNavImmersive ? (
@@ -6733,7 +6733,11 @@ export default function LiveMapView({
             accessibilityRole="button"
             accessibilityLabel="Apple Maps ile aç"
           >
-            <Ionicons name="map-outline" size={17} color={ui.ctaIconLight} />
+            <Ionicons
+              name="map-outline"
+              size={17}
+              color={isScopeLight ? 'rgba(243,248,255,0.94)' : ui.matchedCommIcon}
+            />
           </TouchableOpacity>
         ) : null}
         <TouchableOpacity
@@ -7473,7 +7477,15 @@ export default function LiveMapView({
             </GlassSurface>
           </View>
         ) : null}
-      {/* ALT BUTONLAR — mapSlot içinde: iOS MapView touch stacking */}
+        </View>
+      ) : (
+        // Web fallback - harita yok
+        <View style={[styles.webFallback, jLt?.webFallback]}>
+          <Ionicons name="map-outline" size={64} color={ui.activity} />
+          <Text style={styles.webFallbackText}>Harita mobil cihazda görüntülenir</Text>
+        </View>
+      )}
+      {/* ALT BUTONLAR — root overlay: iOS MapView touch stacking fix */}
       <View style={styles.bottomPanel} pointerEvents="box-none" collapsable={false}>
         <View
           style={[
@@ -7513,7 +7525,7 @@ export default function LiveMapView({
                     {callSpinnerVisible ? (
                       <ActivityIndicator size="small" color={ui.activity} />
                     ) : (
-                      <Ionicons name="call" size={22} color={ui.ctaIconLight} />
+                      <Ionicons name="call" size={22} color={ui.matchedCommIcon} />
                     )}
                     <Text
                       style={styles.driverRidePrimaryBtnText}
@@ -7568,7 +7580,7 @@ export default function LiveMapView({
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                     >
-                      <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
+                      <Ionicons name="qr-code" size={20} color={ui.matchedQrIcon} />
                       <Text
                         style={[styles.driverRideQrBtnText, jLt?.qrPrimaryBtnText]}
                         numberOfLines={1}
@@ -7667,7 +7679,7 @@ export default function LiveMapView({
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                     >
-                      <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
+                      <Ionicons name="qr-code" size={20} color={ui.matchedQrIcon} />
                       <Text
                         style={[styles.driverRideQrBtnText, jLt?.qrPrimaryBtnText]}
                         numberOfLines={1}
@@ -7782,7 +7794,7 @@ export default function LiveMapView({
                           {callSpinnerVisible ? (
                             <ActivityIndicator size="small" color={ui.activity} />
                           ) : (
-                            <Ionicons name="call" size={22} color={ui.ctaIconLight} />
+                            <Ionicons name="call" size={22} color={ui.matchedCommIcon} />
                           )}
                         </Animated.View>
                       </LiveMapCommHit>
@@ -7800,7 +7812,7 @@ export default function LiveMapView({
                           <Ionicons
                             name="chatbubble-ellipses"
                             size={18}
-                            color={ui.ctaIconLight}
+                            color={ui.matchedCommIcon}
                           />
                           <PremiumText variant="caption" style={[styles.paxBottomChatBtnText, jLt?.paxBottomChatBtnText]} numberOfLines={1}>
                             Sürücüye Yaz
@@ -7832,7 +7844,7 @@ export default function LiveMapView({
                               <Ionicons
                                 name="shield-checkmark"
                                 size={20}
-                                color={ui.ctaIconLight}
+                                color={ui.matchedCommIcon}
                               />
                             </Animated.View>
                           )}
@@ -7878,7 +7890,7 @@ export default function LiveMapView({
                       boardingConfirmed ? 'Yol paylaşımını bitir' : 'Biniş kodunu tara'
                     }
                   >
-                    <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
+                    <Ionicons name="qr-code" size={20} color={ui.matchedQrIcon} />
                     <PremiumText
                       variant="caption"
                       style={[styles.paxBottomQrBtnText, jLt?.qrPrimaryBtnText]}
@@ -7991,7 +8003,7 @@ export default function LiveMapView({
                           {callSpinnerVisible ? (
                             <ActivityIndicator size="small" color={ui.activity} />
                           ) : (
-                            <Ionicons name="call" size={22} color={ui.ctaIconLight} />
+                            <Ionicons name="call" size={22} color={ui.matchedCommIcon} />
                           )}
                         </Animated.View>
                       </LiveMapCommHit>
@@ -8009,7 +8021,7 @@ export default function LiveMapView({
                           <Ionicons
                             name="chatbubble-ellipses"
                             size={18}
-                            color={ui.ctaIconLight}
+                            color={ui.matchedCommIcon}
                           />
                           <PremiumText variant="caption" style={[styles.drvBottomChatBtnText, jLt?.drvBottomChatBtnText]} numberOfLines={1}>
                             Yolcuya Yaz
@@ -8043,7 +8055,7 @@ export default function LiveMapView({
                               <Ionicons
                                 name="shield-checkmark"
                                 size={20}
-                                color={ui.ctaIconLight}
+                                color={ui.matchedCommIcon}
                               />
                             </Animated.View>
                           )}
@@ -8082,7 +8094,7 @@ export default function LiveMapView({
                     boardingConfirmed ? 'Yol paylaşımını bitir — yol sonu QR' : 'Biniş QR göster'
                   }
                 >
-                  <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
+                  <Ionicons name="qr-code" size={20} color={ui.matchedQrIcon} />
                   <PremiumText
                     variant="caption"
                     style={[styles.drvBottomQrBtnText, jLt?.qrPrimaryBtnText]}
@@ -8162,14 +8174,6 @@ export default function LiveMapView({
           ) : null}
         </View>
       </View>
-        </View>
-      ) : (
-        // Web fallback - harita yok
-        <View style={[styles.webFallback, jLt?.webFallback]}>
-          <Ionicons name="map-outline" size={64} color={ui.activity} />
-          <Text style={styles.webFallbackText}>Harita mobil cihazda görüntülenir</Text>
-        </View>
-      )}
 
       {/* Sürücü ekranında "Yolcu burada..." yazısı kaldırıldı */}
 
@@ -8317,6 +8321,7 @@ export default function LiveMapView({
               ? { paddingTop: Math.max(insets.top, 8) + 82 }
               : null,
           ]}
+          pointerEvents="box-none"
         >
         {!driverNavImmersive ? (
         <>
@@ -8466,7 +8471,7 @@ export default function LiveMapView({
                     {callSpinnerVisible ? (
                       <ActivityIndicator size="small" color={ui.activity} />
                     ) : (
-                      <Ionicons name="call" size={18} color={ui.ctaIconLight} />
+                      <Ionicons name="call" size={18} color={ui.matchedCommIcon} />
                     )}
                     <Text style={[styles.navImmersiveAraText, jLt?.navImmersiveAraText]}>
                       {callSpinnerVisible ? 'Bağlanıyor…' : 'Ara'}
@@ -8490,7 +8495,7 @@ export default function LiveMapView({
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    <Ionicons name="chatbubble-ellipses" size={17} color={ui.ctaIconLight} />
+                    <Ionicons name="chatbubble-ellipses" size={17} color={ui.matchedCommIcon} />
                     <Text style={[styles.navImmersiveChatText, jLt?.navImmersiveAraText]}>Yaz</Text>
                   </LinearGradient>
                 </LiveMapCommHit>
@@ -8538,7 +8543,7 @@ export default function LiveMapView({
                         <ActivityIndicator size="small" color={ui.activity} />
                       ) : (
                         <Animated.View pointerEvents="none" style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                          <Ionicons name="shield-checkmark" size={18} color={ui.ctaIconLight} />
+                          <Ionicons name="shield-checkmark" size={18} color={ui.matchedCommIcon} />
                         </Animated.View>
                       )}
                       <Text style={[styles.navImmersiveGuvenText, jLt?.navImmersiveGuvenText]}>
@@ -8618,6 +8623,7 @@ export default function LiveMapView({
             styles.topInfoPanel,
             compactMatchedLayout ? styles.paxTopInfoPanelCompact : null,
           ]}
+          pointerEvents="box-none"
         >
           {renderTrustedAddCompactChip()}
           <GlassSurface
@@ -11121,7 +11127,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     ...Platform.select({
-      ios: { zIndex: 5000 },
+      ios: { zIndex: 100 },
       android: { zIndex: 30, elevation: 32 },
       default: { zIndex: 30 },
     }),

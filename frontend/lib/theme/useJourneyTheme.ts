@@ -21,6 +21,12 @@ export type JourneyUiColors = {
   ctaIcon: string;
   ctaIconLight: string;
   ctaIconFill: string;
+  /** Matched comm row (Ara / Yaz / Güven) on elevated deck — light theme needs dark ink. */
+  matchedCommIcon: string;
+  /** Yolcuya Git compass on matched nav chip gradient. */
+  matchedNavIcon: string;
+  /** QR glyph on accent primary matched CTA. */
+  matchedQrIcon: string;
   closeIcon: string;
   chevron: string;
   routeDotPrimary: string;
@@ -114,6 +120,9 @@ const JOURNEY_UI_DARK: JourneyUiColors = {
   ctaIcon: 'rgba(243,248,255,0.94)',
   ctaIconLight: 'rgba(243,248,255,0.94)',
   ctaIconFill: 'rgba(243,248,255,0.94)',
+  matchedCommIcon: 'rgba(243,248,255,0.94)',
+  matchedNavIcon: '#22D3EE',
+  matchedQrIcon: 'rgba(243,248,255,0.94)',
   closeIcon: 'rgba(243,248,255,0.88)',
   chevron: 'rgba(186,201,222,0.78)',
   routeDotPrimary: '#22D3EE',
@@ -374,6 +383,9 @@ function buildJourneyUi(tokens: LhThemeTokens): JourneyUiColors {
     ctaIcon: tokens.text.primary,
     ctaIconLight: tokens.text.primary,
     ctaIconFill: tokens.text.inverse,
+    matchedCommIcon: tokens.text.primary,
+    matchedNavIcon: 'rgba(15, 118, 110, 0.98)',
+    matchedQrIcon: '#FFFFFF',
     closeIcon: tokens.text.primary,
     chevron: tokens.text.muted,
     routeDotPrimary: tokens.accent.primary,
