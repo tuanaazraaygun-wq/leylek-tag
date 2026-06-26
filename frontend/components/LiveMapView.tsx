@@ -7702,7 +7702,7 @@ export default function LiveMapView({
                     ) : (
                       <Ionicons name="call" size={18} color={ui.ctaIconLight} />
                     )}
-                    <Text style={styles.navImmersiveAraText}>
+                    <Text style={[styles.navImmersiveAraText, jLt?.navImmersiveAraText]}>
                       {voiceCallPending ? 'Bağlanıyor…' : 'Ara'}
                     </Text>
                   </LinearGradient>
@@ -7716,6 +7716,7 @@ export default function LiveMapView({
                     pointerEvents="none"
                     style={[
                       styles.navImmersiveTrustHint,
+                      jLt?.navImmersiveTrustHint,
                       {
                         opacity: guvenHintOpacity.interpolate({
                           inputRange: [0, 1],
@@ -7765,7 +7766,7 @@ export default function LiveMapView({
                           <Ionicons name="shield-checkmark" size={18} color={ui.ctaIconLight} />
                         </Animated.View>
                       )}
-                      <Text style={styles.navImmersiveGuvenText}>
+                      <Text style={[styles.navImmersiveGuvenText, jLt?.navImmersiveGuvenText]}>
                         {trustRequestPending ? 'Gönderiliyor...' : 'Güven AL'}
                       </Text>
                     </LinearGradient>
@@ -8003,6 +8004,7 @@ export default function LiveMapView({
         <View
           style={[
             styles.bottomGradient,
+            jLt?.bottomGradient,
             !driverRideUiModern ? { paddingBottom: 18 + Math.max(insets.bottom, 0) } : null,
             compactMatchedLayout ? styles.bottomGradientCompact : null,
           ]}
@@ -8524,7 +8526,7 @@ export default function LiveMapView({
                     compactMatchedLayout ? styles.drvBottomCommSectionCompact : null,
                   ]}
                 >
-                  <PremiumText variant="caption" style={styles.drvBottomCallLabel} numberOfLines={1}>
+                  <PremiumText variant="caption" style={[styles.drvBottomCallLabel, jLt?.drvBottomCallLabel]} numberOfLines={1}>
                     Yolcuyu Ara
                   </PremiumText>
                   <View style={styles.tripCallGuvenRow}>
@@ -8583,7 +8585,7 @@ export default function LiveMapView({
                             size={18}
                             color={ui.ctaIconLight}
                           />
-                          <PremiumText variant="caption" style={styles.drvBottomChatBtnText} numberOfLines={1}>
+                          <PremiumText variant="caption" style={[styles.drvBottomChatBtnText, jLt?.drvBottomChatBtnText]} numberOfLines={1}>
                             Yolcuya Yaz
                           </PremiumText>
                         </TouchableOpacity>
@@ -8634,7 +8636,7 @@ export default function LiveMapView({
                               />
                             </Animated.View>
                           )}
-                          <PremiumText variant="caption" style={styles.drvBottomGuvenBtnText}>
+                          <PremiumText variant="caption" style={[styles.drvBottomGuvenBtnText, jLt?.drvBottomGuvenBtnText]}>
                             {trustRequestPending ? 'Bekleniyor...' : 'Güven AL'}
                           </PremiumText>
                         </TouchableOpacity>

@@ -777,7 +777,7 @@ function TrustedNetworkHub({
       >
         <View style={[styles.modalBackdrop, trLt?.modalBackdrop]}>
           <View style={[styles.modalCard, trLt?.modalCard]}>
-            <Text style={styles.modalTitle}>{TDM_CONTRIBUTION_TITLE}</Text>
+            <Text style={[styles.modalTitle, trLt?.modalTitle]}>{TDM_CONTRIBUTION_TITLE}</Text>
             {priceLoading ? (
               <ActivityIndicator size="small" color={ui.activity} />
             ) : (
@@ -829,7 +829,7 @@ function TrustedNetworkHub({
               busy={tdmSession?.isCreating === true}
             />
             <Pressable style={[styles.modalCancelBtn, trLt?.modalCancelBtn]} onPress={closeContributionModal}>
-              <Text style={styles.modalCancelText}>{TDM_CONTRIBUTION_CANCEL}</Text>
+              <Text style={[styles.modalCancelText, trLt?.modalCancelText]}>{TDM_CONTRIBUTION_CANCEL}</Text>
             </Pressable>
           </View>
         </View>
@@ -843,7 +843,7 @@ function TrustedNetworkHub({
       >
         <View style={[styles.modalBackdrop, trLt?.modalBackdrop]}>
           <View style={[styles.modalCard, trLt?.modalCard]}>
-            <Text style={styles.modalTitle}>{TDM_NOTIFY_SHEET_TITLE}</Text>
+            <Text style={[styles.modalTitle, trLt?.modalTitle]}>{TDM_NOTIFY_SHEET_TITLE}</Text>
             <View style={styles.notifyOptions}>
               {notifyTemplateOptions.map((opt) => {
                 const selected = notifyTemplate === opt.id;
@@ -866,7 +866,9 @@ function TrustedNetworkHub({
                     <Text
                       style={[
                         styles.notifyOptionText,
+                        trLt?.notifyOptionText,
                         selected && styles.notifyOptionTextSelected,
+                        selected && trLt?.notifyOptionTextSelected,
                       ]}
                     >
                       {opt.label}
@@ -886,7 +888,7 @@ function TrustedNetworkHub({
               onPress={closeNotifySheet}
               disabled={notifySending}
             >
-              <Text style={styles.modalCancelText}>{TDM_NOTIFY_CANCEL}</Text>
+              <Text style={[styles.modalCancelText, trLt?.modalCancelText]}>{TDM_NOTIFY_CANCEL}</Text>
             </Pressable>
           </View>
         </View>

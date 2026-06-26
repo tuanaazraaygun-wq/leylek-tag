@@ -12803,13 +12803,19 @@ function PassengerDashboard({
       {showToast && (
         <Animated.View style={styles.toastContainer}>
           <LinearGradient
-            colors={['rgba(16,26,43,0.96)', '#0B1220', 'rgba(8,145,178,0.42)']}
+            colors={
+              paxLight
+                ? [paxTk.bg.elevated, paxTk.bg.canvasMid, paxTk.accent.glowLow]
+                : ['rgba(16,26,43,0.96)', '#0B1220', 'rgba(8,145,178,0.42)']
+            }
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.toastGradient}
           >
             <Ionicons name="checkmark-circle" size={24} color={paxUi.toastAccent} />
-            <Text style={styles.toastText}>{toastMessage}</Text>
+            <Text style={[styles.toastText, paxLight ? { color: paxTk.text.primary } : null]}>
+              {toastMessage}
+            </Text>
           </LinearGradient>
         </Animated.View>
       )}

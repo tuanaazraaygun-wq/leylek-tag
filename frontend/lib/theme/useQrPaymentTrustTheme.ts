@@ -119,6 +119,10 @@ export type TrustHubLightSurfaces = {
   stepperBtn: ViewStyle;
   modalCancelBtn: ViewStyle;
   sectionTitle: TextStyle;
+  modalTitle: TextStyle;
+  notifyOptionText: TextStyle;
+  notifyOptionTextSelected: TextStyle;
+  modalCancelText: TextStyle;
 };
 
 /** Trusted Direct passenger waiting + driver invite glass (light LHS). */
@@ -427,6 +431,10 @@ function buildTrustHubLightSurfaces(tokens: LhThemeTokens): TrustHubLightSurface
       borderColor: tokens.border.default,
     },
     sectionTitle: { color: tokens.text.muted },
+    modalTitle: { color: tokens.text.primary, fontWeight: '800' },
+    notifyOptionText: { color: tokens.text.muted },
+    notifyOptionTextSelected: { color: tokens.text.primary, fontWeight: '700' },
+    modalCancelText: { color: tokens.text.muted, fontWeight: '700' },
   };
 }
 

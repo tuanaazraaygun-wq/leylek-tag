@@ -95,6 +95,13 @@ export type JourneyChromeLightSurfaces = {
   paxBottomCallLabel: TextStyle;
   paxBottomChatBtnText: TextStyle;
   paxBottomGuvenBtnText: TextStyle;
+  drvBottomCallLabel: TextStyle;
+  drvBottomChatBtnText: TextStyle;
+  drvBottomGuvenBtnText: TextStyle;
+  bottomGradient: ViewStyle;
+  navImmersiveAraText: TextStyle;
+  navImmersiveGuvenText: TextStyle;
+  navImmersiveTrustHint: TextStyle;
 };
 
 const JOURNEY_UI_DARK: JourneyUiColors = {
@@ -342,6 +349,17 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
     paxBottomCallLabel: { color: tokens.text.primary },
     paxBottomChatBtnText: { color: tokens.text.primary },
     paxBottomGuvenBtnText: { color: tokens.text.primary },
+    drvBottomCallLabel: { color: tokens.text.primary },
+    drvBottomChatBtnText: { color: tokens.text.primary },
+    drvBottomGuvenBtnText: { color: tokens.text.primary },
+    bottomGradient: {
+      backgroundColor: tokens.bg.elevated,
+      borderTopWidth: 1,
+      borderTopColor: tokens.border.default,
+    },
+    navImmersiveAraText: { color: tokens.text.primary },
+    navImmersiveGuvenText: { color: tokens.text.primary },
+    navImmersiveTrustHint: { color: tokens.text.muted },
   };
 }
 
