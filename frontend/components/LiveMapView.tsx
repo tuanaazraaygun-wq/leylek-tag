@@ -14,7 +14,9 @@ import {
   Image,
   InteractionManager,
   ActivityIndicator,
+  type StyleProp,
   type TextStyle,
+  type ViewStyle,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { tapButtonHaptic } from '../utils/touchHaptics';
@@ -60,6 +62,45 @@ import { DARK_MAP_STYLE } from '../lib/theme/mapStyles';
 import { useLiveMapChromeTheme } from '../lib/theme/useJourneyTheme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+/** Patch B — matched comm row touch targets (iOS map overlap + bottom edge). */
+const MATCHED_COMM_HIT_SLOP = { top: 12, bottom: 14, left: 10, right: 10 } as const;
+
+type LiveMapCommHitProps = {
+  onPress: () => void;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+  accessibilityLabel: string;
+};
+
+function LiveMapCommHit({
+  onPress,
+  disabled,
+  style,
+  children,
+  accessibilityLabel,
+}: LiveMapCommHitProps) {
+  return (
+    <Pressable
+      hitSlop={MATCHED_COMM_HIT_SLOP}
+      disabled={disabled}
+      onPress={() => {
+        void tapButtonHaptic();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        style,
+        disabled ? styles.commPressDisabled : null,
+        !disabled && pressed ? styles.commPressPressed : null,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      {children}
+    </Pressable>
+  );
+}
 
 /** Matched/in_progress klasik layout — küçük telefon (SE / dar Android). */
 const IS_COMPACT_MATCHED_SCREEN = SCREEN_HEIGHT < 700 || SCREEN_WIDTH < 360;
@@ -2872,8 +2913,9 @@ export default function LiveMapView({
 
   // ARAMA STATE'LERİ
   const [isCallLoading, setIsCallLoading] = useState(false);
-  /** Yerel 1s spinner + index’ten gelen start-call beklemesi */
-  const callUiBusy = isCallLoading || !!voiceCallPending;
+  /** Aktif arama uçuşu — çift tıklama koruması; yalnız gerçek await + socket pending */
+  const callActionBlocked = isCallLoading || !!voiceCallPending;
+  const callSpinnerVisible = callActionBlocked;
 
   /** Özel PNG marker: Android’de tracksViewChanges sürekli true kalınca pin kaybolabiliyor — bekleme ekranı gibi kısa süre sonra kapat */
   const [pinTracks, setPinTracks] = useState(true);
@@ -4893,7 +4935,8 @@ export default function LiveMapView({
   
   // Arama fonksiyonu - hızlı ve direkt
   const handleCall = async (type: 'audio' | 'video') => {
-    if (callUiBusy) {
+    if (callActionBlocked) {
+      void tapButtonHaptic();
       return;
     }
 
@@ -4909,16 +4952,49 @@ export default function LiveMapView({
     }
 
     setIsCallLoading(true);
-    
+
     try {
       if (!isDriver) callCheck('onCall', onCall);
       await onCall?.(type);
     } finally {
-      setTimeout(() => {
-        setIsCallLoading(false);
-      }, 1000);
+      setIsCallLoading(false);
     }
   };
+
+  const handleMatchedChatPress = useCallback(() => {
+    if (boardingConfirmed) {
+      appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+        variant: 'warning',
+        tone: 'warning',
+        autoDismissMs: 3200,
+        cancelable: true,
+      });
+      return;
+    }
+    onChat?.();
+  }, [boardingConfirmed, onChat]);
+
+  const handleMatchedTrustPress = useCallback(() => {
+    if (boardingConfirmed) {
+      appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+        variant: 'warning',
+        tone: 'warning',
+        autoDismissMs: 3200,
+        cancelable: true,
+      });
+      return;
+    }
+    if (trustRequestDisabled || trustRequestPending) {
+      void tapButtonHaptic();
+      return;
+    }
+    trustRequestAction?.();
+  }, [
+    boardingConfirmed,
+    trustRequestAction,
+    trustRequestDisabled,
+    trustRequestPending,
+  ]);
 
   useEffect(() => {
     if (!onCall) return;
@@ -6990,6 +7066,7 @@ export default function LiveMapView({
         <View
           style={styles.mapSlot}
           pointerEvents="box-none"
+          collapsable={false}
         >
         <MapView
           key={
@@ -7396,6 +7473,695 @@ export default function LiveMapView({
             </GlassSurface>
           </View>
         ) : null}
+      {/* ALT BUTONLAR — mapSlot içinde: iOS MapView touch stacking */}
+      <View style={styles.bottomPanel} pointerEvents="box-none" collapsable={false}>
+        <View
+          style={[
+            styles.bottomGradient,
+            jLt?.bottomGradient,
+            !driverRideUiModern ? { paddingBottom: 18 + Math.max(insets.bottom, 0) } : null,
+            compactMatchedLayout ? styles.bottomGradientCompact : null,
+          ]}
+          pointerEvents="auto"
+        >
+          {driverRideUiModern ? (
+            <View
+              style={[
+                styles.driverRideBottomSheet,
+                { paddingBottom: 14 + Math.max(insets.bottom, 10) },
+              ]}
+              pointerEvents="auto"
+            >
+              {onCall ? (
+                <LiveMapCommHit
+                  style={[
+                    styles.driverRidePrimaryBtn,
+                    callActionBlocked ? styles.mapCallFabCircleDisabled : null,
+                  ]}
+                  disabled={callActionBlocked}
+                  onPress={() => {
+                    void handleCall('audio');
+                  }}
+                  accessibilityLabel="Yolcuyu ara"
+                >
+                  <LinearGradient
+                    colors={[...ui.ctaGradient]}
+                    style={styles.driverRidePrimaryBtnGrad}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    {callSpinnerVisible ? (
+                      <ActivityIndicator size="small" color={ui.activity} />
+                    ) : (
+                      <Ionicons name="call" size={22} color={ui.ctaIconLight} />
+                    )}
+                    <Text
+                      style={styles.driverRidePrimaryBtnText}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.82}
+                    >
+                      {callSpinnerVisible ? 'Bağlanıyor…' : 'Yolcuyu Ara'}
+                    </Text>
+                  </LinearGradient>
+                </LiveMapCommHit>
+              ) : null}
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.driverRideSecondaryBtn,
+                  pressed && { opacity: 0.88 },
+                ]}
+                onPress={() => handleYolcuyaGitPress()}
+                accessibilityRole="button"
+                accessibilityLabel={driverMatrixNavChipLabel}
+              >
+                <Ionicons name="navigate" size={20} color={ui.accent} />
+                <Text
+                  style={styles.driverRideSecondaryBtnText}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.82}
+                >
+                  {driverMatrixNavChipLabel}
+                </Text>
+              </Pressable>
+
+              {driverRideUiModern ? driverExternalMapsIconRow : null}
+
+              {boardingConfirmed ? (
+                <>
+                  <View style={styles.driverRideSheetRow2}>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={styles.driverRideQrBtn}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      onShowQRModal?.();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Yol paylaşımını bitir — yol sonu QR"
+                  >
+                    <LinearGradient
+                      colors={[...ui.qrGradientBoarding]}
+                      style={styles.driverRideQrBtnGrad}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
+                      <Text
+                        style={[styles.driverRideQrBtnText, jLt?.qrPrimaryBtnText]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.82}
+                      >
+                        Yol Paylaşımını Bitir
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  {onForceEnd ? (
+                    <TouchableOpacity
+                      style={[styles.driverRideForceBtn, jLt?.driverRideForceBtn]}
+                      activeOpacity={0.82}
+                      onPress={() => {
+                        void tapButtonHaptic();
+                        if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
+                          if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
+                            return;
+                          }
+                          if (!tagId || String(tagId).trim() === '') {
+                            appAlert(
+                              'İşlem yapılamıyor',
+                              'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                              [{ text: 'Tamam' }],
+                              { tone: 'error' },
+                            );
+                            return;
+                          }
+                          const stOpen = String(tagStatus || '').toLowerCase();
+                          if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
+                            appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
+                              tone: 'error',
+                            });
+                            return;
+                          }
+                          setInRideSaferFeStep('choice');
+                          setInRideSaferFeVisible(true);
+                          return;
+                        }
+                        appAlert(
+                          FORCE_END_ALERT_TITLE,
+                          FORCE_END_ALERT_BODY,
+                          [
+                            { text: 'Vazgeç', style: 'cancel' },
+                            {
+                              text: 'Zorla bitir',
+                              style: 'destructive',
+                              onPress: () => onForceEnd?.(),
+                            },
+                          ],
+                          { tone: 'warning', emphasisScrim: true },
+                        );
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Zorla bitir"
+                    >
+                      <Ionicons name="warning" size={18} color={ui.errorIcon} />
+                      <Text
+                        style={[styles.driverRideForceBtnText, jLt?.dangerBtnText]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.82}
+                      >
+                        Zorla Bitir
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                  <Text style={styles.driverRideTripEndQrHint} numberOfLines={2}>
+                    Hedefe yaklaştığınızda yol paylaşımını QR ile güvenli şekilde tamamlayabilirsiniz.
+                  </Text>
+                </>
+              ) : (
+                <View style={styles.driverRideSheetRow2}>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={[
+                      styles.driverRideQrBtn,
+                      driverNearPickupForQr ? styles.driverRideQrBtnProminentBoarding : null,
+                    ]}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      handlePrimaryTripQrPress();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Biniş QR göster"
+                  >
+                    <LinearGradient
+                      colors={
+                        driverNearPickupForQr
+                          ? [...ui.qrGradientTripEnd]
+                          : [...ui.qrGradientBoardingNear]
+                      }
+                      style={styles.driverRideQrBtnGrad}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
+                      <Text
+                        style={[styles.driverRideQrBtnText, jLt?.qrPrimaryBtnText]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.82}
+                      >
+                        Biniş QR Göster
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  {onForceEnd ? (
+                    <TouchableOpacity
+                      style={[styles.driverRideForceBtn, jLt?.driverRideForceBtn]}
+                      activeOpacity={0.82}
+                      onPress={() => {
+                        void tapButtonHaptic();
+                        if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
+                          if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
+                            return;
+                          }
+                          if (!tagId || String(tagId).trim() === '') {
+                            appAlert(
+                              'İşlem yapılamıyor',
+                              'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                              [{ text: 'Tamam' }],
+                              { tone: 'error' },
+                            );
+                            return;
+                          }
+                          const stOpen = String(tagStatus || '').toLowerCase();
+                          if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
+                            appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
+                              tone: 'error',
+                            });
+                            return;
+                          }
+                          setInRideSaferFeStep('choice');
+                          setInRideSaferFeVisible(true);
+                          return;
+                        }
+                        appAlert(
+                          FORCE_END_ALERT_TITLE,
+                          FORCE_END_ALERT_BODY,
+                          [
+                            { text: 'Vazgeç', style: 'cancel' },
+                            {
+                              text: 'Zorla bitir',
+                              style: 'destructive',
+                              onPress: () => onForceEnd?.(),
+                            },
+                          ],
+                          { tone: 'warning', emphasisScrim: true },
+                        );
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Zorla bitir"
+                    >
+                      <Ionicons name="warning" size={18} color={ui.errorIcon} />
+                      <Text
+                        style={[styles.driverRideForceBtnText, jLt?.dangerBtnText]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.82}
+                      >
+                        Zorla Bitir
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {driverRideUiModern ? null : !driverNavImmersive && !isDriver ? (
+            <GlassSurface
+              variant="panel"
+              style={[
+                styles.paxBottomDeckShell,
+                compactMatchedLayout ? styles.paxBottomDeckShellCompact : null,
+                jLt?.paxBottomDeckShell,
+              ]}
+              borderRadius={LDS_RADIUS.lg}
+            >
+              {MapView && onCall ? (
+                <View
+                  style={[
+                    styles.paxBottomCommSection,
+                    compactMatchedLayout ? styles.paxBottomCommSectionCompact : null,
+                  ]}
+                >
+                  <Animated.View style={{ opacity: callLabelBlink }}>
+                    <PremiumText variant="caption" style={[styles.paxBottomCallLabel, jLt?.paxBottomCallLabel]} numberOfLines={1}>
+                      {callPromptLine}
+                    </PremiumText>
+                  </Animated.View>
+                  <View style={styles.tripCallGuvenRow}>
+                    <View style={styles.tripCallFabSlot} pointerEvents="box-none">
+                      <LiveMapCommHit
+                        style={[
+                          styles.paxBottomCallBtn,
+                          jLt?.paxBottomCallBtn,
+                          callActionBlocked ? styles.mapCallFabCircleDisabled : null,
+                        ]}
+                        disabled={callActionBlocked}
+                        onPress={() => {
+                          logPax('onCall', handleCall);
+                          void handleCall('audio');
+                        }}
+                        accessibilityLabel="Sürücüyü ara"
+                      >
+                        <Animated.View pointerEvents="none" style={{ transform: [{ scale: quickCallBreath }] }}>
+                          {callSpinnerVisible ? (
+                            <ActivityIndicator size="small" color={ui.activity} />
+                          ) : (
+                            <Ionicons name="call" size={22} color={ui.ctaIconLight} />
+                          )}
+                        </Animated.View>
+                      </LiveMapCommHit>
+                    </View>
+                    <View style={styles.tripCallChatMid}>
+                      {onChat ? (
+                        <LiveMapCommHit
+                          style={[styles.paxBottomChatBtn, jLt?.paxBottomChatBtn]}
+                          onPress={() => {
+                            logPax('onChat', onChat);
+                            handleMatchedChatPress();
+                          }}
+                          accessibilityLabel="Sürücüye yaz"
+                        >
+                          <Ionicons
+                            name="chatbubble-ellipses"
+                            size={18}
+                            color={ui.ctaIconLight}
+                          />
+                          <PremiumText variant="caption" style={[styles.paxBottomChatBtnText, jLt?.paxBottomChatBtnText]} numberOfLines={1}>
+                            Sürücüye Yaz
+                          </PremiumText>
+                        </LiveMapCommHit>
+                      ) : null}
+                    </View>
+                    {trustRequestAction ? (
+                      <View style={styles.tripGuvenMirrorWrap}>
+                        <LiveMapCommHit
+                          style={[
+                            styles.paxBottomGuvenBtn,
+                            jLt?.paxBottomGuvenBtn,
+                            trustRequestPending ? styles.mapCallFabCircleDisabled : null,
+                          ]}
+                          disabled={!!trustRequestPending}
+                          onPress={() => {
+                            logPax('onTrustRequest', trustRequestAction);
+                            handleMatchedTrustPress();
+                          }}
+                          accessibilityLabel={
+                            trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')
+                          }
+                        >
+                          {trustRequestPending ? (
+                            <ActivityIndicator size="small" color={ui.activity} />
+                          ) : (
+                            <Animated.View pointerEvents="none" style={{ transform: [{ scale: guvenShieldPulse }] }}>
+                              <Ionicons
+                                name="shield-checkmark"
+                                size={20}
+                                color={ui.ctaIconLight}
+                              />
+                            </Animated.View>
+                          )}
+                          <PremiumText variant="caption" style={[styles.paxBottomGuvenBtnText, jLt?.paxBottomGuvenBtnText]}>
+                            {trustRequestPending ? 'Bekleniyor...' : 'Güven AL'}
+                          </PremiumText>
+                        </LiveMapCommHit>
+                      </View>
+                    ) : (
+                      <View style={styles.tripGuvenMirrorSpacer} />
+                    )}
+                  </View>
+                </View>
+              ) : null}
+
+              <View style={styles.paxBottomMainActions}>
+                <Animated.View
+                  style={{
+                    transform: [
+                      {
+                        scale: pulseAnim.interpolate({
+                          inputRange: [0.6, 1],
+                          outputRange: [0.98, 1.02],
+                        }),
+                      },
+                    ],
+                  }}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.paxBottomQrBtn,
+                      styles.paxBottomQrBtnFull,
+                      boardingConfirmed ? styles.paxBottomQrBtnTripEnd : styles.paxBottomQrBtnBoarding,
+                      boardingConfirmed ? jLt?.paxBottomQrBtnTripEnd : jLt?.paxBottomQrBtnBoarding,
+                    ]}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      handlePrimaryTripQrPress();
+                    }}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      boardingConfirmed ? 'Yol paylaşımını bitir' : 'Biniş kodunu tara'
+                    }
+                  >
+                    <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
+                    <PremiumText
+                      variant="caption"
+                      style={[styles.paxBottomQrBtnText, jLt?.qrPrimaryBtnText]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.82}
+                    >
+                      {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş Kodunu Tara'}
+                    </PremiumText>
+                  </TouchableOpacity>
+                </Animated.View>
+
+                <TouchableOpacity
+                  style={[styles.paxBottomEndBtn, styles.paxBottomEndBtnFull, jLt?.paxBottomEndBtn]}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
+                      if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
+                        return;
+                      }
+                      if (!tagId || String(tagId).trim() === '') {
+                        appAlert(
+                          'İşlem yapılamıyor',
+                          'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                          [{ text: 'Tamam' }],
+                          { tone: 'error' },
+                        );
+                        return;
+                      }
+                      const stOpen = String(tagStatus || '').toLowerCase();
+                      if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
+                        appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
+                          tone: 'error',
+                        });
+                        return;
+                      }
+                      setInRideSaferFeStep('choice');
+                      setInRideSaferFeVisible(true);
+                      return;
+                    }
+                    appAlert(
+                      FORCE_END_ALERT_TITLE,
+                      FORCE_END_ALERT_BODY,
+                      [
+                        { text: 'Vazgeç', style: 'cancel' },
+                        {
+                          text: 'Zorla bitir',
+                          style: 'destructive',
+                          onPress: () => onForceEnd?.(),
+                        },
+                      ],
+                      { tone: 'warning', emphasisScrim: true },
+                    );
+                  }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Zorla bitir"
+                >
+                  <Ionicons name="close-circle" size={18} color={ui.errorIcon} />
+                  <PremiumText
+                    variant="caption"
+                    style={[styles.paxBottomEndBtnText, jLt?.dangerBtnText]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
+                    Zorla Bitir
+                  </PremiumText>
+                </TouchableOpacity>
+              </View>
+            </GlassSurface>
+          ) : null}
+
+          {/* Sürücü journey cockpit deck — LHIS */}
+          {driverRideUiModern ? null : !driverNavImmersive && isDriver ? (
+            <GlassSurface
+              variant="panel"
+              style={[
+                styles.drvBottomDeckShell,
+                compactMatchedLayout ? styles.drvBottomDeckShellCompact : null,
+                jLt?.drvBottomDeckShell,
+              ]}
+              borderRadius={LDS_RADIUS.lg}
+            >
+              {MapView && onCall ? (
+                <View
+                  style={[
+                    styles.drvBottomCommSection,
+                    compactMatchedLayout ? styles.drvBottomCommSectionCompact : null,
+                  ]}
+                >
+                  <PremiumText variant="caption" style={[styles.drvBottomCallLabel, jLt?.drvBottomCallLabel]} numberOfLines={1}>
+                    Yolcuyu Ara
+                  </PremiumText>
+                  <View style={styles.tripCallGuvenRow}>
+                    <View style={styles.tripCallFabSlot} pointerEvents="box-none">
+                      <LiveMapCommHit
+                        style={[
+                          styles.drvBottomCallBtn,
+                          jLt?.drvBottomCallBtn,
+                          callActionBlocked ? styles.mapCallFabCircleDisabled : null,
+                        ]}
+                        disabled={callActionBlocked}
+                        onPress={() => {
+                          void handleCall('audio');
+                        }}
+                        accessibilityLabel="Yolcuyu ara"
+                      >
+                        <Animated.View pointerEvents="none" style={{ transform: [{ scale: quickCallBreath }] }}>
+                          {callSpinnerVisible ? (
+                            <ActivityIndicator size="small" color={ui.activity} />
+                          ) : (
+                            <Ionicons name="call" size={22} color={ui.ctaIconLight} />
+                          )}
+                        </Animated.View>
+                      </LiveMapCommHit>
+                    </View>
+                    <View style={styles.tripCallChatMid}>
+                      {onChat ? (
+                        <LiveMapCommHit
+                          style={[styles.drvBottomChatBtn, jLt?.drvBottomChatBtn]}
+                          onPress={() => {
+                            logPax('onChat', onChat);
+                            handleMatchedChatPress();
+                          }}
+                          accessibilityLabel="Yolcuya yaz"
+                        >
+                          <Ionicons
+                            name="chatbubble-ellipses"
+                            size={18}
+                            color={ui.ctaIconLight}
+                          />
+                          <PremiumText variant="caption" style={[styles.drvBottomChatBtnText, jLt?.drvBottomChatBtnText]} numberOfLines={1}>
+                            Yolcuya Yaz
+                          </PremiumText>
+                        </LiveMapCommHit>
+                      ) : null}
+                    </View>
+                    {trustRequestAction ? (
+                      <View style={styles.tripGuvenMirrorWrap}>
+                        <LiveMapCommHit
+                          style={[
+                            styles.drvBottomGuvenBtn,
+                            jLt?.drvBottomGuvenBtn,
+                            trustRequestPending ? styles.mapCallFabCircleDisabled : null,
+                          ]}
+                          disabled={!!trustRequestPending}
+                          onPress={() => {
+                            logPax('onTrustRequest', trustRequestAction);
+                            handleMatchedTrustPress();
+                          }}
+                          accessibilityLabel={
+                            trustRequestPending
+                              ? 'Güven isteği gönderiliyor'
+                              : (trustRequestLabel ?? 'Güven AL')
+                          }
+                        >
+                          {trustRequestPending ? (
+                            <ActivityIndicator size="small" color={ui.activity} />
+                          ) : (
+                            <Animated.View pointerEvents="none" style={{ transform: [{ scale: guvenShieldPulse }] }}>
+                              <Ionicons
+                                name="shield-checkmark"
+                                size={20}
+                                color={ui.ctaIconLight}
+                              />
+                            </Animated.View>
+                          )}
+                          <PremiumText variant="caption" style={[styles.drvBottomGuvenBtnText, jLt?.drvBottomGuvenBtnText]}>
+                            {trustRequestPending ? 'Bekleniyor...' : 'Güven AL'}
+                          </PremiumText>
+                        </LiveMapCommHit>
+                      </View>
+                    ) : (
+                      <View style={styles.tripGuvenMirrorSpacer} />
+                    )}
+                  </View>
+                </View>
+              ) : null}
+
+              <View style={styles.drvBottomMainActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.drvBottomQrBtn,
+                    styles.drvBottomQrBtnFull,
+                    boardingConfirmed ? styles.drvBottomQrBtnTripEnd : styles.drvBottomQrBtnBoarding,
+                    driverNearPickupForQr && !boardingConfirmed ? styles.drvBottomQrBtnBoardingNear : null,
+                    boardingConfirmed
+                      ? jLt?.drvBottomQrBtnTripEnd
+                      : driverNearPickupForQr
+                        ? jLt?.drvBottomQrBtnBoardingNear
+                        : jLt?.drvBottomQrBtnBoarding,
+                  ]}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    handlePrimaryTripQrPress();
+                  }}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    boardingConfirmed ? 'Yol paylaşımını bitir — yol sonu QR' : 'Biniş QR göster'
+                  }
+                >
+                  <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
+                  <PremiumText
+                    variant="caption"
+                    style={[styles.drvBottomQrBtnText, jLt?.qrPrimaryBtnText]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
+                    {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş QR Göster'}
+                  </PremiumText>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.drvBottomEndBtn, styles.drvBottomEndBtnFull]}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
+                      if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
+                        return;
+                      }
+                      if (!tagId || String(tagId).trim() === '') {
+                        appAlert(
+                          'İşlem yapılamıyor',
+                          'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                          [{ text: 'Tamam' }],
+                          { tone: 'error' },
+                        );
+                        return;
+                      }
+                      const stOpen = String(tagStatus || '').toLowerCase();
+                      if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
+                        appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
+                          tone: 'error',
+                        });
+                        return;
+                      }
+                      setInRideSaferFeStep('choice');
+                      setInRideSaferFeVisible(true);
+                      return;
+                    }
+                    appAlert(
+                      FORCE_END_ALERT_TITLE,
+                      FORCE_END_ALERT_BODY,
+                      [
+                        { text: 'Vazgeç', style: 'cancel' },
+                        {
+                          text: 'Zorla bitir',
+                          style: 'destructive',
+                          onPress: () => onForceEnd?.(),
+                        },
+                      ],
+                      { tone: 'warning', emphasisScrim: true },
+                    );
+                  }}
+                  activeOpacity={0.82}
+                  accessibilityRole="button"
+                  accessibilityLabel="Zorla bitir"
+                >
+                  <Ionicons name="close-circle-outline" size={17} color={ui.errorIcon} />
+                  <PremiumText
+                    variant="caption"
+                    style={styles.drvBottomEndBtnText}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
+                    Zorla Bitir
+                  </PremiumText>
+                </TouchableOpacity>
+              </View>
+
+              {boardingConfirmed ? (
+                <PremiumText variant="caption" muted style={styles.drvBottomQrHint} numberOfLines={2}>
+                  Hedefe yaklaştığınızda yol paylaşımını QR ile güvenli şekilde tamamlayabilirsiniz.
+                </PremiumText>
+              ) : null}
+            </GlassSurface>
+          ) : null}
+        </View>
+      </View>
         </View>
       ) : (
         // Web fallback - harita yok
@@ -7676,19 +8442,19 @@ export default function LiveMapView({
         </>
         ) : null}
 
-        {driverNavImmersive && MapView && (onCall || trustRequestAction) ? (
-          <View style={styles.navImmersiveBelowCard} pointerEvents="box-none">
+        {driverNavImmersive && MapView && (onCall || trustRequestAction || onChat) ? (
+          <View style={styles.navImmersiveBelowCard} pointerEvents="box-none" collapsable={false}>
             <View style={styles.navImmersiveBelowCardRow}>
               {onCall ? (
-                <TouchableOpacity
-                  style={[styles.navImmersiveAraBtn, boardingConfirmed && !callUiBusy && { opacity: 0.45 }]}
+                <LiveMapCommHit
+                  style={[
+                    styles.navImmersiveAraBtn,
+                    callActionBlocked ? styles.mapCallFabCircleDisabled : null,
+                  ]}
+                  disabled={callActionBlocked}
                   onPress={() => {
-                    void tapButtonHaptic();
                     void handleCall('audio');
                   }}
-                  disabled={callUiBusy}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
                   accessibilityLabel="Yolcuyu ara"
                 >
                   <LinearGradient
@@ -7697,16 +8463,37 @@ export default function LiveMapView({
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    {voiceCallPending ? (
+                    {callSpinnerVisible ? (
                       <ActivityIndicator size="small" color={ui.activity} />
                     ) : (
                       <Ionicons name="call" size={18} color={ui.ctaIconLight} />
                     )}
                     <Text style={[styles.navImmersiveAraText, jLt?.navImmersiveAraText]}>
-                      {voiceCallPending ? 'Bağlanıyor…' : 'Ara'}
+                      {callSpinnerVisible ? 'Bağlanıyor…' : 'Ara'}
                     </Text>
                   </LinearGradient>
-                </TouchableOpacity>
+                </LiveMapCommHit>
+              ) : (
+                <View style={styles.navImmersiveBelowCardSpacer} />
+              )}
+              {onChat ? (
+                <LiveMapCommHit
+                  style={styles.navImmersiveChatBtn}
+                  onPress={() => {
+                    handleMatchedChatPress();
+                  }}
+                  accessibilityLabel="Yolcuya yaz"
+                >
+                  <LinearGradient
+                    colors={[...ui.ctaGradientSoft]}
+                    style={styles.navImmersiveChatGrad}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="chatbubble-ellipses" size={17} color={ui.ctaIconLight} />
+                    <Text style={[styles.navImmersiveChatText, jLt?.navImmersiveAraText]}>Yaz</Text>
+                  </LinearGradient>
+                </LiveMapCommHit>
               ) : (
                 <View style={styles.navImmersiveBelowCardSpacer} />
               )}
@@ -7727,30 +8514,18 @@ export default function LiveMapView({
                   >
                     Güven mi istiyorsun? Yolcudan güven al
                   </Animated.Text>
-                  <TouchableOpacity
+                  <LiveMapCommHit
                     style={[
                       styles.navImmersiveGuvenBtn,
-                      boardingConfirmed && { opacity: 0.45 },
-                      trustRequestPending && { opacity: 0.78 },
+                      trustRequestPending ? styles.mapCallFabCircleDisabled : null,
                     ]}
+                    disabled={!!trustRequestPending}
                     onPress={() => {
-                      void tapButtonHaptic();
-                      if (boardingConfirmed) {
-                        appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                          variant: 'warning',
-                          tone: 'warning',
-                          autoDismissMs: 3200,
-                          cancelable: true,
-                        });
-                        return;
-                      }
-                      if (trustRequestDisabled || trustRequestPending) return;
-                      trustRequestAction();
+                      handleMatchedTrustPress();
                     }}
-                    activeOpacity={0.88}
-                    disabled={!!trustRequestDisabled || !!trustRequestPending}
-                    accessibilityRole="button"
-                    accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
+                    accessibilityLabel={
+                      trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')
+                    }
                   >
                     <LinearGradient
                       colors={[...ui.ctaGradientSoft]}
@@ -7762,7 +8537,7 @@ export default function LiveMapView({
                       {trustRequestPending ? (
                         <ActivityIndicator size="small" color={ui.activity} />
                       ) : (
-                        <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
+                        <Animated.View pointerEvents="none" style={{ transform: [{ scale: guvenShieldPulse }] }}>
                           <Ionicons name="shield-checkmark" size={18} color={ui.ctaIconLight} />
                         </Animated.View>
                       )}
@@ -7770,7 +8545,7 @@ export default function LiveMapView({
                         {trustRequestPending ? 'Gönderiliyor...' : 'Güven AL'}
                       </Text>
                     </LinearGradient>
-                  </TouchableOpacity>
+                  </LiveMapCommHit>
                 </View>
               ) : (
                 <View style={styles.navImmersiveBelowCardSpacer} />
@@ -7999,758 +8774,6 @@ export default function LiveMapView({
         </View>
       ) : null}
 
-      {/* ALT BUTONLAR */}
-      <View style={styles.bottomPanel} pointerEvents="box-none">
-        <View
-          style={[
-            styles.bottomGradient,
-            jLt?.bottomGradient,
-            !driverRideUiModern ? { paddingBottom: 18 + Math.max(insets.bottom, 0) } : null,
-            compactMatchedLayout ? styles.bottomGradientCompact : null,
-          ]}
-          pointerEvents="auto"
-        >
-          {driverRideUiModern ? (
-            <View
-              style={[
-                styles.driverRideBottomSheet,
-                { paddingBottom: 14 + Math.max(insets.bottom, 10) },
-              ]}
-              pointerEvents="auto"
-            >
-              {onCall ? (
-                <TouchableOpacity
-                  activeOpacity={0.88}
-                  style={[styles.driverRidePrimaryBtn, callUiBusy && { opacity: 0.55 }]}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    void handleCall('audio');
-                  }}
-                  disabled={callUiBusy}
-                  accessibilityRole="button"
-                  accessibilityLabel="Yolcuyu ara"
-                >
-                  <LinearGradient
-                    colors={[...ui.ctaGradient]}
-                    style={styles.driverRidePrimaryBtnGrad}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                  >
-                    {voiceCallPending ? (
-                      <ActivityIndicator size="small" color={ui.activity} />
-                    ) : (
-                      <Ionicons name="call" size={22} color={ui.ctaIconLight} />
-                    )}
-                    <Text
-                      style={styles.driverRidePrimaryBtnText}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.82}
-                    >
-                      {voiceCallPending ? 'Bağlanıyor…' : 'Yolcuyu Ara'}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ) : null}
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.driverRideSecondaryBtn,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => handleYolcuyaGitPress()}
-                accessibilityRole="button"
-                accessibilityLabel={driverMatrixNavChipLabel}
-              >
-                <Ionicons name="navigate" size={20} color={ui.accent} />
-                <Text
-                  style={styles.driverRideSecondaryBtnText}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.82}
-                >
-                  {driverMatrixNavChipLabel}
-                </Text>
-              </Pressable>
-
-              {driverRideUiModern ? driverExternalMapsIconRow : null}
-
-              {boardingConfirmed ? (
-                <>
-                  <View style={styles.driverRideSheetRow2}>
-                  <TouchableOpacity
-                    activeOpacity={0.82}
-                    style={styles.driverRideQrBtn}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      onShowQRModal?.();
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Yol paylaşımını bitir — yol sonu QR"
-                  >
-                    <LinearGradient
-                      colors={[...ui.qrGradientBoarding]}
-                      style={styles.driverRideQrBtnGrad}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                    >
-                      <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
-                      <Text
-                        style={[styles.driverRideQrBtnText, jLt?.qrPrimaryBtnText]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.82}
-                      >
-                        Yol Paylaşımını Bitir
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                  {onForceEnd ? (
-                    <TouchableOpacity
-                      style={[styles.driverRideForceBtn, jLt?.driverRideForceBtn]}
-                      activeOpacity={0.82}
-                      onPress={() => {
-                        void tapButtonHaptic();
-                        if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
-                          if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
-                            return;
-                          }
-                          if (!tagId || String(tagId).trim() === '') {
-                            appAlert(
-                              'İşlem yapılamıyor',
-                              'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
-                              [{ text: 'Tamam' }],
-                              { tone: 'error' },
-                            );
-                            return;
-                          }
-                          const stOpen = String(tagStatus || '').toLowerCase();
-                          if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
-                            appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
-                              tone: 'error',
-                            });
-                            return;
-                          }
-                          setInRideSaferFeStep('choice');
-                          setInRideSaferFeVisible(true);
-                          return;
-                        }
-                        appAlert(
-                          FORCE_END_ALERT_TITLE,
-                          FORCE_END_ALERT_BODY,
-                          [
-                            { text: 'Vazgeç', style: 'cancel' },
-                            {
-                              text: 'Zorla bitir',
-                              style: 'destructive',
-                              onPress: () => onForceEnd?.(),
-                            },
-                          ],
-                          { tone: 'warning', emphasisScrim: true },
-                        );
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Zorla bitir"
-                    >
-                      <Ionicons name="warning" size={18} color={ui.errorIcon} />
-                      <Text
-                        style={[styles.driverRideForceBtnText, jLt?.dangerBtnText]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.82}
-                      >
-                        Zorla Bitir
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-                  <Text style={styles.driverRideTripEndQrHint} numberOfLines={2}>
-                    Hedefe yaklaştığınızda yol paylaşımını QR ile güvenli şekilde tamamlayabilirsiniz.
-                  </Text>
-                </>
-              ) : (
-                <View style={styles.driverRideSheetRow2}>
-                  <TouchableOpacity
-                    activeOpacity={0.82}
-                    style={[
-                      styles.driverRideQrBtn,
-                      driverNearPickupForQr ? styles.driverRideQrBtnProminentBoarding : null,
-                    ]}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      handlePrimaryTripQrPress();
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Biniş QR göster"
-                  >
-                    <LinearGradient
-                      colors={
-                        driverNearPickupForQr
-                          ? [...ui.qrGradientTripEnd]
-                          : [...ui.qrGradientBoardingNear]
-                      }
-                      style={styles.driverRideQrBtnGrad}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                    >
-                      <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
-                      <Text
-                        style={[styles.driverRideQrBtnText, jLt?.qrPrimaryBtnText]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.82}
-                      >
-                        Biniş QR Göster
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                  {onForceEnd ? (
-                    <TouchableOpacity
-                      style={[styles.driverRideForceBtn, jLt?.driverRideForceBtn]}
-                      activeOpacity={0.82}
-                      onPress={() => {
-                        void tapButtonHaptic();
-                        if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
-                          if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
-                            return;
-                          }
-                          if (!tagId || String(tagId).trim() === '') {
-                            appAlert(
-                              'İşlem yapılamıyor',
-                              'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
-                              [{ text: 'Tamam' }],
-                              { tone: 'error' },
-                            );
-                            return;
-                          }
-                          const stOpen = String(tagStatus || '').toLowerCase();
-                          if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
-                            appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
-                              tone: 'error',
-                            });
-                            return;
-                          }
-                          setInRideSaferFeStep('choice');
-                          setInRideSaferFeVisible(true);
-                          return;
-                        }
-                        appAlert(
-                          FORCE_END_ALERT_TITLE,
-                          FORCE_END_ALERT_BODY,
-                          [
-                            { text: 'Vazgeç', style: 'cancel' },
-                            {
-                              text: 'Zorla bitir',
-                              style: 'destructive',
-                              onPress: () => onForceEnd?.(),
-                            },
-                          ],
-                          { tone: 'warning', emphasisScrim: true },
-                        );
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Zorla bitir"
-                    >
-                      <Ionicons name="warning" size={18} color={ui.errorIcon} />
-                      <Text
-                        style={[styles.driverRideForceBtnText, jLt?.dangerBtnText]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.82}
-                      >
-                        Zorla Bitir
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              )}
-            </View>
-          ) : null}
-
-          {driverRideUiModern ? null : !driverNavImmersive && !isDriver ? (
-            <GlassSurface
-              variant="panel"
-              style={[
-                styles.paxBottomDeckShell,
-                compactMatchedLayout ? styles.paxBottomDeckShellCompact : null,
-                jLt?.paxBottomDeckShell,
-              ]}
-              borderRadius={LDS_RADIUS.lg}
-            >
-              {MapView && onCall ? (
-                <View
-                  style={[
-                    styles.paxBottomCommSection,
-                    compactMatchedLayout ? styles.paxBottomCommSectionCompact : null,
-                  ]}
-                >
-                  <Animated.View style={{ opacity: callLabelBlink }}>
-                    <PremiumText variant="caption" style={[styles.paxBottomCallLabel, jLt?.paxBottomCallLabel]} numberOfLines={1}>
-                      {callPromptLine}
-                    </PremiumText>
-                  </Animated.View>
-                  <View style={styles.tripCallGuvenRow}>
-                    <View style={styles.tripCallFabSlot} pointerEvents="box-none">
-                      <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
-                        <TouchableOpacity
-                          style={[
-                            styles.paxBottomCallBtn,
-                            jLt?.paxBottomCallBtn,
-                            callUiBusy && styles.mapCallFabCircleDisabled,
-                            boardingConfirmed && !callUiBusy ? { opacity: 0.45 } : null,
-                          ]}
-                          onPress={() => {
-                            logPax('tapButtonHaptic', tapButtonHaptic);
-                            void tapButtonHaptic();
-                            void handleCall('audio');
-                          }}
-                          activeOpacity={0.88}
-                          disabled={callUiBusy}
-                          accessibilityRole="button"
-                          accessibilityLabel="Sürücüyü ara"
-                        >
-                          {voiceCallPending ? (
-                            <ActivityIndicator size="small" color={ui.activity} />
-                          ) : (
-                            <Ionicons name="call" size={22} color={ui.ctaIconLight} />
-                          )}
-                        </TouchableOpacity>
-                      </Animated.View>
-                    </View>
-                    <View style={styles.tripCallChatMid}>
-                      {onChat ? (
-                        <TouchableOpacity
-                          style={[styles.paxBottomChatBtn, jLt?.paxBottomChatBtn, boardingConfirmed && { opacity: 0.45 }]}
-                          onPress={() => {
-                            logPax('tapButtonHaptic', tapButtonHaptic);
-                            void tapButtonHaptic();
-                            if (boardingConfirmed) {
-                              appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                                variant: 'warning',
-                                tone: 'warning',
-                                autoDismissMs: 3200,
-                                cancelable: true,
-                              });
-                              return;
-                            }
-                            logPax('onChat', onChat);
-                            onChat();
-                          }}
-                          activeOpacity={0.85}
-                          accessibilityRole="button"
-                          accessibilityLabel="Sürücüye yaz"
-                        >
-                          <Ionicons
-                            name="chatbubble-ellipses"
-                            size={18}
-                            color={ui.ctaIconLight}
-                          />
-                          <PremiumText variant="caption" style={[styles.paxBottomChatBtnText, jLt?.paxBottomChatBtnText]} numberOfLines={1}>
-                            Sürücüye Yaz
-                          </PremiumText>
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
-                    {trustRequestAction ? (
-                      <View style={styles.tripGuvenMirrorWrap}>
-                        <TouchableOpacity
-                          style={[
-                            styles.paxBottomGuvenBtn,
-                            jLt?.paxBottomGuvenBtn,
-                            boardingConfirmed && { opacity: 0.45 },
-                            trustRequestPending && { opacity: 0.78 },
-                          ]}
-                          onPress={() => {
-                            logPax('tapButtonHaptic', tapButtonHaptic);
-                            void tapButtonHaptic();
-                            if (boardingConfirmed) {
-                              appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                                variant: 'warning',
-                                tone: 'warning',
-                                autoDismissMs: 3200,
-                                cancelable: true,
-                              });
-                              return;
-                            }
-                            if (trustRequestDisabled || trustRequestPending) return;
-                            logPax('onTrustRequest', trustRequestAction);
-                            trustRequestAction();
-                          }}
-                          activeOpacity={0.88}
-                          disabled={!!trustRequestDisabled || !!trustRequestPending}
-                          accessibilityRole="button"
-                          accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
-                        >
-                          {trustRequestPending ? (
-                            <ActivityIndicator size="small" color={ui.activity} />
-                          ) : (
-                            <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                              <Ionicons
-                                name="shield-checkmark"
-                                size={20}
-                                color={ui.ctaIconLight}
-                              />
-                            </Animated.View>
-                          )}
-                          <PremiumText variant="caption" style={[styles.paxBottomGuvenBtnText, jLt?.paxBottomGuvenBtnText]}>
-                            {trustRequestPending ? 'Bekleniyor...' : 'Güven AL'}
-                          </PremiumText>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <View style={styles.tripGuvenMirrorSpacer} />
-                    )}
-                  </View>
-                </View>
-              ) : null}
-
-              <View style={styles.paxBottomMainActions}>
-                <Animated.View
-                  style={{
-                    transform: [
-                      {
-                        scale: pulseAnim.interpolate({
-                          inputRange: [0.6, 1],
-                          outputRange: [0.98, 1.02],
-                        }),
-                      },
-                    ],
-                  }}
-                >
-                  <TouchableOpacity
-                    style={[
-                      styles.paxBottomQrBtn,
-                      styles.paxBottomQrBtnFull,
-                      boardingConfirmed ? styles.paxBottomQrBtnTripEnd : styles.paxBottomQrBtnBoarding,
-                      boardingConfirmed ? jLt?.paxBottomQrBtnTripEnd : jLt?.paxBottomQrBtnBoarding,
-                    ]}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      handlePrimaryTripQrPress();
-                    }}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      boardingConfirmed ? 'Yol paylaşımını bitir' : 'Biniş kodunu tara'
-                    }
-                  >
-                    <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
-                    <PremiumText
-                      variant="caption"
-                      style={[styles.paxBottomQrBtnText, jLt?.qrPrimaryBtnText]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.82}
-                    >
-                      {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş Kodunu Tara'}
-                    </PremiumText>
-                  </TouchableOpacity>
-                </Animated.View>
-
-                <TouchableOpacity
-                  style={[styles.paxBottomEndBtn, styles.paxBottomEndBtnFull, jLt?.paxBottomEndBtn]}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
-                      if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
-                        return;
-                      }
-                      if (!tagId || String(tagId).trim() === '') {
-                        appAlert(
-                          'İşlem yapılamıyor',
-                          'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
-                          [{ text: 'Tamam' }],
-                          { tone: 'error' },
-                        );
-                        return;
-                      }
-                      const stOpen = String(tagStatus || '').toLowerCase();
-                      if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
-                        appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
-                          tone: 'error',
-                        });
-                        return;
-                      }
-                      setInRideSaferFeStep('choice');
-                      setInRideSaferFeVisible(true);
-                      return;
-                    }
-                    appAlert(
-                      FORCE_END_ALERT_TITLE,
-                      FORCE_END_ALERT_BODY,
-                      [
-                        { text: 'Vazgeç', style: 'cancel' },
-                        {
-                          text: 'Zorla bitir',
-                          style: 'destructive',
-                          onPress: () => onForceEnd?.(),
-                        },
-                      ],
-                      { tone: 'warning', emphasisScrim: true },
-                    );
-                  }}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel="Zorla bitir"
-                >
-                  <Ionicons name="close-circle" size={18} color={ui.errorIcon} />
-                  <PremiumText
-                    variant="caption"
-                    style={[styles.paxBottomEndBtnText, jLt?.dangerBtnText]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.82}
-                  >
-                    Zorla Bitir
-                  </PremiumText>
-                </TouchableOpacity>
-              </View>
-            </GlassSurface>
-          ) : null}
-
-          {/* Sürücü journey cockpit deck — LHIS */}
-          {driverRideUiModern ? null : !driverNavImmersive && isDriver ? (
-            <GlassSurface
-              variant="panel"
-              style={[
-                styles.drvBottomDeckShell,
-                compactMatchedLayout ? styles.drvBottomDeckShellCompact : null,
-                jLt?.drvBottomDeckShell,
-              ]}
-              borderRadius={LDS_RADIUS.lg}
-            >
-              {MapView && onCall ? (
-                <View
-                  style={[
-                    styles.drvBottomCommSection,
-                    compactMatchedLayout ? styles.drvBottomCommSectionCompact : null,
-                  ]}
-                >
-                  <PremiumText variant="caption" style={[styles.drvBottomCallLabel, jLt?.drvBottomCallLabel]} numberOfLines={1}>
-                    Yolcuyu Ara
-                  </PremiumText>
-                  <View style={styles.tripCallGuvenRow}>
-                    <View style={styles.tripCallFabSlot} pointerEvents="box-none">
-                      <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
-                        <TouchableOpacity
-                          style={[
-                            styles.drvBottomCallBtn,
-                            jLt?.drvBottomCallBtn,
-                            callUiBusy && styles.mapCallFabCircleDisabled,
-                            boardingConfirmed && !callUiBusy ? { opacity: 0.45 } : null,
-                          ]}
-                          onPress={() => {
-                            logPax('tapButtonHaptic', tapButtonHaptic);
-                            void tapButtonHaptic();
-                            void handleCall('audio');
-                          }}
-                          activeOpacity={0.88}
-                          disabled={callUiBusy}
-                          accessibilityRole="button"
-                          accessibilityLabel="Yolcuyu ara"
-                        >
-                          {voiceCallPending ? (
-                            <ActivityIndicator size="small" color={ui.activity} />
-                          ) : (
-                            <Ionicons name="call" size={22} color={ui.ctaIconLight} />
-                          )}
-                        </TouchableOpacity>
-                      </Animated.View>
-                    </View>
-                    <View style={styles.tripCallChatMid}>
-                      {onChat ? (
-                        <TouchableOpacity
-                          style={[styles.drvBottomChatBtn, jLt?.drvBottomChatBtn, boardingConfirmed && { opacity: 0.45 }]}
-                          onPress={() => {
-                            logPax('tapButtonHaptic', tapButtonHaptic);
-                            void tapButtonHaptic();
-                            if (boardingConfirmed) {
-                              appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                                variant: 'warning',
-                                tone: 'warning',
-                                autoDismissMs: 3200,
-                                cancelable: true,
-                              });
-                              return;
-                            }
-                            logPax('onChat', onChat);
-                            onChat();
-                          }}
-                          activeOpacity={0.85}
-                          accessibilityRole="button"
-                          accessibilityLabel="Yolcuya yaz"
-                        >
-                          <Ionicons
-                            name="chatbubble-ellipses"
-                            size={18}
-                            color={ui.ctaIconLight}
-                          />
-                          <PremiumText variant="caption" style={[styles.drvBottomChatBtnText, jLt?.drvBottomChatBtnText]} numberOfLines={1}>
-                            Yolcuya Yaz
-                          </PremiumText>
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
-                    {trustRequestAction ? (
-                      <View style={styles.tripGuvenMirrorWrap}>
-                        <TouchableOpacity
-                          style={[
-                            styles.drvBottomGuvenBtn,
-                            jLt?.drvBottomGuvenBtn,
-                            boardingConfirmed && { opacity: 0.45 },
-                            trustRequestPending && { opacity: 0.78 },
-                          ]}
-                          onPress={() => {
-                            logPax('tapButtonHaptic', tapButtonHaptic);
-                            void tapButtonHaptic();
-                            if (boardingConfirmed) {
-                              appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                                variant: 'warning',
-                                tone: 'warning',
-                                autoDismissMs: 3200,
-                                cancelable: true,
-                              });
-                              return;
-                            }
-                            if (trustRequestDisabled || trustRequestPending) return;
-                            logPax('onTrustRequest', trustRequestAction);
-                            trustRequestAction();
-                          }}
-                          activeOpacity={0.88}
-                          disabled={!!trustRequestDisabled || !!trustRequestPending}
-                          accessibilityRole="button"
-                          accessibilityLabel={
-                            trustRequestPending
-                              ? 'Güven isteği gönderiliyor'
-                              : (trustRequestLabel ?? 'Güven AL')
-                          }
-                        >
-                          {trustRequestPending ? (
-                            <ActivityIndicator size="small" color={ui.activity} />
-                          ) : (
-                            <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                              <Ionicons
-                                name="shield-checkmark"
-                                size={20}
-                                color={ui.ctaIconLight}
-                              />
-                            </Animated.View>
-                          )}
-                          <PremiumText variant="caption" style={[styles.drvBottomGuvenBtnText, jLt?.drvBottomGuvenBtnText]}>
-                            {trustRequestPending ? 'Bekleniyor...' : 'Güven AL'}
-                          </PremiumText>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <View style={styles.tripGuvenMirrorSpacer} />
-                    )}
-                  </View>
-                </View>
-              ) : null}
-
-              <View style={styles.drvBottomMainActions}>
-                <TouchableOpacity
-                  style={[
-                    styles.drvBottomQrBtn,
-                    styles.drvBottomQrBtnFull,
-                    boardingConfirmed ? styles.drvBottomQrBtnTripEnd : styles.drvBottomQrBtnBoarding,
-                    driverNearPickupForQr && !boardingConfirmed ? styles.drvBottomQrBtnBoardingNear : null,
-                    boardingConfirmed
-                      ? jLt?.drvBottomQrBtnTripEnd
-                      : driverNearPickupForQr
-                        ? jLt?.drvBottomQrBtnBoardingNear
-                        : jLt?.drvBottomQrBtnBoarding,
-                  ]}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    handlePrimaryTripQrPress();
-                  }}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    boardingConfirmed ? 'Yol paylaşımını bitir — yol sonu QR' : 'Biniş QR göster'
-                  }
-                >
-                  <Ionicons name="qr-code" size={20} color={ui.ctaIconFill} />
-                  <PremiumText
-                    variant="caption"
-                    style={[styles.drvBottomQrBtnText, jLt?.qrPrimaryBtnText]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.82}
-                  >
-                    {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş QR Göster'}
-                  </PremiumText>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.drvBottomEndBtn, styles.drvBottomEndBtnFull]}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
-                      if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
-                        return;
-                      }
-                      if (!tagId || String(tagId).trim() === '') {
-                        appAlert(
-                          'İşlem yapılamıyor',
-                          'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
-                          [{ text: 'Tamam' }],
-                          { tone: 'error' },
-                        );
-                        return;
-                      }
-                      const stOpen = String(tagStatus || '').toLowerCase();
-                      if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
-                        appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
-                          tone: 'error',
-                        });
-                        return;
-                      }
-                      setInRideSaferFeStep('choice');
-                      setInRideSaferFeVisible(true);
-                      return;
-                    }
-                    appAlert(
-                      FORCE_END_ALERT_TITLE,
-                      FORCE_END_ALERT_BODY,
-                      [
-                        { text: 'Vazgeç', style: 'cancel' },
-                        {
-                          text: 'Zorla bitir',
-                          style: 'destructive',
-                          onPress: () => onForceEnd?.(),
-                        },
-                      ],
-                      { tone: 'warning', emphasisScrim: true },
-                    );
-                  }}
-                  activeOpacity={0.82}
-                  accessibilityRole="button"
-                  accessibilityLabel="Zorla bitir"
-                >
-                  <Ionicons name="close-circle-outline" size={17} color={ui.errorIcon} />
-                  <PremiumText
-                    variant="caption"
-                    style={styles.drvBottomEndBtnText}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.82}
-                  >
-                    Zorla Bitir
-                  </PremiumText>
-                </TouchableOpacity>
-              </View>
-
-              {boardingConfirmed ? (
-                <PremiumText variant="caption" muted style={styles.drvBottomQrHint} numberOfLines={2}>
-                  Hedefe yaklaştığınızda yol paylaşımını QR ile güvenli şekilde tamamlayabilirsiniz.
-                </PremiumText>
-              ) : null}
-            </GlassSurface>
-          ) : null}
-        </View>
-      </View>
 
       {driverRideUiModern ? (
         <View
@@ -9348,7 +9371,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 6,
     paddingBottom: 4,
-    zIndex: 91,
+    ...Platform.select({
+      ios: { zIndex: 5010 },
+      android: { zIndex: 91 },
+      default: { zIndex: 91 },
+    }),
   },
   navImmersiveBelowCardRow: {
     flexDirection: 'row',
@@ -9495,6 +9522,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.2,
+  },
+  navImmersiveChatBtn: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    elevation: 6,
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    flexShrink: 1,
+    maxWidth: 108,
+  },
+  navImmersiveChatGrad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    minWidth: 88,
+  },
+  navImmersiveChatText: {
+    color: 'rgba(243, 248, 255, 0.94)',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.15,
   },
   driverNavRecenterFabWrap: {
     position: 'absolute',
@@ -11068,10 +11121,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     ...Platform.select({
-      ios: { zIndex: 55 },
+      ios: { zIndex: 5000 },
       android: { zIndex: 30, elevation: 32 },
       default: { zIndex: 30 },
     }),
+  },
+  commPressPressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.97 }],
+  },
+  commPressDisabled: {
+    opacity: 0.72,
   },
   bottomGradient: {
     paddingHorizontal: 16,
