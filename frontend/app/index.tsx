@@ -14,6 +14,7 @@ import * as FileSystem from 'expo-file-system';
 import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
 import { perfLog } from '../utils/perfDiagLog';
+import { logDispatchFunnelClient } from '../lib/offerSeenTelemetry';
 import { navigateToPostAuthLanding } from '../lib/theme/themeChoiceGate';
 import ThemeChoiceScreen from '../components/theme/ThemeChoiceScreen';
 import LiveMapView from '../components/LiveMapView';
@@ -16024,6 +16025,10 @@ function DriverDashboard({
         const tkm = Number(tag.distance_km);
         const tripK = Number.isFinite(tkm) && tkm > 0 ? tkm : null;
         queueMicrotask(() => notifyDriverNewOfferSoundFromRealtimeOffer(tag.id));
+        logDispatchFunnelClient('offer_delivered_client', {
+          tag_id: tag.id,
+          source: 'push',
+        });
         return [...prev, {
           id: tag.id,
           tag_id: tag.id,
@@ -16974,6 +16979,10 @@ function DriverDashboard({
                 visible_request_ids: vis,
               }),
             );
+            logDispatchFunnelClient('offer_delivered_client', {
+              tag_id: data.tag_id,
+              source: 'socket',
+            });
             try {
               perfLog(
                 '[normal_ride_driver_offer_added]',
@@ -18421,6 +18430,10 @@ function DriverDashboard({
             dispatch_protect_tag_id: String(data.tag_id || ''),
           }),
         );
+        logDispatchFunnelClient('offer_delivered_client', {
+          tag_id: data.tag_id,
+          source: 'poll',
+        });
       } catch {
         /* noop */
       }

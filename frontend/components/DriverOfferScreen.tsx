@@ -54,6 +54,7 @@ import {
 import {
   type OfferSeenSource,
   reportDriverOfferSeen,
+  normalizeOfferSeenSource,
 } from '../lib/offerSeenTelemetry';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -1138,13 +1139,32 @@ function RequestCard({
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const seenLayoutReportedRef = useRef(false);
 
-  const handleOfferCardLayout = useCallback(() => {
+  useEffect(() => {
+    seenLayoutReportedRef.current = false;
+  }, [request.tag_id, request.id]);
+
+  const reportSeenIfVisible = useCallback(() => {
     if (seenLayoutReportedRef.current) return;
     seenLayoutReportedRef.current = true;
     const tagId = String(request.tag_id || request.id || '').trim();
     if (!tagId) return;
-    void reportDriverOfferSeen(driverId, tagId, request.ingressSource ?? 'unknown');
+    void reportDriverOfferSeen(
+      driverId,
+      tagId,
+      normalizeOfferSeenSource(request.ingressSource),
+    );
   }, [driverId, request.id, request.tag_id, request.ingressSource]);
+
+  const handleOfferCardLayout = useCallback(() => {
+    reportSeenIfVisible();
+  }, [reportSeenIfVisible]);
+
+  useEffect(() => {
+    const fallbackTimer = setTimeout(() => {
+      reportSeenIfVisible();
+    }, 450);
+    return () => clearTimeout(fallbackTimer);
+  }, [reportSeenIfVisible]);
 
   useEffect(() => {
     Animated.parallel([

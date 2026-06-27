@@ -2123,6 +2123,28 @@ def _offer_delivery_obs_log(event: str, **fields: Any) -> None:
         logger.info("[offer_delivery] event=%s log_error=%s", event, _od_e)
 
 
+def _dispatch_funnel_log(step: str, **fields: Any) -> None:
+    """
+    Sprint 5E-1 — unified dispatch funnel observability (log-only; no dispatch side effects).
+    Query: grep '[dispatch_funnel]' server logs; join tag_id across steps.
+    """
+    try:
+        payload: dict[str, Any] = {
+            "step": step,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+        for key, val in fields.items():
+            if key == "driver_id":
+                payload["driver_id"] = _mask_log_id(val) if val is not None else None
+            elif key == "passenger_id" and val is not None:
+                payload["passenger_id"] = str(val).strip()[:128]
+            else:
+                payload[key] = val
+        logger.info("[dispatch_funnel] %s", json.dumps(payload, ensure_ascii=False, default=str))
+    except Exception as _df_e:
+        logger.info("[dispatch_funnel] step=%s log_error=%s", step, _df_e)
+
+
 # Sürücüye aynı tag teklif FCM: socket register + set-ride-vehicle-kind + reconnect kısa aralıkta aynı push'u tetikleyebilir.
 _offer_push_dedupe_lock = asyncio.Lock()
 _offer_push_last_sent_mono: dict[tuple[str, str], float] = {}
@@ -3299,6 +3321,14 @@ async def _driver_offer_push_fcm_deduped(
                     push_sent=False,
                     dedupe_window_s=OFFER_PUSH_DEDUPE_WINDOW_SEC,
                 )
+                _dispatch_funnel_log(
+                    "push_attempt",
+                    tag_id=str(offer_tag_id).strip(),
+                    driver_id=resolved_driver_id,
+                    delivery_id=delivery_id,
+                    push_deduped=True,
+                    push_sent=False,
+                )
                 return
             _offer_push_last_sent_mono[key] = now
             reserved = True
@@ -3326,6 +3356,14 @@ async def _driver_offer_push_fcm_deduped(
                 tag_id=str(offer_tag_id).strip(),
                 driver_id=resolved_driver_id,
                 push_attempted=True,
+                push_deduped=False,
+                push_sent=True,
+            )
+            _dispatch_funnel_log(
+                "push_attempt",
+                tag_id=str(offer_tag_id).strip(),
+                driver_id=resolved_driver_id,
+                delivery_id=delivery_id,
                 push_deduped=False,
                 push_sent=True,
             )
@@ -3484,6 +3522,19 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> Off
             batch_seq=offer_data.get("batch_seq"),
             wave_reason=offer_data.get("wave_reason"),
             slot_priority=offer_data.get("slot_priority"),
+        )
+        _dispatch_funnel_log(
+            "socket_emit",
+            tag_id=offer_data.get("tag_id"),
+            driver_id=raw,
+            delivery_id=delivery_id,
+            socket_attempted=socket_attempted,
+            socket_sid_count=socket_sid_count,
+            socket_room_member_count=socket_room_member_count,
+            push_scheduled=push_scheduled,
+            batch_seq=offer_data.get("batch_seq"),
+            is_rolling_batch=bool(offer_data.get("is_rolling_batch")),
+            is_broadcast=bool(offer_data.get("is_broadcast")),
         )
         return OfferEmitResult(True, delivery_id)
     except Exception as e:
@@ -5953,6 +6004,14 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
                     timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
                     reason="rolling_batch_no_eligible_redispatch",
                 )
+                _dispatch_funnel_log(
+                    "dispatch_exhausted",
+                    tag_id=str(tag_id),
+                    passenger_id=pid,
+                    batch_seq=_bseq_ex,
+                    reason="rolling_batch_no_eligible_redispatch",
+                    offered_count=len(offered_driver_ids),
+                )
                 await sio.emit(
                     "dispatch_exhausted",
                     {"tag_id": tag_id, "message": "Yakında uygun sürücü kalmadı"},
@@ -6152,6 +6211,17 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         sent_slots=n_queue_ok,
         cycle_reset=cycle_reset_this_wave,
         is_rolling_batch=True,
+    )
+    _dispatch_funnel_log(
+        "wave_emitted",
+        tag_id=str(tag_id),
+        passenger_id=tag_data.get("passenger_id"),
+        batch_seq=bseq,
+        eligible_count=len(eligible),
+        sent_slots=n_queue_ok,
+        wave_reason=wave_reason,
+        cycle_reset=cycle_reset_this_wave,
+        radius_km=float(DISPATCH_RADIUS_KM),
     )
 
     async def _timeout_tick():
@@ -6357,6 +6427,14 @@ async def rolling_dispatch_start(tag_id: str) -> int:
             timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
             reason="zero_eligible",
         )
+        _dispatch_funnel_log(
+            "eligible_count",
+            tag_id=str(tag_id),
+            passenger_id=str(passenger_id) if passenger_id else None,
+            eligible_count=0,
+            radius_km=float(DISPATCH_RADIUS_KM),
+            reason="zero_eligible",
+        )
         return 0
 
     rolling_dispatch_index[tag_id] = {
@@ -6388,6 +6466,14 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         batch_seq=0,
         radius_km=float(DISPATCH_RADIUS_KM),
         timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+        reason="pipeline_ready_first_wave",
+    )
+    _dispatch_funnel_log(
+        "eligible_count",
+        tag_id=str(tag_id),
+        passenger_id=str(passenger_id) if passenger_id else None,
+        eligible_count=len(eligible),
+        radius_km=float(DISPATCH_RADIUS_KM),
         reason="pipeline_ready_first_wave",
     )
     logger.info(
@@ -18152,6 +18238,14 @@ async def driver_offer_seen(
             src,
             sent_to_seen_ms if sent_to_seen_ms is not None else "null",
         )
+        _dispatch_funnel_log(
+            "driver_seen",
+            tag_id=tag_id,
+            driver_id=resolved_id,
+            source=src,
+            sent_to_seen_ms=sent_to_seen_ms,
+            recorded=True,
+        )
         return {
             "success": True,
             "recorded": True,
@@ -23849,6 +23943,13 @@ def _match_accept_log(event: str, **fields: object) -> None:
         body = dict(fields)
         body["event"] = event
         logger.info("%s %s", event, json.dumps(body, default=str, ensure_ascii=False))
+        _funnel_step = {
+            "MATCH_ACCEPT_ATTEMPT": "accept_attempt",
+            "MATCH_ACCEPT_WON": "accept_success",
+            "MATCH_ACCEPT_LOST_ALREADY_TAKEN": "accept_lost_race",
+        }.get(event)
+        if _funnel_step:
+            _dispatch_funnel_log(_funnel_step, **{k: v for k, v in body.items() if k != "event"})
     except Exception:
         logger.info("%s %s", event, fields)
 
@@ -25771,6 +25872,14 @@ async def _create_ride_offer_execute(
                 f"(yolcu araç tercihi={passenger_pref_vehicle}, insert_variant={used_variant})"
             )
             logger.info(f"PASSENGER CREATED TAG {tag_id}")
+            _dispatch_funnel_log(
+                "offer_created",
+                tag_id=str(tag.get("id") or tag_id),
+                passenger_id=str(passenger_id or "") or None,
+                status=str(tag.get("status") or "waiting"),
+                offered_price=payload.offered_price,
+                distance_km=trip_km,
+            )
             if _match_dynamic_radius_shadow_enabled():
                 try:
                     asyncio.create_task(
@@ -25860,6 +25969,13 @@ async def _create_ride_offer_execute(
                         radius_km=float(DISPATCH_RADIUS_KM),
                         timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
                         reason="ride_create_no_drivers_after_rolling_and_broadcast",
+                    )
+                    _dispatch_funnel_log(
+                        "dispatch_exhausted",
+                        tag_id=str(tag_id),
+                        passenger_id=str(passenger_id or "") or None,
+                        reason="ride_create_no_drivers_after_rolling_and_broadcast",
+                        radius_km=float(DISPATCH_RADIUS_KM),
                     )
                     await sio.emit(
                         "dispatch_exhausted",
