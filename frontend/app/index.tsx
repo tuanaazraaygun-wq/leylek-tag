@@ -235,6 +235,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
+import { playJourneyBoardingRemoteAck } from '../lib/journeySonicController';
 import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, playChatInboundSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, resetQuickMatchDriverOpsSoundGate, resetDriverOfferSoundGate, preloadTrustedDirectOpsSound } from '../utils/sound';
 import { offerSoundController } from '../lib/offerSoundController';
 import {
@@ -16154,7 +16155,7 @@ function DriverDashboard({
     if (driverBoardingRemoteAckTagRef.current === key) return;
     driverBoardingRemoteAckTagRef.current = key;
 
-    void playQrScanSuccessSound();
+    void playJourneyBoardingRemoteAck({ tagId: key });
     void tapButtonHaptic();
     setDriverBoardingRemoteSuccess(true);
 

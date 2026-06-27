@@ -17,10 +17,11 @@ import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import {
+  playJourneyBoardingScanSuccess,
   playJourneyQrErrorForApiDetail,
   playJourneyQrNetworkError,
+  playJourneyStartSonic,
 } from '../lib/journeySonicController';
-import { playQrScanSuccessSound } from '../utils/sound';
 import { tapButtonHaptic } from '../utils/touchHaptics';
 import { perfLog } from '../utils/perfDiagLog';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
@@ -213,12 +214,12 @@ export default function BoardingScanModal({
           return;
         }
         if (json.success) {
-          void playQrScanSuccessSound();
-          void tapButtonHaptic();
           const rawTag = (json as { tag_id?: string }).tag_id;
           const propTag = typeof tagId === 'string' ? tagId.trim() : '';
           const tag_id =
             (typeof rawTag === 'string' && rawTag.trim()) || propTag || undefined;
+          void playJourneyBoardingScanSuccess({ tagId: tag_id });
+          void tapButtonHaptic();
           console.log('BOARDING_SCAN_SUCCESS', { tag_id, used_prop_fallback: !rawTag && !!propTag });
           perfLog('QR_VERIFY_SUCCESS', {
             tag_id,
@@ -244,6 +245,7 @@ export default function BoardingScanModal({
             }),
           );
           if (closeModal === true) {
+            void playJourneyStartSonic({ tagId: tag_id });
             onClose();
           } else {
             verifiedClosingRef.current = false;
