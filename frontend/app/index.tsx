@@ -16969,6 +16969,11 @@ function DriverDashboard({
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
+          dispatch_timeout: (() => {
+            const dt = Number((data as { dispatch_timeout?: unknown }).dispatch_timeout);
+            return Number.isFinite(dt) && dt > 0 ? Math.round(dt) : undefined;
+          })(),
+          is_dispatch: !!(data as { is_dispatch?: unknown }).is_dispatch,
           ingressSource: 'socket' as const,
         };
         const nextList = [...filtered, newRow];
@@ -18423,6 +18428,11 @@ function DriverDashboard({
             const s = String(v || '').toLowerCase();
             return s === 'motorcycle' || s === 'motor' ? 'motorcycle' : 'car';
           })(),
+          dispatch_timeout: (() => {
+            const dt = Number(data.dispatch_timeout);
+            return Number.isFinite(dt) && dt > 0 ? Math.round(dt) : undefined;
+          })(),
+          is_dispatch: !!data.is_dispatch,
           ingressSource: 'poll' as const,
         };
         const merged = [...prev, newRow];
@@ -20175,6 +20185,11 @@ function DriverDashboard({
                   .passenger_payment_method,
                 notes: req.notes,
                 created_at: req.created_at,
+                dispatch_timeout: (() => {
+                  const dt = Number((req as { dispatch_timeout?: unknown }).dispatch_timeout);
+                  return Number.isFinite(dt) && dt > 0 ? Math.round(dt) : undefined;
+                })(),
+                is_dispatch: !!(req as { is_dispatch?: unknown }).is_dispatch,
                 ingressSource: (req as { ingressSource?: 'socket' | 'poll' | 'push' | 'requests' | 'unknown' })
                   .ingressSource,
               };

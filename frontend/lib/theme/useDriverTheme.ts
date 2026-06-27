@@ -127,6 +127,11 @@ export type DriverOfferScreenLightSurfaces = {
   reqDismissBtn: ViewStyle;
   reqAcceptBtn: ViewStyle;
   reqAcceptText: TextStyle;
+  reqCountdownPill: ViewStyle;
+  reqCountdownText: TextStyle;
+  reqNewBadge: ViewStyle;
+  reqNewBadgeText: TextStyle;
+  reqDismissText: TextStyle;
 };
 
 const DRIVER_UI_DARK: DriverUiColors = {
@@ -379,6 +384,17 @@ function buildDriverOfferScreenLightSurfaces(tokens: LhThemeTokens): DriverOffer
       borderColor: tokens.accent.glowMid,
     },
     reqAcceptText: { color: tokens.text.inverse },
+    reqCountdownPill: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
+    },
+    reqCountdownText: { color: tokens.accent.primary },
+    reqNewBadge: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
+    },
+    reqNewBadgeText: { color: tokens.accent.primary },
+    reqDismissText: { color: tokens.text.muted },
   };
 }
 

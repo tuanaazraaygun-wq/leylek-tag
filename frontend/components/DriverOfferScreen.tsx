@@ -56,6 +56,15 @@ import {
   reportDriverOfferSeen,
   normalizeOfferSeenSource,
 } from '../lib/offerSeenTelemetry';
+import {
+  computeDriverOfferCountdownRemainingSec,
+  resolveDriverOfferCountdownTotalSec,
+  resolveOfferCountdownTier,
+  DRIVER_OFFER_NEW_EMPHASIS_MS,
+  DRIVER_OFFER_URGENCY_PULSE_MS,
+  DRIVER_OFFER_URGENCY_PULSE_CYCLES,
+  type OfferCountdownTier,
+} from '../lib/driverOfferUrgency';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -1063,6 +1072,9 @@ export interface PassengerRequest {
   offered_price?: number;
   notes?: string;
   created_at?: string;
+  /** Server hint (seconds) — local countdown anchor only; not authoritative revoke time. */
+  dispatch_timeout?: number;
+  is_dispatch?: boolean;
   /** Yolcu talebi: car | motorcycle (socket / dispatch) */
   passenger_vehicle_kind?: 'car' | 'motorcycle';
   /** Yolcu ödeme: nakit | card (UI: kart yakında — iş mantığı değişmez) */
@@ -1119,6 +1131,7 @@ function RequestCard({
   index,
   globalAcceptFrozen,
   setGlobalAcceptFrozen,
+  isFreshOffer = false,
 }: { 
   request: PassengerRequest; 
   driverLocation: { latitude: number; longitude: number } | null;
@@ -1132,16 +1145,67 @@ function RequestCard({
   index: number;
   globalAcceptFrozen: boolean;
   setGlobalAcceptFrozen: (v: boolean) => void;
+  isFreshOffer?: boolean;
 }) {
   const { offerScreenSurfaces: osLt, ui } = useDriverTheme();
   const [accepting, setAccepting] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const urgencyGlowAnim = useRef(new Animated.Value(0)).current;
   const seenLayoutReportedRef = useRef(false);
+  const firstSeenAtRef = useRef(Date.now());
+  const countdownTotalSec = useMemo(
+    () => resolveDriverOfferCountdownTotalSec(request),
+    [request.dispatch_timeout],
+  );
+  const [countdownSec, setCountdownSec] = useState(() =>
+    computeDriverOfferCountdownRemainingSec(firstSeenAtRef.current, countdownTotalSec),
+  );
+  const countdownTier: OfferCountdownTier = resolveOfferCountdownTier(countdownSec);
+  const hasDispatchTimeoutHint =
+    Number.isFinite(Number(request.dispatch_timeout)) && Number(request.dispatch_timeout) > 0;
 
   useEffect(() => {
     seenLayoutReportedRef.current = false;
+    firstSeenAtRef.current = Date.now();
   }, [request.tag_id, request.id]);
+
+  useEffect(() => {
+    const tick = () => {
+      setCountdownSec(
+        computeDriverOfferCountdownRemainingSec(firstSeenAtRef.current, countdownTotalSec),
+      );
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [countdownTotalSec, request.tag_id, request.id]);
+
+  useEffect(() => {
+    if (!isFreshOffer) {
+      urgencyGlowAnim.setValue(0);
+      return;
+    }
+    urgencyGlowAnim.setValue(0);
+    const pulseOnce = Animated.sequence([
+      Animated.timing(urgencyGlowAnim, {
+        toValue: 1,
+        duration: DRIVER_OFFER_URGENCY_PULSE_MS * 0.45,
+        useNativeDriver: false,
+      }),
+      Animated.timing(urgencyGlowAnim, {
+        toValue: 0.22,
+        duration: DRIVER_OFFER_URGENCY_PULSE_MS * 0.55,
+        useNativeDriver: false,
+      }),
+    ]);
+    const loop = Animated.loop(pulseOnce, { iterations: DRIVER_OFFER_URGENCY_PULSE_CYCLES });
+    loop.start();
+    return () => {
+      loop.stop();
+      urgencyGlowAnim.setValue(0);
+    };
+  }, [isFreshOffer, request.tag_id, request.id, urgencyGlowAnim]);
 
   const reportSeenIfVisible = useCallback(() => {
     if (seenLayoutReportedRef.current) return;
@@ -1355,12 +1419,72 @@ function RequestCard({
       ? '—'
       : `${tripDistanceKmText} km`;
 
+  const countdownPillStyle =
+    countdownTier === 'critical'
+      ? styles.reqCountdownPillCritical
+      : countdownTier === 'warn'
+        ? styles.reqCountdownPillWarn
+        : countdownTier === 'expired'
+          ? styles.reqCountdownPillExpired
+          : styles.reqCountdownPillNormal;
+  const countdownTextStyle =
+    countdownTier === 'critical'
+      ? styles.reqCountdownTextCritical
+      : countdownTier === 'warn'
+        ? styles.reqCountdownTextWarn
+        : countdownTier === 'expired'
+          ? styles.reqCountdownTextExpired
+          : styles.reqCountdownTextNormal;
+  const countdownIconColor =
+    countdownTier === 'critical'
+      ? '#FCA5A5'
+      : countdownTier === 'warn'
+        ? '#FCD34D'
+        : countdownTier === 'expired'
+          ? ui.iconMuted
+          : ui.accent;
+  const urgencyBorderColor = urgencyGlowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(34,211,238,0.16)', 'rgba(34,211,238,0.62)'],
+  });
+  const acceptGradientColors = osLt
+    ? (['#0891B2', '#06B6D4'] as const)
+    : (['#0E7490', '#0891B2', '#22D3EE'] as const);
+
   return (
     <Animated.View
       style={[styles.reqCardWrap, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}
       onLayout={handleOfferCardLayout}
     >
+      <Animated.View
+        style={[
+          styles.reqCardUrgencyRing,
+          isFreshOffer ? { borderColor: urgencyBorderColor } : styles.reqCardUrgencyRingIdle,
+        ]}
+      >
       <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.reqCard, osLt?.reqCard]}>
+        <View style={styles.reqUrgencyRow}>
+          <View style={[styles.reqCountdownPill, countdownPillStyle, osLt?.reqCountdownPill]}>
+            <Ionicons name="timer-outline" size={12} color={countdownIconColor} />
+            <PremiumText variant="caption" style={[styles.reqCountdownText, countdownTextStyle, osLt?.reqCountdownText]}>
+              {countdownSec > 0 ? `${countdownSec} sn` : 'Süre doldu'}
+            </PremiumText>
+          </View>
+          {isFreshOffer ? (
+            <View style={[styles.reqNewBadge, osLt?.reqNewBadge]}>
+              <View style={styles.reqNewBadgeDot} />
+              <PremiumText variant="caption" style={[styles.reqNewBadgeText, osLt?.reqNewBadgeText]}>
+                Yeni teklif
+              </PremiumText>
+            </View>
+          ) : null}
+        </View>
+        {!hasDispatchTimeoutHint ? (
+          <PremiumText variant="caption" muted style={styles.reqCountdownHint}>
+            Tahmini yanıt süresi
+          </PremiumText>
+        ) : null}
+
         <View style={styles.reqHeaderRow}>
           <View style={styles.reqPriceBlock}>
             <PremiumText variant="caption" muted style={styles.reqRevenueLabel}>
@@ -1464,17 +1588,17 @@ function RequestCard({
           <TouchableOpacity
             style={[styles.reqDismissBtn, osLt?.reqDismissBtn]}
             onPress={onDismiss}
-            activeOpacity={0.82}
+            activeOpacity={0.72}
             accessibilityRole="button"
             accessibilityLabel="Geç"
           >
-            <PremiumText variant="caption" muted style={styles.reqDismissText}>
+            <PremiumText variant="caption" muted style={[styles.reqDismissText, osLt?.reqDismissText]}>
               Geç
             </PremiumText>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.reqAcceptBtn, osLt?.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
+            style={[styles.reqAcceptBtnOuter, accepting && styles.acceptButtonDisabledOuter]}
             onPress={async () => {
               if (accepting || globalAcceptFrozen) return;
 
@@ -1583,16 +1707,31 @@ function RequestCard({
               accessibilityRole="button"
               accessibilityLabel="Kabul et"
             >
-              {accepting ? (
-                <ActivityIndicator size="small" color={ui.textSoft} />
-              ) : (
-                <PremiumText variant="step" style={[styles.reqAcceptBtnText, osLt?.reqAcceptText]}>
-                  Kabul et
-                </PremiumText>
-              )}
+              <LinearGradient
+                colors={[...acceptGradientColors]}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={[
+                  styles.reqAcceptGradient,
+                  osLt?.reqAcceptBtn,
+                  accepting && styles.acceptButtonDisabled,
+                ]}
+              >
+                {accepting ? (
+                  <ActivityIndicator size="small" color="#F8FAFC" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={18} color="#F8FAFC" />
+                    <PremiumText variant="step" style={[styles.reqAcceptBtnText, osLt?.reqAcceptText]}>
+                      Kabul et
+                    </PremiumText>
+                  </>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
         </View>
       </GlassSurface>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -1725,6 +1864,10 @@ export default function DriverOfferScreen({
   const { offerScreenSurfaces: osLt, ui } = useDriverTheme();
   const isMotor = vehicleKind === 'motorcycle';
   const [globalAcceptFrozen, setGlobalAcceptFrozen] = useState(false);
+  const [freshOfferTagId, setFreshOfferTagId] = useState<string | null>(null);
+  const knownOfferTagIdsRef = useRef<Set<string>>(new Set());
+  const freshOfferClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listHeaderPulse = useRef(new Animated.Value(1)).current;
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapSeekingPins, setMapSeekingPins] = useState<DriverMapSeekingPin[]>([]);
@@ -1852,6 +1995,48 @@ export default function DriverOfferScreen({
     });
     return s;
   }, [visibleRequests]);
+
+  useEffect(() => {
+    if (visibleRequests.length === 0) {
+      knownOfferTagIdsRef.current.clear();
+      setFreshOfferTagId(null);
+      if (freshOfferClearTimerRef.current != null) {
+        clearTimeout(freshOfferClearTimerRef.current);
+        freshOfferClearTimerRef.current = null;
+      }
+      return;
+    }
+    let newTag: string | null = null;
+    for (const req of visibleRequests) {
+      const tid = String(req.tag_id || req.id || '').trim();
+      if (!tid || knownOfferTagIdsRef.current.has(tid)) continue;
+      knownOfferTagIdsRef.current.add(tid);
+      newTag = tid;
+      break;
+    }
+    if (!newTag) return;
+    setFreshOfferTagId(newTag);
+    if (freshOfferClearTimerRef.current != null) {
+      clearTimeout(freshOfferClearTimerRef.current);
+    }
+    freshOfferClearTimerRef.current = setTimeout(() => {
+      setFreshOfferTagId((cur) => (cur === newTag ? null : cur));
+      freshOfferClearTimerRef.current = null;
+    }, DRIVER_OFFER_NEW_EMPHASIS_MS);
+    Animated.sequence([
+      Animated.timing(listHeaderPulse, {
+        toValue: 1.1,
+        duration: 160,
+        useNativeDriver: true,
+      }),
+      Animated.spring(listHeaderPulse, {
+        toValue: 1,
+        friction: 7,
+        tension: 120,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [visibleRequests, listHeaderPulse]);
 
   fieldListedCountRef.current = visibleRequests.length;
 
@@ -2265,11 +2450,18 @@ export default function DriverOfferScreen({
                 Yakın talepler · {resolveFieldRadiusKm(mapHud.radius)} km
               </PremiumText>
               {visibleRequests.length > 0 ? (
-                <View style={[styles.listHeaderCountPill, osLt?.listHeaderCountPill]}>
+                <Animated.View
+                  style={[
+                    styles.listHeaderCountPill,
+                    osLt?.listHeaderCountPill,
+                    freshOfferTagId ? styles.listHeaderCountPillFresh : null,
+                    { transform: [{ scale: listHeaderPulse }] },
+                  ]}
+                >
                   <PremiumText variant="caption" style={[styles.listHeaderCountText, osLt?.listHeaderCountText]}>
                     {visibleRequests.length}
                   </PremiumText>
-                </View>
+                </Animated.View>
               ) : null}
             </View>
           </View>
@@ -2376,7 +2568,9 @@ export default function DriverOfferScreen({
           <FlatList
             data={visibleRequests.slice(0, 20)}
             keyExtractor={(item, index) => item.id || item.request_id || index.toString()}
-            renderItem={({ item, index }) => (
+            renderItem={({ item, index }) => {
+              const tagKey = String(item.tag_id || item.id || '').trim();
+              return (
               <RequestCard
                 request={item}
                 driverLocation={driverLocation}
@@ -2390,8 +2584,9 @@ export default function DriverOfferScreen({
                 index={index}
                 globalAcceptFrozen={globalAcceptFrozen}
                 setGlobalAcceptFrozen={setGlobalAcceptFrozen}
+                isFreshOffer={!!tagKey && freshOfferTagId === tagKey}
               />
-            )}
+            );}}
             contentContainerStyle={[styles.listContent, mapExpanded && styles.listContentMapExpanded]}
             showsVerticalScrollIndicator={false}
           />
@@ -3279,6 +3474,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
+  listHeaderCountPillFresh: {
+    backgroundColor: 'rgba(34,211,238,0.22)',
+    borderColor: 'rgba(34,211,238,0.48)',
+  },
   listHeaderCountText: {
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
@@ -3572,6 +3771,96 @@ const styles = StyleSheet.create({
   reqCardWrap: {
     marginTop: LDS_SPACING.xxs,
   },
+  reqCardUrgencyRing: {
+    borderRadius: LDS_RADIUS.lg + 2,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    padding: 1,
+  },
+  reqCardUrgencyRingIdle: {
+    borderColor: 'transparent',
+    borderWidth: 0,
+    padding: 0,
+  },
+  reqUrgencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
+  },
+  reqCountdownPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 3,
+    paddingHorizontal: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.full,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+  },
+  reqCountdownPillNormal: {
+    backgroundColor: 'rgba(34,211,238,0.1)',
+    borderColor: 'rgba(34,211,238,0.28)',
+  },
+  reqCountdownPillWarn: {
+    backgroundColor: 'rgba(245,158,11,0.14)',
+    borderColor: 'rgba(251,191,36,0.38)',
+  },
+  reqCountdownPillCritical: {
+    backgroundColor: 'rgba(239,68,68,0.14)',
+    borderColor: 'rgba(248,113,113,0.42)',
+  },
+  reqCountdownPillExpired: {
+    backgroundColor: 'rgba(100,116,139,0.12)',
+    borderColor: 'rgba(148,163,184,0.28)',
+  },
+  reqCountdownText: {
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.04,
+    fontSize: 11,
+  },
+  reqCountdownTextNormal: {
+    color: PREMIUM_AUTH_CYAN,
+  },
+  reqCountdownTextWarn: {
+    color: '#FCD34D',
+  },
+  reqCountdownTextCritical: {
+    color: '#FCA5A5',
+  },
+  reqCountdownTextExpired: {
+    color: PREMIUM_TEXT_MUTED,
+  },
+  reqCountdownHint: {
+    marginTop: -2,
+    marginBottom: LDS_SPACING.xxs,
+    fontSize: 9,
+    letterSpacing: 0.06,
+    opacity: 0.72,
+  },
+  reqNewBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 3,
+    paddingHorizontal: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(34,211,238,0.14)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: 'rgba(34,211,238,0.32)',
+  },
+  reqNewBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22D3EE',
+  },
+  reqNewBadgeText: {
+    fontWeight: '700',
+    color: PREMIUM_AUTH_CYAN,
+    fontSize: 10,
+    letterSpacing: 0.08,
+  },
   reqCard: {
     paddingHorizontal: LDS_SPACING.sm,
     paddingTop: LDS_SPACING.sm,
@@ -3731,30 +4020,43 @@ const styles = StyleSheet.create({
     marginTop: LDS_SPACING.sm,
   },
   reqDismissBtn: {
-    flex: 1,
-    minHeight: 44,
-    backgroundColor: 'rgba(8,17,31,0.35)',
+    flex: 0.68,
+    minHeight: 40,
+    backgroundColor: 'transparent',
     borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: LDS_BORDER_WIDTH.hairline,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderColor: 'rgba(148,163,184,0.22)',
   },
   reqDismissText: {
-    fontWeight: '600',
-    letterSpacing: 0.12,
+    fontWeight: '500',
+    letterSpacing: 0.08,
+    opacity: 0.58,
+    fontSize: 12,
   },
-  reqAcceptBtn: {
-    flex: 2,
-    minHeight: 48,
-    backgroundColor: 'rgba(8,145,178,0.88)',
+  reqAcceptBtnOuter: {
+    flex: 3.2,
+    minHeight: 52,
     borderRadius: LDS_RADIUS.md,
+    overflow: 'hidden',
+    ...LDS_ELEVATION.chip,
+  },
+  reqAcceptGradient: {
+    flex: 1,
+    minHeight: 52,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
     borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: 'rgba(34,211,238,0.38)',
-    borderTopColor: 'rgba(34,211,238,0.55)',
-    ...LDS_ELEVATION.chip,
+    borderColor: 'rgba(34,211,238,0.45)',
+    borderTopColor: 'rgba(34,211,238,0.62)',
+  },
+  acceptButtonDisabledOuter: {
+    opacity: 0.72,
   },
   acceptButtonDisabled: {
     backgroundColor: 'rgba(30, 50, 72, 0.85)',
@@ -3764,7 +4066,8 @@ const styles = StyleSheet.create({
   reqAcceptBtnText: {
     fontWeight: '800',
     color: '#F8FAFC',
-    letterSpacing: 0.2,
+    letterSpacing: 0.22,
+    fontSize: 15,
   },
   reqBottomMetaRow: {
     marginTop: LDS_SPACING.sm,
