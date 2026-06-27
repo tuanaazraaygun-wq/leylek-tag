@@ -36,6 +36,9 @@ class OfferSoundController {
   private appStateSubscription: { remove: () => void } | null = null;
   private installed = false;
   private lastDesired: { key: string; kind: OfferSoundKind; visible: boolean } | null = null;
+  /** Sprint 5A-2 — suspend playback while CallScreenV2 is visible. */
+  private suspendedByCallSession = false;
+  private suspendedDesired: { key: string; kind: OfferSoundKind; visible: boolean } | null = null;
 
   private ensureInstalled(): void {
     if (this.installed) return;
@@ -86,12 +89,42 @@ class OfferSoundController {
     }
   }
 
+  /** Pause offer alarm while matched-trip call UI is open; resume restores prior loop. */
+  pauseForCallSession(): void {
+    if (this.suspendedByCallSession) return;
+    this.suspendedByCallSession = true;
+    this.suspendedDesired = this.lastDesired
+      ? { ...this.lastDesired }
+      : { key: '', kind: 'normal', visible: false };
+    this.stopOfferLoop('call_screen');
+  }
+
+  resumeAfterCallSession(): void {
+    if (!this.suspendedByCallSession) return;
+    this.suspendedByCallSession = false;
+    const desired = this.suspendedDesired;
+    this.suspendedDesired = null;
+    if (desired?.visible && desired.key && desired.kind) {
+      this.lastDesired = { key: desired.key, kind: desired.kind, visible: true };
+      void this.startOfferLoopInternal({ key: desired.key, kind: desired.kind });
+    }
+  }
+
   syncOfferLoop(opts: {
     key: string | null;
     kind: OfferSoundKind | null;
     visible: boolean;
   }): void {
     this.ensureInstalled();
+
+    if (this.suspendedByCallSession) {
+      if (opts.visible && opts.key && opts.kind) {
+        this.suspendedDesired = { key: opts.key, kind: opts.kind, visible: true };
+      } else if (!opts.visible) {
+        this.suspendedDesired = { key: '', kind: 'normal', visible: false };
+      }
+      return;
+    }
 
     if (!opts.visible || !opts.key || !opts.kind) {
       this.lastDesired = { key: '', kind: 'normal', visible: false };

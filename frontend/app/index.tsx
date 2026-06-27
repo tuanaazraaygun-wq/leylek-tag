@@ -233,6 +233,14 @@ import {
 import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, resetQuickMatchDriverOpsSoundGate, resetDriverOfferSoundGate, preloadTrustedDirectOpsSound } from '../utils/sound';
 import { offerSoundController } from '../lib/offerSoundController';
 import {
+  cleanupCallSonic,
+  playCallBusyStinger,
+  playCallRejectedStinger,
+  playCallTimeoutStinger,
+  preloadCallSonic,
+  stopAllCallSonic,
+} from '../lib/callSonicController';
+import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
   type LeylekZekaHomeFlowScreen,
@@ -8807,6 +8815,16 @@ function PassengerDashboard({
     passengerOutgoingCallCleanupDoneRef.current = false;
   }, [callScreenData?.callId]);
 
+  useEffect(() => {
+    if (showCallScreen) {
+      offerSoundController.pauseForCallSession();
+      void preloadCallSonic();
+    } else {
+      offerSoundController.resumeAfterCallSession();
+      void cleanupCallSonic();
+    }
+  }, [showCallScreen]);
+
   const runPassengerOutgoingCallRejectCleanup = useCallback(
     (source: 'socket' | 'poll' | 'timeout') => {
       if (passengerOutgoingCallCleanupDoneRef.current) return;
@@ -8837,6 +8855,12 @@ function PassengerDashboard({
         InCallManager.stop();
       } catch {
         /* noop */
+      }
+      void stopAllCallSonic();
+      if (source === 'timeout') {
+        void playCallTimeoutStinger();
+      } else {
+        void playCallRejectedStinger();
       }
       setCallRejected(true);
       void agoraVoiceService.leaveChannelAndDestroy().catch(() => {});
@@ -11570,6 +11594,7 @@ function PassengerDashboard({
       if (!data.success) {
         const detail = String(data.detail ?? '');
         if (detail === 'busy') {
+          void playCallBusyStinger();
           appAlert(
             'Meşgul',
             'Karşı taraf şu an başka bir görüşmede. Lütfen bir süre sonra tekrar deneyin.',
@@ -16118,6 +16143,16 @@ function DriverDashboard({
     driverOutgoingCallCleanupDoneRef.current = false;
   }, [callScreenData?.callId]);
 
+  useEffect(() => {
+    if (showCallScreen) {
+      offerSoundController.pauseForCallSession();
+      void preloadCallSonic();
+    } else {
+      offerSoundController.resumeAfterCallSession();
+      void cleanupCallSonic();
+    }
+  }, [showCallScreen]);
+
   const runDriverOutgoingCallRejectCleanup = useCallback(
     (source: 'socket' | 'poll' | 'timeout') => {
       if (driverOutgoingCallCleanupDoneRef.current) return;
@@ -16148,6 +16183,12 @@ function DriverDashboard({
         InCallManager.stop();
       } catch {
         /* noop */
+      }
+      void stopAllCallSonic();
+      if (source === 'timeout') {
+        void playCallTimeoutStinger();
+      } else {
+        void playCallRejectedStinger();
       }
       setCallRejected(true);
       void agoraVoiceService.leaveChannelAndDestroy().catch(() => {});
@@ -17287,6 +17328,7 @@ function DriverDashboard({
       if (!data.success) {
         const detail = String(data.detail ?? '');
         if (detail === 'busy') {
+          void playCallBusyStinger();
           appAlert(
             'Meşgul',
             'Karşı taraf şu an başka bir görüşmede. Lütfen bir süre sonra tekrar deneyin.',

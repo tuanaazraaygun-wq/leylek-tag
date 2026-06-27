@@ -19,6 +19,18 @@ import { agoraVoiceService } from '../services/agoraVoiceService';
 import { agoraUidFromUserId } from '../lib/agoraUid';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { getPersistedAccessToken } from '../lib/sessionToken';
+import {
+  cleanupCallSonic,
+  playCallConnectedStinger,
+  playCallDisconnectedStinger,
+  playCallEndedStinger,
+  playCallIncomingRingLoop,
+  playCallOfflineStinger,
+  playCallOutgoingRingbackLoop,
+  playCallRejectedStinger,
+  preloadCallSonic,
+  stopAllCallSonic,
+} from '../lib/callSonicController';
 
 const CALLER_OUTBOUND_WAITING_TEXT = 'Çağrınız yapılıyor, lütfen bekleyin.';
 
@@ -143,6 +155,7 @@ export default function CallScreenV2({
   const stopTimersAndRing = useCallback(() => {
     stopCountdown();
     Vibration.cancel();
+    void stopAllCallSonic();
     try {
       InCallManager.stopRingtone();
     } catch {
@@ -222,6 +235,7 @@ export default function CallScreenV2({
         setPhase('active');
         setStatus('Bağlandı');
         stopTimersAndRing();
+        void playCallConnectedStinger();
         try {
           InCallManager.start({ media: 'audio' });
           InCallManager.setForceSpeakerphoneOn(speakerRef.current);
@@ -253,7 +267,7 @@ export default function CallScreenV2({
       } catch {
         /* noop — bazı cihazlarda ringback daha sessiz (kulaklık/ahize) */
       }
-      InCallManager.startRingback('_DEFAULT_');
+      void playCallOutgoingRingbackLoop({ callId });
     } catch {
       /* noop */
     }
@@ -324,6 +338,7 @@ export default function CallScreenV2({
     requestMicPermission,
     skipOutgoingMicPermission,
     stopTimersAndRing,
+    callId,
   ]);
 
   const acceptIncoming = useCallback(async () => {
@@ -409,6 +424,7 @@ export default function CallScreenV2({
   const rejectIncoming = useCallback(() => {
     LOG('Gelen arama red');
     stopTimersAndRing();
+    void playCallRejectedStinger();
     setPhase('ended');
     onReject();
     onClose();
@@ -421,6 +437,7 @@ export default function CallScreenV2({
       remoteTeardownHandledRef.current = true;
       clearRemoteCloseTimer();
       stopTimersAndRing();
+      void playCallEndedStinger();
       await runCleanup();
       setPhase('ended');
       if (reason === 'time_limit') {
@@ -449,6 +466,7 @@ export default function CallScreenV2({
       stopTimersAndRing();
       countdownStartedRef.current = false;
       await runCleanup();
+      void playCallDisconnectedStinger();
       remoteCloseTimerRef.current = setTimeout(() => {
         remoteCloseTimerRef.current = null;
         onClose();
@@ -497,7 +515,9 @@ export default function CallScreenV2({
       callSessionAbortRef.current = true;
       clearRemoteCloseTimer();
       remoteTeardownHandledRef.current = false;
-      void runCleanup();
+      void runCleanup().finally(() => {
+        void cleanupCallSonic();
+      });
       prevSessionKeyRef.current = '';
       return;
     }
@@ -521,6 +541,7 @@ export default function CallScreenV2({
       remoteTeardownHandledRef.current = false;
 
       LOG('CallScreenV2 açıldı', { mode, callId, channelName });
+      void preloadCallSonic();
       setRemoteUid(0);
       setRemainingSec(CALL_MAX_SECONDS);
       countdownStartedRef.current = false;
@@ -549,7 +570,7 @@ export default function CallScreenV2({
             InCallManager.start({ media: 'audio' });
             InCallManager.setForceSpeakerphoneOn(true);
           }
-          InCallManager.startRingtone('_DEFAULT_', [0, 600, 300, 600], 'playback', 60);
+          void playCallIncomingRingLoop({ callId });
           // B4-6 / R-B4-08: Trust-call ring uses an independent looping Vibration pattern.
           // Do NOT wire LSX haptics (playLsxHaptic*, playLsxEvent) into CallScreenV2 — motor
           // collision risk. Future LsxSessionGuard must suspend LSX haptics while call active.
@@ -565,15 +586,18 @@ export default function CallScreenV2({
       cancelled = true;
       pulseAnim.stopAnimation();
       clearRemoteCloseTimer();
-      void runCleanup();
+      void runCleanup().finally(() => {
+        void cleanupCallSonic();
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- startOutgoing/runCleanup dep'e alınmaz
   }, [visible, callId, mode, channelName, pulseAnim, runCleanup, clearRemoteCloseTimer]);
 
-  /** Karşı taraf hattı kabul etti (socket) — arayan: çalma tonu kesilir, yeşil “Bağlandı” */
+  /** Karşı taraf hattı kabul etti (socket) — arayan: LeylekTAG ringback kesilir */
   useEffect(() => {
     if (!callAccepted || mode !== 'caller' || phase !== 'outgoing') return;
     setStatus('Bağlandı');
+    void stopAllCallSonic();
     try {
       InCallManager.stopRingback();
     } catch {
@@ -607,6 +631,7 @@ export default function CallScreenV2({
     setStatus('Kullanıcı çevrimdışı');
     setPhase('ended');
     stopTimersAndRing();
+    void playCallOfflineStinger();
     const t = setTimeout(() => void endWithoutNotify('receiver_offline'), 2000);
     return () => clearTimeout(t);
   }, [endWithoutNotify, mode, receiverOffline, stopTimersAndRing]);
