@@ -776,6 +776,42 @@ export async function playUiTapSound(): Promise<void> {
   }
 }
 
+// ── Call Sonic V2 foundation (5A-1) — placeholder assets; dedicated WAV in 5A-2 ──
+
+/** Loop + stinger volumes — tuned for future CallScreenV2 wiring. */
+export const CALL_SONIC_VOLUMES = {
+  ringback: 0.38,
+  incoming: 0.44,
+  connected: 0.4,
+  declined: 0.32,
+  busy: 0.36,
+  timeout: 0.34,
+  offline: 0.3,
+  ended: 0.3,
+} as const;
+
+/**
+ * Placeholder sources — map to existing bundle WAV until call-*.wav assets ship.
+ * Swap requires in 5A-2 only; controller API stays stable.
+ */
+export const CALL_SONIC_SOURCES = {
+  ringback: require('../assets/sounds/match-chime.wav'),
+  incoming: require('../assets/sounds/leylektag-luxury-tone.wav'),
+  connected: require('../assets/sounds/match-chime.wav'),
+  declined: require('../assets/sounds/feedback-error.wav'),
+  busy: require('../assets/sounds/feedback-error.wav'),
+  timeout: require('../assets/sounds/ui-tap.wav'),
+  offline: require('../assets/sounds/qr-scan-error.wav'),
+  ended: require('../assets/sounds/payment-confirmed.wav'),
+} as const;
+
+export type CallSonicStingerKind = 'connected' | 'declined' | 'busy' | 'timeout' | 'offline' | 'ended';
+
+/** Call waiting loops — UI tones profile (ducking). InCallManager unchanged until 5A-2. */
+export async function loadCallSonicAudioMode(): Promise<void> {
+  await loadSounds();
+}
+
 /** B4-2 — LSX registry sonic dispatch (flags OFF → no-op). */
 export { playLsxSonicEvent } from '../lib/lsx/sonicController';
 

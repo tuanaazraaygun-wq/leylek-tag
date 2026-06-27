@@ -12,6 +12,14 @@ export const SONIC_DEDUPE_MS = {
   paymentConfirmed: 1000,
   feedbackError: 1200,
   uiTap: 70,
+  /** Call Sonic V2 — loop restart guard (5A-1 foundation). */
+  callLoop: 500,
+  callConnected: 3000,
+  callDeclined: 2000,
+  callBusy: 5000,
+  callTimeout: 3000,
+  callOffline: 4000,
+  callEnded: 2000,
 } as const;
 
 export type CooldownGate = {
@@ -68,6 +76,17 @@ export const feedbackErrorCooldownGate = createCooldownGate(SONIC_DEDUPE_MS.feed
 
 /** UI tap micro click — anti double-fire. */
 export const uiTapCooldownGate = createCooldownGate(SONIC_DEDUPE_MS.uiTap);
+
+/** Call Sonic V2 — one-shot stinger cooldowns (5A-1 foundation). */
+export const callConnectedStingerGate = createCooldownGate(SONIC_DEDUPE_MS.callConnected);
+export const callDeclinedStingerGate = createCooldownGate(SONIC_DEDUPE_MS.callDeclined);
+export const callBusyStingerGate = createCooldownGate(SONIC_DEDUPE_MS.callBusy);
+export const callTimeoutStingerGate = createCooldownGate(SONIC_DEDUPE_MS.callTimeout);
+export const callOfflineStingerGate = createCooldownGate(SONIC_DEDUPE_MS.callOffline);
+export const callEndedStingerGate = createCooldownGate(SONIC_DEDUPE_MS.callEnded);
+
+/** Call loop — prevent rapid loop restart on duplicate start calls. */
+export const callLoopRestartGate = createCooldownGate(SONIC_DEDUPE_MS.callLoop);
 
 /** QR scan — cross-kind guard (success vs error share window). */
 export type QrScanKind = 'success' | 'error';
