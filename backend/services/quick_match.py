@@ -7,6 +7,7 @@ No offers, dispatch_queue, socket, or push.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -42,7 +43,7 @@ _REQUEST_SELECT_COLS = (
     "id, status, attempt_count, expires_at, updated_at, matched_tag_id, matched_at, "
     "cancelled_at, exhausted_at, expired_at, distance_km, distance_band, "
     "suggested_contribution_tl, offered_contribution_tl, vehicle_preference, "
-    "pickup_label, dropoff_label, passenger_id"
+    "pickup_label, dropoff_label, passenger_id, created_at"
 )
 
 _REQUEST_ADVANCE_SELECT_COLS = (
@@ -57,7 +58,8 @@ _REQUEST_ACCEPT_SELECT_COLS = (
 )
 
 _INVITE_SELECT_COLS = (
-    "id, request_id, sequence_no, status, expires_at, driver_id, driver_seen_at"
+    "id, request_id, sequence_no, status, expires_at, driver_id, driver_seen_at, "
+    "created_at"
 )
 
 _REQUEST_JOIN_COLS = "id, distance_band, offered_contribution_tl, pickup_label"
@@ -182,6 +184,77 @@ def _norm_actor_id(value: Any) -> str:
 def _short_id(value: Any) -> str:
     s = str(value or "").strip()
     return s[:8] if s else "-"
+
+
+def _qm_funnel_id(value: Any) -> Optional[str]:
+    s = str(value or "").strip()
+    return s[:36] if s else None
+
+
+def _qm_funnel_log(step: str, **fields: Any) -> None:
+    """
+    Sprint 5F-1 — Quick Match funnel observability (log-only; no behavior change).
+    Query: grep '[qm_funnel]' server logs; join request_id across steps.
+    """
+    try:
+        payload: Dict[str, Any] = {"step": step, "ts": _utcnow_iso()}
+        for key, val in fields.items():
+            if key in ("driver_id", "passenger_id", "invite_id", "request_id", "tag_id"):
+                payload[key] = _qm_funnel_id(val)
+            else:
+                payload[key] = val
+        logger.info("[qm_funnel] %s", json.dumps(payload, ensure_ascii=False, default=str))
+    except Exception as exc:
+        logger.info("[qm_funnel] step=%s log_error=%s", step, exc)
+
+
+def _qm_latency_ms(start_at: Any, end_at: Optional[Any] = None) -> Optional[int]:
+    """Milliseconds between two ISO timestamps; None if start is unparseable."""
+    start_dt = _parse_iso(start_at)
+    if start_dt is None:
+        return None
+    if end_at is None:
+        end_dt = _utcnow()
+    else:
+        end_dt = _parse_iso(end_at)
+        if end_dt is None:
+            end_dt = _utcnow()
+    return max(0, int((end_dt - start_dt).total_seconds() * 1000))
+
+
+def _qm_log_invite_expired(invite_row: dict, *, reason: str = "timeout") -> None:
+    _qm_funnel_log(
+        "qm_invite_expired",
+        request_id=invite_row.get("request_id"),
+        invite_id=invite_row.get("id"),
+        driver_id=invite_row.get("driver_id"),
+        sequence_no=invite_row.get("sequence_no"),
+        driver_seen=invite_row.get("driver_seen_at") is not None,
+        reason=reason,
+    )
+
+
+def _qm_log_request_exhausted(
+    request_row: dict,
+    *,
+    reason: str,
+) -> None:
+    _qm_funnel_log(
+        "qm_request_exhausted",
+        request_id=request_row.get("id"),
+        passenger_id=request_row.get("passenger_id"),
+        attempt_count=request_row.get("attempt_count"),
+        reason=reason,
+    )
+
+
+def _qm_log_request_expired(request_row: dict) -> None:
+    _qm_funnel_log(
+        "qm_request_expired",
+        request_id=request_row.get("id"),
+        passenger_id=request_row.get("passenger_id"),
+        attempt_count=request_row.get("attempt_count"),
+    )
 
 
 def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -598,6 +671,7 @@ def _expire_request_if_needed(supabase, request_row: dict) -> bool:
     _cancel_pending_invite_for_request(
         supabase, rid, decline_reason="system_cancelled"
     )
+    _qm_log_request_expired(request_row)
     return True
 
 
@@ -641,6 +715,7 @@ def _expire_pending_invite_if_needed(supabase, invite_row: dict) -> bool:
             invite_row.get("sequence_no"),
             driver_seen_at,
         )
+    _qm_log_invite_expired(invite_row, reason="timeout")
     return True
 
 
@@ -725,6 +800,14 @@ def _mark_driver_seen_if_needed(
         _short_id(invite_row.get("request_id")),
         _short_id(invite_row.get("driver_id")),
         invite_row.get("sequence_no"),
+    )
+    _qm_funnel_log(
+        "qm_invite_seen",
+        request_id=invite_row.get("request_id"),
+        invite_id=iid,
+        driver_id=invite_row.get("driver_id"),
+        sequence_no=invite_row.get("sequence_no"),
+        qm_seen_latency_ms=_qm_latency_ms(invite_row.get("created_at"), now_iso),
     )
 
 
@@ -865,6 +948,16 @@ async def _quick_match_pick_next_driver(
             pickup_eta_min,
             pickup_eta_min,
             max_eta_min,
+        )
+        _qm_funnel_log(
+            "qm_driver_candidate_found",
+            request_id=request_id,
+            driver_id=driver_id,
+            eligible_count=eligible_count,
+            busy_skipped_count=busy_skipped_count,
+            pickup_eta_min=pickup_eta_min,
+            pickup_distance_km=candidate.get("distance_km"),
+            sequence_no=int(request_row.get("attempt_count") or 0) + 1,
         )
         return candidate, "selected"
     if eligible_count > 0 and busy_skipped_count == eligible_count:
@@ -1034,6 +1127,7 @@ async def _advance_quick_match_request(
                 "updated_at": now_iso,
             }
         ).eq("id", rid).eq("status", REQUEST_STATUS_SEQUENCING).execute()
+        _qm_log_request_exhausted(request_row, reason="max_attempts")
         return None
 
     attempted_ids = _quick_match_attempted_driver_ids(supabase, rid)
@@ -1080,6 +1174,7 @@ async def _advance_quick_match_request(
                 "updated_at": now_iso,
             }
         ).eq("id", rid).eq("status", REQUEST_STATUS_SEQUENCING).execute()
+        _qm_log_request_exhausted(request_row, reason="no_candidate")
         return None
 
     sequence_no = attempt_count + 1
@@ -1117,7 +1212,21 @@ async def _advance_quick_match_request(
         }
     ).eq("id", rid).eq("status", REQUEST_STATUS_SEQUENCING).execute()
 
-    return ins.data[0]
+    invite_row = ins.data[0]
+    req_created_at = (full_row or {}).get("created_at")
+    _qm_funnel_log(
+        "qm_invite_created",
+        request_id=rid,
+        invite_id=invite_row.get("id"),
+        driver_id=invite_row.get("driver_id"),
+        sequence_no=sequence_no,
+        qm_delivery_latency_ms=_qm_latency_ms(
+            req_created_at,
+            invite_row.get("created_at"),
+        ),
+    )
+
+    return invite_row
 
 
 async def create_quick_match_request(
@@ -1222,6 +1331,14 @@ async def create_quick_match_request(
         get_quick_match_request_ttl_seconds(),
         get_quick_match_invite_timeout_seconds(),
     )
+    _qm_funnel_log(
+        "qm_request_created",
+        request_id=request_id,
+        passenger_id=actor,
+        distance_km=validated["distance_km"],
+        vehicle_preference=validated.get("vehicle_preference") or "car",
+        offered_contribution_tl=validated["offered_contribution_tl"],
+    )
     invite_row = await _advance_quick_match_request(
         supabase,
         request_id,
@@ -1313,6 +1430,19 @@ async def decline_quick_match_invite(
                 code="invite_not_pending",
             )
         raise QuickMatchNotFoundError("Quick Match daveti bulunamadı")
+
+    declined_row = upd.data[0]
+    declined_status = str(declined_row.get("status") or "").strip().lower()
+    if declined_status == INVITE_STATUS_EXPIRED:
+        _qm_log_invite_expired(invite, reason="decline_on_expired")
+    else:
+        _qm_funnel_log(
+            "qm_invite_decline",
+            request_id=request_id,
+            invite_id=invite_id,
+            driver_id=actor,
+            sequence_no=invite.get("sequence_no"),
+        )
 
     invite_row = await _advance_quick_match_request(
         supabase,
@@ -1469,6 +1599,20 @@ def accept_quick_match_invite(
             invite.get("sequence_no"),
         )
 
+    accept_latency_ms = _qm_latency_ms(invite.get("created_at"), now_iso)
+    seen_latency_ms = _qm_latency_ms(invite.get("created_at"), seen_at) if seen_at else None
+    _qm_funnel_log(
+        "qm_invite_accept",
+        request_id=request_id,
+        invite_id=iid,
+        driver_id=actor,
+        passenger_id=passenger_id,
+        sequence_no=invite.get("sequence_no"),
+        qm_accept_latency_ms=accept_latency_ms,
+        qm_seen_latency_ms=seen_latency_ms,
+        driver_seen=seen_at is not None,
+    )
+
     vehicle_pref = request_row.get("vehicle_preference") or "car"
     tag_row: Dict[str, Any] = {
         "type": TAG_TYPE_NORMAL,
@@ -1558,6 +1702,18 @@ def accept_quick_match_invite(
 
     _supersede_other_pending_invites(
         supabase, request_id, except_invite_id=iid
+    )
+
+    _qm_funnel_log(
+        "qm_match_success",
+        request_id=request_id,
+        invite_id=iid,
+        tag_id=tag_id,
+        driver_id=actor,
+        passenger_id=passenger_id,
+        sequence_no=invite.get("sequence_no"),
+        qm_accept_latency_ms=accept_latency_ms,
+        qm_seen_latency_ms=seen_latency_ms,
     )
 
     return _accept_response(supabase, request_id, accepted_invite, tag_created)
