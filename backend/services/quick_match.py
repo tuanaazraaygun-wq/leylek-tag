@@ -71,6 +71,7 @@ DriverBusyFn = Callable[[str], bool]
 TagsInsertFn = Callable[..., Any]
 BuildSnapshotFn = Callable[[Any, str], Dict[str, Any]]
 DriverProfileLoaderFn = Callable[[Any, str], Dict[str, Any]]
+DeliverQuickMatchInviteFn = Callable[[dict, dict], Awaitable[None]]
 
 
 class QuickMatchValidationError(ValueError):
@@ -837,6 +838,7 @@ async def _maybe_advance_after_invite_expire(
     *,
     find_eligible_drivers_fn: FindEligibleDriversFn,
     driver_busy_fn: DriverBusyFn,
+    deliver_invite_fn: Optional[DeliverQuickMatchInviteFn] = None,
 ) -> None:
     req = _load_request_row_for_advance(supabase, request_id)
     if not req:
@@ -851,6 +853,7 @@ async def _maybe_advance_after_invite_expire(
         request_id,
         find_eligible_drivers_fn=find_eligible_drivers_fn,
         driver_busy_fn=driver_busy_fn,
+        deliver_invite_fn=deliver_invite_fn,
     )
 
 
@@ -860,6 +863,7 @@ async def _maybe_advance_all_busy_retry(
     *,
     find_eligible_drivers_fn: FindEligibleDriversFn,
     driver_busy_fn: DriverBusyFn,
+    deliver_invite_fn: Optional[DeliverQuickMatchInviteFn] = None,
 ) -> None:
     """Re-attempt driver pick after all-busy deferral throttle (passenger poll path)."""
     rid = str(request_id or "").strip()
@@ -893,6 +897,7 @@ async def _maybe_advance_all_busy_retry(
         rid,
         find_eligible_drivers_fn=find_eligible_drivers_fn,
         driver_busy_fn=driver_busy_fn,
+        deliver_invite_fn=deliver_invite_fn,
     )
 
 
@@ -1076,6 +1081,7 @@ async def _advance_quick_match_request(
     *,
     find_eligible_drivers_fn: FindEligibleDriversFn,
     driver_busy_fn: DriverBusyFn,
+    deliver_invite_fn: Optional[DeliverQuickMatchInviteFn] = None,
 ) -> Optional[dict]:
     """Advance sequential invite round. Returns invite row dict or None if exhausted."""
     rid = str(request_id or "").strip()
@@ -1226,6 +1232,17 @@ async def _advance_quick_match_request(
         ),
     )
 
+    if deliver_invite_fn:
+        try:
+            await deliver_invite_fn(invite_row, request_row)
+        except Exception as exc:
+            logger.warning(
+                "quick_match deliver_invite_fn failed request_id=%s invite_id=%s err=%s",
+                _short_id(rid),
+                _short_id(invite_row.get("id")),
+                exc,
+            )
+
     return invite_row
 
 
@@ -1238,6 +1255,7 @@ async def create_quick_match_request(
     passenger_blocking_tag_fn: PassengerBlockingTagFn,
     driver_busy_fn: DriverBusyFn,
     route_trip_metrics_fn: RouteTripMetricsFn,
+    deliver_invite_fn: Optional[DeliverQuickMatchInviteFn] = None,
 ) -> Dict[str, Any]:
     """Create quick match request and run first sequential advance. PII-safe response."""
     actor = _norm_actor_id(actor_id)
@@ -1344,6 +1362,7 @@ async def create_quick_match_request(
         request_id,
         find_eligible_drivers_fn=find_eligible_drivers_fn,
         driver_busy_fn=driver_busy_fn,
+        deliver_invite_fn=deliver_invite_fn,
     )
 
     return _action_response(supabase, request_id, invite_row)
@@ -1356,6 +1375,7 @@ async def decline_quick_match_invite(
     *,
     find_eligible_drivers_fn: FindEligibleDriversFn,
     driver_busy_fn: DriverBusyFn,
+    deliver_invite_fn: Optional[DeliverQuickMatchInviteFn] = None,
 ) -> Dict[str, Any]:
     """Driver declines invite; re-advance if request still sequencing."""
     actor = _norm_actor_id(actor_id)
@@ -1449,6 +1469,7 @@ async def decline_quick_match_invite(
         request_id,
         find_eligible_drivers_fn=find_eligible_drivers_fn,
         driver_busy_fn=driver_busy_fn,
+        deliver_invite_fn=deliver_invite_fn,
     )
     return _action_response(supabase, request_id, invite_row)
 
@@ -1777,6 +1798,7 @@ async def get_quick_match_request_status(
     *,
     find_eligible_drivers_fn: FindEligibleDriversFn,
     driver_busy_fn: DriverBusyFn,
+    deliver_invite_fn: Optional[DeliverQuickMatchInviteFn] = None,
 ) -> Optional[Dict[str, Any]]:
     """Passenger-owned request status (PII-safe). None if not found or not owner."""
     actor = _norm_actor_id(actor_id)
@@ -1809,12 +1831,14 @@ async def get_quick_match_request_status(
                 rid,
                 find_eligible_drivers_fn=find_eligible_drivers_fn,
                 driver_busy_fn=driver_busy_fn,
+                deliver_invite_fn=deliver_invite_fn,
             )
         await _maybe_advance_all_busy_retry(
             supabase,
             rid,
             find_eligible_drivers_fn=find_eligible_drivers_fn,
             driver_busy_fn=driver_busy_fn,
+            deliver_invite_fn=deliver_invite_fn,
         )
         row = _load_request_row(supabase, rid) or row
 
@@ -1828,6 +1852,7 @@ async def get_active_quick_match_request(
     *,
     find_eligible_drivers_fn: FindEligibleDriversFn,
     driver_busy_fn: DriverBusyFn,
+    deliver_invite_fn: Optional[DeliverQuickMatchInviteFn] = None,
 ) -> Optional[Dict[str, Any]]:
     """Active sequencing request for passenger (PII-safe). None if none."""
     actor = _norm_actor_id(actor_id)
@@ -1859,12 +1884,14 @@ async def get_active_quick_match_request(
             rid,
             find_eligible_drivers_fn=find_eligible_drivers_fn,
             driver_busy_fn=driver_busy_fn,
+            deliver_invite_fn=deliver_invite_fn,
         )
     await _maybe_advance_all_busy_retry(
         supabase,
         rid,
         find_eligible_drivers_fn=find_eligible_drivers_fn,
         driver_busy_fn=driver_busy_fn,
+        deliver_invite_fn=deliver_invite_fn,
     )
     row = _load_request_row(supabase, rid)
     if not row or str(row.get("status") or "").strip().lower() != REQUEST_STATUS_SEQUENCING:
@@ -1880,6 +1907,7 @@ async def get_current_quick_match_invite(
     *,
     find_eligible_drivers_fn: FindEligibleDriversFn,
     driver_busy_fn: DriverBusyFn,
+    deliver_invite_fn: Optional[DeliverQuickMatchInviteFn] = None,
 ) -> Optional[Dict[str, Any]]:
     """Current pending_driver invite for driver (PII-safe). None if none."""
     actor = _norm_actor_id(actor_id)
@@ -1913,6 +1941,7 @@ async def get_current_quick_match_invite(
             req_id,
             find_eligible_drivers_fn=find_eligible_drivers_fn,
             driver_busy_fn=driver_busy_fn,
+            deliver_invite_fn=deliver_invite_fn,
         )
         return None
 
@@ -1937,3 +1966,7 @@ async def get_current_quick_match_invite(
         supabase, invite, request_expires_at=request_expires_at
     )
     return _public_invite_payload(invite, req_res.data[0])
+
+
+# Public alias for server-side delivery telemetry (Sprint 5F-2B).
+qm_funnel_log = _qm_funnel_log

@@ -118,6 +118,7 @@ from services.quick_match import (
     get_current_quick_match_invite,
     get_quick_match_max_eta_min,
     get_quick_match_request_status,
+    qm_funnel_log,
 )
 from services.block_safety import BlockedPairError
 from services.match_intent_guard import ActiveMatchIntentError
@@ -1904,6 +1905,14 @@ QM_SUITABILITY_LOGS = os.getenv("QM_SUITABILITY_LOGS", "").strip().lower() in (
     "on",
 )
 
+# Sprint 5F-2B — Quick Match invite socket/push delivery (default off; poll-only when disabled).
+QUICK_MATCH_INVITE_DELIVERY = os.getenv("QUICK_MATCH_INVITE_DELIVERY", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # SCALE-1A-2: SQL bbox on online-driver fetch (default off; Python bbox prefilter unchanged).
 SCALE1A_SQL_BBOX = os.getenv("SCALE1A_SQL_BBOX", "").strip().lower() in (
     "1",
@@ -2152,6 +2161,12 @@ OFFER_PUSH_DEDUPE_WINDOW_SEC = 120.0
 
 _offer_socket_emit_dedupe: dict[str, float] = {}
 OFFER_SOCKET_EMIT_DEDUPE_WINDOW_SEC = OFFER_PUSH_DEDUPE_WINDOW_SEC or 120.0
+
+# Sprint 5F-2B — Quick Match invite delivery dedupe (separate from normal tag offers).
+_qm_invite_delivery_lock = asyncio.Lock()
+_qm_invite_socket_dedupe: dict[tuple[str, str], float] = {}
+_qm_invite_push_dedupe: dict[tuple[str, str], float] = {}
+QM_INVITE_DELIVERY_DEDUPE_SEC = OFFER_PUSH_DEDUPE_WINDOW_SEC or 120.0
 
 
 def _should_emit_offer_socket(driver_id: str, tag_id: str) -> bool:
@@ -14264,6 +14279,213 @@ class QuickMatchCreateRequest(BaseModel):
     vehicle_preference: Optional[str] = None
 
 
+def _quick_match_invite_socket_payload(invite_row: dict, request_row: dict) -> dict:
+    """Minimal socket wake payload — full invite via HTTP poll."""
+    invite_id = str(invite_row.get("id") or "").strip()
+    request_id = str(
+        invite_row.get("request_id") or request_row.get("id") or ""
+    ).strip()
+    return {
+        "invite_id": invite_id,
+        "request_id": request_id,
+        "sequence_no": int(invite_row.get("sequence_no") or 0),
+        "source": "quick_match",
+    }
+
+
+def _quick_match_invite_push_data(invite_row: dict, request_row: dict) -> dict:
+    """FCM data — no tag_id; must not route as normal new_offer."""
+    invite_id = str(invite_row.get("id") or "").strip()
+    request_id = str(
+        invite_row.get("request_id") or request_row.get("id") or ""
+    ).strip()
+    return {
+        "type": "quick_match_invite",
+        "invite_id": invite_id,
+        "request_id": request_id,
+        "source": "quick_match",
+    }
+
+
+async def _qm_invite_delivery_try_reserve(
+    store: dict[tuple[str, str], float],
+    driver_id: str,
+    invite_id: str,
+) -> bool:
+    """Reserve (driver_id, invite_id) for one channel; False if deduped within window."""
+    did = str(driver_id or "").strip().lower()
+    iid = str(invite_id or "").strip()
+    if not did or not iid:
+        return False
+    key = (did, iid)
+    now = time.monotonic()
+    async with _qm_invite_delivery_lock:
+        prev = store.get(key)
+        if prev is not None and (now - prev) < QM_INVITE_DELIVERY_DEDUPE_SEC:
+            return False
+        store[key] = now
+        if len(store) > 3000:
+            cutoff = now - QM_INVITE_DELIVERY_DEDUPE_SEC * 4
+            for k2, ts in list(store.items()):
+                if ts < cutoff:
+                    del store[k2]
+        return True
+
+
+async def _deliver_quick_match_invite_worker(
+    invite_row: dict,
+    request_row: dict,
+) -> None:
+    """Socket + FCM for one new QM invite (async worker; non-blocking advance)."""
+    driver_id = str(invite_row.get("driver_id") or "").strip()
+    invite_id = str(invite_row.get("id") or "").strip()
+    request_id = str(
+        invite_row.get("request_id") or request_row.get("id") or ""
+    ).strip()
+    if not driver_id or not invite_id or not request_id:
+        qm_funnel_log(
+            "qm_delivery_skipped",
+            request_id=request_id or None,
+            invite_id=invite_id or None,
+            driver_id=driver_id or None,
+            reason="missing_ids",
+        )
+        return
+
+    qm_funnel_log(
+        "qm_delivery_attempt",
+        request_id=request_id,
+        invite_id=invite_id,
+        driver_id=driver_id,
+        channel="socket+push",
+    )
+
+    socket_payload = _quick_match_invite_socket_payload(invite_row, request_row)
+    push_data = _quick_match_invite_push_data(invite_row, request_row)
+
+    socket_sent = False
+    push_sent = False
+
+    if await _qm_invite_delivery_try_reserve(_qm_invite_socket_dedupe, driver_id, invite_id):
+        qm_funnel_log(
+            "qm_delivery_attempt",
+            request_id=request_id,
+            invite_id=invite_id,
+            driver_id=driver_id,
+            channel="socket",
+        )
+        try:
+            sock_stats = await emit_socket_event_to_user(
+                driver_id,
+                "quick_match_invite",
+                socket_payload,
+            )
+            sid_count = int((sock_stats or {}).get("sid_count") or 0)
+            room_member_count = int((sock_stats or {}).get("room_member_count") or 0)
+            socket_sent = sid_count > 0 or room_member_count > 0
+            qm_funnel_log(
+                "qm_delivery_socket_emit",
+                request_id=request_id,
+                invite_id=invite_id,
+                driver_id=driver_id,
+                socket_sent=socket_sent,
+                deduped=False,
+                sid_count=sid_count,
+                room_member_count=room_member_count,
+            )
+        except Exception as exc:
+            qm_funnel_log(
+                "qm_delivery_skipped",
+                request_id=request_id,
+                invite_id=invite_id,
+                driver_id=driver_id,
+                channel="socket",
+                reason="error",
+                error=str(exc)[:240],
+            )
+    else:
+        qm_funnel_log(
+            "qm_delivery_skipped",
+            request_id=request_id,
+            invite_id=invite_id,
+            driver_id=driver_id,
+            channel="socket",
+            reason="deduped",
+            deduped=True,
+        )
+
+    if await _qm_invite_delivery_try_reserve(_qm_invite_push_dedupe, driver_id, invite_id):
+        qm_funnel_log(
+            "qm_delivery_attempt",
+            request_id=request_id,
+            invite_id=invite_id,
+            driver_id=driver_id,
+            channel="push",
+        )
+        try:
+            push_sent = await send_trip_push_and_log(
+                driver_id,
+                "quick_match_invite",
+                "Hızlı eşleşme teklifi",
+                "Yakınında yeni bir yolculuk teklifi var.",
+                push_data,
+            )
+            qm_funnel_log(
+                "qm_delivery_push_sent",
+                request_id=request_id,
+                invite_id=invite_id,
+                driver_id=driver_id,
+                push_sent=bool(push_sent),
+                deduped=False,
+            )
+        except Exception as exc:
+            qm_funnel_log(
+                "qm_delivery_skipped",
+                request_id=request_id,
+                invite_id=invite_id,
+                driver_id=driver_id,
+                channel="push",
+                reason="error",
+                error=str(exc)[:240],
+            )
+    else:
+        qm_funnel_log(
+            "qm_delivery_skipped",
+            request_id=request_id,
+            invite_id=invite_id,
+            driver_id=driver_id,
+            channel="push",
+            reason="deduped",
+            deduped=True,
+        )
+
+
+async def _quick_match_deliver_invite_fn(invite_row: dict, request_row: dict) -> None:
+    """Injected into quick_match advance — schedules delivery without blocking."""
+    if not QUICK_MATCH_INVITE_DELIVERY:
+        qm_funnel_log(
+            "qm_delivery_skipped",
+            request_id=invite_row.get("request_id") or request_row.get("id"),
+            invite_id=invite_row.get("id"),
+            driver_id=invite_row.get("driver_id"),
+            reason="flag_off",
+        )
+        return
+    try:
+        asyncio.create_task(
+            _deliver_quick_match_invite_worker(invite_row, request_row or {})
+        )
+    except Exception as exc:
+        qm_funnel_log(
+            "qm_delivery_skipped",
+            request_id=invite_row.get("request_id") or request_row.get("id"),
+            invite_id=invite_row.get("id"),
+            driver_id=invite_row.get("driver_id"),
+            reason="schedule_error",
+            error=str(exc)[:240],
+        )
+
+
 @api_router.post("/quick-match/request")
 async def post_quick_match_request_http(
     body: QuickMatchCreateRequest,
@@ -14280,6 +14502,7 @@ async def post_quick_match_request_http(
             passenger_blocking_tag_fn=_passenger_blocking_tag_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
             route_trip_metrics_fn=_quick_match_route_trip_metrics,
+            deliver_invite_fn=_quick_match_deliver_invite_fn,
         )
         return {"success": True, **result}
     except QuickMatchValidationError as exc:
@@ -14316,6 +14539,7 @@ async def post_quick_match_invite_decline_http(
             invite_id,
             find_eligible_drivers_fn=_find_eligible_drivers_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
+            deliver_invite_fn=_quick_match_deliver_invite_fn,
         )
         return {"success": True, **result}
     except QuickMatchNotFoundError as exc:
@@ -14415,6 +14639,7 @@ async def get_quick_match_request_active_http(
             actor_id,
             find_eligible_drivers_fn=_find_eligible_drivers_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
+            deliver_invite_fn=_quick_match_deliver_invite_fn,
         )
         return {"success": True, "request": request}
     except HTTPException:
@@ -14442,6 +14667,7 @@ async def get_quick_match_request_status_http(
             request_id,
             find_eligible_drivers_fn=_find_eligible_drivers_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
+            deliver_invite_fn=_quick_match_deliver_invite_fn,
         )
         if request is None:
             raise HTTPException(status_code=404, detail="Quick Match isteği bulunamadı")
@@ -14470,6 +14696,7 @@ async def get_quick_match_invite_current_http(
             actor_id,
             find_eligible_drivers_fn=_find_eligible_drivers_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
+            deliver_invite_fn=_quick_match_deliver_invite_fn,
         )
         return {"success": True, "invite": invite}
     except HTTPException:
