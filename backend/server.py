@@ -122,6 +122,11 @@ from services.quick_match import (
 )
 from services.block_safety import BlockedPairError
 from services.match_intent_guard import ActiveMatchIntentError
+from services.dispatch_ranking_shadow import (
+    analyze_dispatch_ranking_shadow,
+    build_dispatch_ranking_shadow_log_payload,
+    dispatch_ranking_shadow_enabled,
+)
 from services.driver_suitability import compute_qm_suitability_score
 from services.match_location_freshness import (
     get_location_max_age_seconds,
@@ -2664,6 +2669,84 @@ def _nm_suitability_score_log(
         logger.warning("[normal_match_suitability] log_error exc=%s", repr(exc))
 
 
+_DISPATCH_RANKING_SHADOW_LOG_TOP_N = 10
+
+
+def _normal_match_dispatch_ranking_shadow_log(
+    *,
+    eligible_drivers: list,
+    driver_by_id: dict,
+    tag_id: Optional[str] = None,
+    radius_km: float,
+    vehicle_filter: bool,
+) -> None:
+    """Sprint 5E-6C — shadow rank telemetry after production sort; ordering unchanged."""
+    if not dispatch_ranking_shadow_enabled():
+        return
+    if not eligible_drivers:
+        return
+    try:
+        max_age_sec = get_location_max_age_seconds()
+        candidates: list[dict] = []
+        for rank, row in enumerate(eligible_drivers, start=1):
+            did = str(row.get("driver_id") or "").strip().lower()
+            drv = driver_by_id.get(did) or {}
+            candidates.append(
+                {
+                    "driver_id": did,
+                    "distance_km": row.get("distance_km"),
+                    "duration_min": row.get("duration_min"),
+                    "rating": row.get("rating"),
+                    "freshness_sec": location_age_seconds(drv),
+                    "vehicle_match": vehicle_filter,
+                    "current_rank": rank,
+                }
+            )
+        analyzed = analyze_dispatch_ranking_shadow(
+            candidates,
+            mode="normal",
+            max_age_sec=max_age_sec,
+            distance_cap_km=float(radius_km),
+        )
+        by_driver = {
+            str(item.get("driver_id") or "").strip().lower(): item for item in analyzed
+        }
+        ts = datetime.now(timezone.utc).isoformat()
+        eligible_count = len(eligible_drivers)
+        for row in eligible_drivers[:_DISPATCH_RANKING_SHADOW_LOG_TOP_N]:
+            did = str(row.get("driver_id") or "").strip().lower()
+            result = by_driver.get(did)
+            if not result:
+                continue
+            payload = dict(
+                result.get("log_payload")
+                or build_dispatch_ranking_shadow_log_payload(
+                    result,
+                    mode="normal",
+                    tag_id=tag_id,
+                    eligible_count=eligible_count,
+                )
+            )
+            if tag_id:
+                payload["tag_id"] = str(tag_id).strip()
+            payload["driver_id"] = _mask_log_id(did)
+            payload["radius_km"] = float(radius_km)
+            payload["vehicle_filter"] = bool(vehicle_filter)
+            payload["ts"] = ts
+            payload["acceptance_score"] = None
+            payload["response_score"] = None
+            payload["fairness_score"] = None
+            logger.info(
+                "[dispatch_ranking_shadow] %s",
+                json.dumps(payload, ensure_ascii=False, default=str),
+            )
+    except Exception as exc:
+        logger.warning(
+            "[dispatch_ranking_shadow] log_error mode=normal exc=%s",
+            repr(exc),
+        )
+
+
 async def find_eligible_drivers(
     pickup_lat: float,
     pickup_lng: float,
@@ -2859,6 +2942,13 @@ async def find_eligible_drivers(
             eligible_drivers=eligible_drivers,
             driver_by_id=driver_by_id,
             tag_id=tag_id,
+        )
+        _normal_match_dispatch_ranking_shadow_log(
+            eligible_drivers=eligible_drivers,
+            driver_by_id=driver_by_id,
+            tag_id=tag_id,
+            radius_km=r_km,
+            vehicle_filter=vehicle_filter,
         )
         logger.info(
             "[MATCH] final_included driver_ids=%s count=%d pickup=(%.5f,%.5f)",
