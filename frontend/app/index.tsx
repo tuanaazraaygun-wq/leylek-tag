@@ -1072,6 +1072,16 @@ function isPreBoardingForceEndImmediate(data?: ForceEndImmediateFlags | null): b
   return !!(data?.immediate || data?.pre_boarding);
 }
 
+/** Biniş QR öncesi iptal — sürücü cockpit’e dönmeli, rol/araç seçimine değil */
+function isPreBoardingCancelledTag(tag: {
+  status?: string;
+  boarding_confirmed_at?: string | null;
+}): boolean {
+  return (
+    String(tag.status || '').trim().toLowerCase() === 'cancelled' && !tag.boarding_confirmed_at
+  );
+}
+
 function isForceEndInformationalPrompt(
   data?: { pre_boarding?: boolean; informational?: boolean; already_completed?: boolean } | null,
 ): boolean {
@@ -8882,7 +8892,7 @@ function PassengerDashboard({
     userId: user?.id,
     activeTag,
     showCallScreen,
-    incomingCallBlocked: !!incomingCallData,
+    incomingCallBlocked: showCallScreen,
     openChatForMatchedTrip: () => setPassengerChatVisible(true),
     boardingCommsClosed: !!activeTag?.boarding_confirmed_at,
   });
@@ -16382,7 +16392,7 @@ function DriverDashboard({
     userId: user?.id,
     activeTag,
     showCallScreen,
-    incomingCallBlocked: !!driverIncomingCallData,
+    incomingCallBlocked: showCallScreen,
     openChatForMatchedTrip: () => setDriverChatVisible(true),
     boardingCommsClosed: !!activeTag?.boarding_confirmed_at,
   });
@@ -16403,6 +16413,8 @@ function DriverDashboard({
   }, [driverClearIncomingCall]);
 
   const driverOutgoingCallCleanupDoneRef = useRef(false);
+  /** Gelen arama UI: yalnızca yeni incomingCallPresentToken ile aç; stale payload tekrar açmasın */
+  const driverLastAutoOpenedIncomingTokenRef = useRef(0);
 
   useEffect(() => {
     driverOutgoingCallCleanupDoneRef.current = false;
@@ -16731,7 +16743,8 @@ function DriverDashboard({
       setShowQRModal(false);
       clearDriverTrustState();
       if (!ratingModalVisibleRef.current) {
-        setScreen('role-select');
+        const preBoardingEnd = isPreBoardingForceEndImmediate(data as ForceEndImmediateFlags);
+        setScreen(preBoardingEnd ? 'dashboard' : 'role-select');
       }
       const enderId = String(
         (data as { ended_by?: string; ender_id?: string }).ended_by ??
@@ -17788,6 +17801,8 @@ function DriverDashboard({
     if (!user?.id || !driverIncomingCallData?.callId || !driverIncomingCallData.channelName) return;
     if (trustVideoSession) return;
     if (String(driverIncomingCallData.callerId) === String(user.id)) return;
+    const presentToken = driverIncomingCallPresentToken;
+    if (presentToken <= driverLastAutoOpenedIncomingTokenRef.current) return;
     if (showCallScreen && callScreenData?.mode === 'caller') return;
     if (
       showCallScreen &&
@@ -17796,6 +17811,7 @@ function DriverDashboard({
     ) {
       return;
     }
+    driverLastAutoOpenedIncomingTokenRef.current = presentToken;
     setCallAccepted(false);
     setCallRejected(false);
     setCallEnded(false);
@@ -18736,11 +18752,12 @@ function DriverDashboard({
             nextStatus: _dt.status,
             cancel_reason: _dt.cancel_reason ?? null,
           });
+          const returnDriverToCockpit = isPreBoardingCancelledTag(_dt);
           perfLog('MATCH_SCREEN_CLEAR', {
             role: 'driver',
             source: 'loadActiveTag_terminal',
             tagId: _dt.id,
-            nextScreen: 'role-select',
+            nextScreen: returnDriverToCockpit ? 'dashboard' : 'role-select',
           });
 
           if (ratingModalVisibleRef.current) {
@@ -18770,16 +18787,23 @@ function DriverDashboard({
           setCancelledAlertShown(true);
           lastCancelledTagId.current = data.tag.id;
           
-          // Rol seçim ekranına yönlendir
-          perfLog('DRIVER_SCREEN_RESET_TO_ROLE_SELECT', {
-            source: 'loadActiveTag_terminal',
-            tag_id: _dt.id,
-            status: _dt.status,
-          });
+          if (returnDriverToCockpit) {
+            perfLog('DRIVER_SCREEN_RESET_TO_COCKPIT', {
+              source: 'loadActiveTag_terminal',
+              tag_id: _dt.id,
+              status: _dt.status,
+            });
+          } else {
+            perfLog('DRIVER_SCREEN_RESET_TO_ROLE_SELECT', {
+              source: 'loadActiveTag_terminal',
+              tag_id: _dt.id,
+              status: _dt.status,
+            });
+          }
           if (data.tag.status === 'completed') {
             onShowTripEndedBanner?.(ROLE_SELECT_JOURNEY_CLOSURE_BANNER);
           }
-          setScreen('role-select');
+          setScreen(returnDriverToCockpit ? 'dashboard' : 'role-select');
           
           // Alert'i sadece bir kez göster
           if (shouldShowAlert) {
