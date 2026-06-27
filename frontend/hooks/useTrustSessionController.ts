@@ -140,6 +140,8 @@ export function useTrustSessionController({
   const activeTagIdRef = useRef<string | null>(null);
   const activeTagRef = useRef(activeTag);
   const outboundTrustIdRef = useRef<string | null>(null);
+  /** Güven isteği gönderildiğinde tag — active-tag geçici null olsa bile requester poll devam eder */
+  const outgoingTrustTagIdRef = useRef<string | null>(null);
   const sendInFlightRef = useRef(false);
   const recoveryInFlightRef = useRef(false);
   const incomingPendingRecoveryInFlightRef = useRef(false);
@@ -194,13 +196,40 @@ export function useTrustSessionController({
   };
 
   useEffect(() => {
-    activeTagIdRef.current = activeTag?.id ? String(activeTag.id) : null;
+    const nextId = activeTag?.id ? String(activeTag.id).trim() : '';
+    const trustLive =
+      trustOutgoingPendingRef.current ||
+      !!trustVideoSessionRef.current ||
+      !!trustRequestModalRef.current;
+    if (!nextId && trustLive && activeTagIdRef.current) {
+      try {
+        console.log(
+          '[TRUST]',
+          JSON.stringify({
+            evt: 'TRUST_ACTIVE_TAG_REF_HELD',
+            held_tag_id: activeTagIdRef.current,
+            role,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      if (activeTag) {
+        activeTagRef.current = activeTag;
+      }
+      return;
+    }
+    activeTagIdRef.current = nextId || null;
     activeTagRef.current = activeTag;
-  }, [activeTag?.id, activeTag]);
+    if (nextId) {
+      outgoingTrustTagIdRef.current = nextId;
+    }
+  }, [activeTag?.id, activeTag, role]);
 
   const clearAllTrustState = useCallback(() => {
     clearTrustTagRetryTimers();
     outboundTrustIdRef.current = null;
+    outgoingTrustTagIdRef.current = null;
     sendInFlightRef.current = false;
     deferredTrustRequestRef.current = null;
     lastAppliedTrustVideoKeyRef.current = '';
@@ -265,10 +294,31 @@ export function useTrustSessionController({
   );
 
   useEffect(() => {
-    if (!activeTag?.id) {
-      clearAllTrustState();
+    if (activeTag?.id) return;
+    const hasLiveTrustUi =
+      trustOutgoingPendingRef.current ||
+      !!trustVideoSessionRef.current ||
+      !!trustRequestModalRef.current ||
+      trustModalLoading;
+    if (hasLiveTrustUi) {
+      try {
+        console.log(
+          '[TRUST]',
+          JSON.stringify({
+            evt: 'TRUST_CLEAR_SKIP_ACTIVE_TAG_NULL',
+            role,
+            trust_outgoing_pending: trustOutgoingPendingRef.current,
+            trust_video_active: !!trustVideoSessionRef.current,
+            trust_modal_active: !!trustRequestModalRef.current,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      return;
     }
-  }, [activeTag?.id, clearAllTrustState]);
+    clearAllTrustState();
+  }, [activeTag?.id, clearAllTrustState, role, trustModalLoading]);
 
   useEffect(() => {
     if (boardingCommsClosed) {
@@ -301,6 +351,46 @@ export function useTrustSessionController({
         : displayFirstName(tagSnap?.driver_name, 'Sürücü');
     },
     [role],
+  );
+
+  /** accepted satırından video shell — requester poll / recovery / socket fallback ortak */
+  const applyAcceptedTrustVideoFromRow = useCallback(
+    (s: TrustActiveSessionRow, source: string): boolean => {
+      const trustId = String(s.id ?? '').trim();
+      const ch = String(s.channel_name ?? '').trim();
+      const tok = String(s.recovery_agora_token ?? s.agora_token ?? '').trim();
+      const peer = String(s.recovery_peer_user_id ?? s.peer_user_id ?? '').trim();
+      if (!trustId || !ch || !tok || !peer) return false;
+      if (showCallScreen || incomingCallBlocked) return false;
+
+      const curVid = trustVideoSessionRef.current;
+      if (curVid) {
+        if (isDuplicateTrustVideoSession(curVid, trustId, ch)) return false;
+        return false;
+      }
+
+      outboundTrustIdRef.current = null;
+      setTrustOutgoingPending(false);
+      setTrustRequestModal(null);
+      setTrustModalLoading(false);
+      return openTrustVideoSession(
+        {
+          trustId,
+          channelName: ch,
+          agoraToken: tok,
+          peerUserId: peer,
+          sessionHardDeadlineAt: trustSessionDeadlineIso(s.session_hard_deadline_at),
+          peerDisplayName: peerDisplayNameForPeerId(peer),
+        },
+        source,
+      );
+    },
+    [
+      showCallScreen,
+      incomingCallBlocked,
+      peerDisplayNameForPeerId,
+      openTrustVideoSession,
+    ],
   );
 
   /** Socket kaçınca / tag geç hydrate: GET /trust/active ile pending + ben target_id isem modal (veya defer). */
@@ -574,44 +664,28 @@ export function useTrustSessionController({
 
   const tryRecoverAcceptedSession = useCallback(async () => {
     const uid = userId?.trim();
-    const tid = activeTagIdRef.current;
+    const tid =
+      activeTagIdRef.current?.trim() || outgoingTrustTagIdRef.current?.trim() || '';
     if (!uid || !tid) return;
     if (trustVideoSessionRef.current) return;
     if (showCallScreen || incomingCallBlocked) return;
     if (recoveryInFlightRef.current) return;
     recoveryInFlightRef.current = true;
     try {
-      const requestedTag = String(tid).trim().toLowerCase();
+      const requestedTag = tid.toLowerCase();
       const r = await getTrustActive(tid);
-      if (activeTagIdRef.current?.trim().toLowerCase() !== requestedTag) return;
+      const curSnap = String(activeTagIdRef.current ?? '').trim().toLowerCase();
+      if (curSnap && curSnap !== requestedTag) return;
       if (!r?.success || !r.session) return;
       const s = r.session as TrustActiveSessionRow;
       if (String(s.status || '') !== 'accepted') return;
       const rowTag = String(s.tag_id ?? '').trim().toLowerCase();
       if (rowTag !== requestedTag) return;
-      const ch = String(s.channel_name ?? '').trim();
-      const recoveryTok = String(s.recovery_agora_token ?? s.agora_token ?? '').trim();
-      if (!ch || !recoveryTok) return;
-      const trustId = String(s.id ?? '').trim();
-      const deadline = trustSessionDeadlineIso(s.session_hard_deadline_at);
-      const peer = String(s.recovery_peer_user_id ?? s.peer_user_id ?? '').trim();
-      if (!trustId || !peer) return;
-
-      openTrustVideoSession(
-        {
-          trustId,
-          channelName: ch,
-          agoraToken: recoveryTok,
-          peerUserId: peer,
-          sessionHardDeadlineAt: deadline,
-          peerDisplayName: peerDisplayNameForPeerId(peer),
-        },
-        'try_recover_accepted_session',
-      );
+      applyAcceptedTrustVideoFromRow(s, 'try_recover_accepted_session');
     } finally {
       recoveryInFlightRef.current = false;
     }
-  }, [userId, showCallScreen, incomingCallBlocked, peerDisplayNameForPeerId, openTrustVideoSession]);
+  }, [userId, showCallScreen, incomingCallBlocked, applyAcceptedTrustVideoFromRow]);
 
   /**
    * Socket trust_session_ready tag eşleşmediğinde veya event kaçtığında: event'teki tag_id ile GET /trust/active.
@@ -644,55 +718,14 @@ export function useTrustSessionController({
         if (String(s.status || '') !== 'accepted') return;
         const rowTag = String(s.tag_id ?? '').trim().toLowerCase();
         if (rowTag !== tid) return;
-        const ch = String(s.channel_name ?? '').trim();
-        const recoveryTok = String(s.recovery_agora_token ?? s.agora_token ?? '').trim();
-        if (!ch || !recoveryTok) return;
-        const trustId = String(s.id ?? '').trim();
-        const deadline = trustSessionDeadlineIso(s.session_hard_deadline_at);
-        const peer = String(s.recovery_peer_user_id ?? s.peer_user_id ?? '').trim();
-        if (!trustId || !peer) return;
-
-        const curVid = trustVideoSessionRef.current;
-        if (curVid && isDuplicateTrustVideoSession(curVid, trustId, ch)) {
-          try {
-            console.log(
-              '[TRUST]',
-              JSON.stringify({
-                evt: 'TRUST_VIDEO_SESSION_DUPLICATE_SKIP',
-                source: reason,
-                trust_id: trustId,
-                channel_name: ch,
-              }),
-            );
-          } catch {
-            /* noop */
-          }
-          return;
-        }
-        if (curVid) return;
-
-        outboundTrustIdRef.current = null;
-        setTrustOutgoingPending(false);
-        setTrustRequestModal(null);
-        setTrustModalLoading(false);
-        const opened = openTrustVideoSession(
-          {
-            trustId,
-            channelName: ch,
-            agoraToken: recoveryTok,
-            peerUserId: peer,
-            sessionHardDeadlineAt: deadline,
-            peerDisplayName: peerDisplayNameForPeerId(peer),
-          },
-          reason,
-        );
+        const opened = applyAcceptedTrustVideoFromRow(s, reason);
         if (opened) {
           console.log(
             '[TRUST]',
             JSON.stringify({
               evt: 'TRUST_READY_RECOVERY_APPLIED',
               reason,
-              trust_id: trustId,
+              trust_id: String(s.id ?? ''),
               tag_id: tid,
             }),
           );
@@ -701,7 +734,7 @@ export function useTrustSessionController({
         recoveryInFlightRef.current = false;
       }
     },
-    [userId, showCallScreen, incomingCallBlocked, peerDisplayNameForPeerId, role, openTrustVideoSession],
+    [userId, showCallScreen, incomingCallBlocked, role, applyAcceptedTrustVideoFromRow],
   );
 
   useEffect(() => {
@@ -755,7 +788,10 @@ export function useTrustSessionController({
   useEffect(() => {
     if (!trustOutgoingPending) return;
     const uid = userId?.trim();
-    const tid = activeTag?.id ? String(activeTag.id).trim() : '';
+    const tid =
+      (activeTag?.id ? String(activeTag.id).trim() : '') ||
+      outgoingTrustTagIdRef.current?.trim() ||
+      '';
     if (!uid || !tid) return;
 
     let cancelled = false;
@@ -821,7 +857,24 @@ export function useTrustSessionController({
 
         const st = String(s.status ?? '').trim().toLowerCase();
         if (st === 'accepted') {
-          await recoverTrustVideoByTagIdRef.current(tid, 'requester_outgoing_poll');
+          const opened = applyAcceptedTrustVideoFromRow(s, 'requester_outgoing_poll');
+          if (opened) {
+            try {
+              console.log(
+                '[TRUST]',
+                JSON.stringify({
+                  evt: 'TRUST_REQUESTER_POLL_OPENED',
+                  tag_id: tid,
+                  role,
+                  trust_id: String(s.id ?? ''),
+                }),
+              );
+            } catch {
+              /* noop */
+            }
+          } else {
+            await recoverTrustVideoByTagIdRef.current(tid, 'requester_outgoing_poll_fallback');
+          }
           return;
         }
         if (st === 'pending') return;
@@ -862,7 +915,12 @@ export function useTrustSessionController({
       cancelled = true;
       clearInterval(id);
     };
-  }, [trustOutgoingPending, activeTag?.id, userId, role]);
+  }, [trustOutgoingPending, activeTag?.id, userId, role, applyAcceptedTrustVideoFromRow]);
+
+  useEffect(() => {
+    if (!trustOutgoingPending) return;
+    void tryRecoverAcceptedSession();
+  }, [trustOutgoingPending, tryRecoverAcceptedSession]);
 
   /**
    * Güven görüşmesi açıkken: socket `trust_session_ended` kaçsa bile sunucudaki aktif oturumu periyodik doğrular.
@@ -997,6 +1055,7 @@ export function useTrustSessionController({
     }
     sendInFlightRef.current = true;
     setTrustOutgoingPending(true);
+    outgoingTrustTagIdRef.current = tagId;
     try {
       const res = await postTrustRequest(tagId);
       if (!res?.success) {
@@ -1366,8 +1425,31 @@ export function useTrustSessionController({
           role,
           data_tag_id: tid || null,
           activeTagIdRef: cur || null,
+          trust_outgoing_pending: trustOutgoingPendingRef.current,
         }),
       );
+      if (trustOutgoingPendingRef.current && ch && tok) {
+        const incomingTrustId = String(data.trust_id ?? '').trim();
+        const peer = String(data.peer_user_id ?? '').trim();
+        if (incomingTrustId && peer) {
+          outboundTrustIdRef.current = null;
+          setTrustOutgoingPending(false);
+          setTrustRequestModal(null);
+          setTrustModalLoading(false);
+          openTrustVideoSession(
+            {
+              trustId: incomingTrustId,
+              channelName: ch,
+              agoraToken: tok,
+              peerUserId: peer,
+              sessionHardDeadlineAt: trustSessionDeadlineIso(data.session_hard_deadline_at),
+              peerDisplayName: peerDisplayNameForPeerId(peer),
+            },
+            'trust_ready_socket_requester_outgoing',
+          );
+          return;
+        }
+      }
       const fallbackTag = tid || cur;
       if (fallbackTag) {
         void recoverTrustVideoByTagId(fallbackTag, 'trust_ready_socket_tag_exhausted');
