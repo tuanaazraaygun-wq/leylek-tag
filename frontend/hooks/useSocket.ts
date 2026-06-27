@@ -223,6 +223,13 @@ interface UseSocketProps {
     actor_user_id?: string;
     updated_at?: string;
   }) => void;
+  /** Sprint 5F-2B — Quick Match invite wake; poll remains SSOT for invite payload */
+  onQuickMatchInvite?: (data: {
+    invite_id?: string;
+    request_id?: string;
+    sequence_no?: number;
+    source?: string;
+  }) => void;
 }
 
 export default function useSocket({
@@ -267,6 +274,7 @@ export default function useSocket({
   onTrustSessionEnded,
   onTrustedInviteReceived,
   onTrustedInviteUpdated,
+  onQuickMatchInvite,
 }: UseSocketProps) {
   
   // ════════════════════════════════════════════════════════════════════
@@ -306,7 +314,7 @@ export default function useSocket({
     onPassengerDestinationNavHint,
     onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
     onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
-    onTrustedInviteReceived, onTrustedInviteUpdated,
+    onTrustedInviteReceived, onTrustedInviteUpdated, onQuickMatchInvite,
   });
   
   // Callback'leri güncelle
@@ -320,7 +328,7 @@ export default function useSocket({
       onPassengerDestinationNavHint,
       onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
       onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
-      onTrustedInviteReceived, onTrustedInviteUpdated,
+      onTrustedInviteReceived, onTrustedInviteUpdated, onQuickMatchInvite,
     };
   });
 
@@ -653,6 +661,11 @@ export default function useSocket({
       callbackRefs.current.onPassengerDestinationNavHint?.(data);
     };
 
+    const handleQuickMatchInvite = (data: any) => {
+      perfLog('⚡ [useSocket] quick_match_invite:', data);
+      callbackRefs.current.onQuickMatchInvite?.(data);
+    };
+
     // Event listener'ları ekle
     socket.on('incoming_call', handleIncomingCall);
     socket.on('call_accepted', handleCallAccepted);
@@ -715,6 +728,7 @@ export default function useSocket({
     socket.on('trust_session_ended', handleTrustSessionEnded);
     socket.on('trusted_invite_received', handleTrustedInviteReceived);
     socket.on('trusted_invite_updated', handleTrustedInviteUpdated);
+    socket.on('quick_match_invite', handleQuickMatchInvite);
 
     // Cleanup - listener'ları kaldır
     return () => {
@@ -776,6 +790,7 @@ export default function useSocket({
       socket.off('trust_session_ended', handleTrustSessionEnded);
       socket.off('trusted_invite_received', handleTrustedInviteReceived);
       socket.off('trusted_invite_updated', handleTrustedInviteUpdated);
+      socket.off('quick_match_invite', handleQuickMatchInvite);
     };
   }, [socket, userRole]);
 

@@ -15967,6 +15967,30 @@ function DriverDashboard({
   } = useNotifications();
   const lastOfferPushNotificationIdRef = useRef<string | null>(null);
   const lastTdmPushNotificationIdRef = useRef<string | null>(null);
+  const lastQmPushNotificationIdRef = useRef<string | null>(null);
+  const quickMatchDriverEnabledRef = useRef(false);
+  const quickMatchDriverRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const qmInviteDeliveryRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleQmDriverInviteRefresh = useCallback(
+    (source: string, inviteId?: string) => {
+      if (!quickMatchDriverEnabledRef.current) {
+        return;
+      }
+      if (qmInviteDeliveryRefreshTimerRef.current != null) {
+        clearTimeout(qmInviteDeliveryRefreshTimerRef.current);
+      }
+      qmInviteDeliveryRefreshTimerRef.current = setTimeout(() => {
+        qmInviteDeliveryRefreshTimerRef.current = null;
+        void quickMatchDriverRefreshRef.current?.();
+        perfLog('QM_INVITE_DELIVERY_REFRESH', {
+          source,
+          invite_id: inviteId?.trim() || null,
+        });
+      }, DRIVER_OFFER_RECONNECT_DEBOUNCE_MS);
+    },
+    [],
+  );
 
   const fetchAndAppendOfferFromTagId = useCallback(async (tagId: string): Promise<boolean> => {
     if (forceEndLockRef.current) {
@@ -17377,6 +17401,10 @@ function DriverDashboard({
     ...driverTrustSocketHandlers,
     onTrustedInviteReceived: handleDriverTrustedInviteSocketEvent,
     onTrustedInviteUpdated: handleDriverTrustedInviteSocketEvent,
+    onQuickMatchInvite: (data) => {
+      const inviteId = String(data?.invite_id || '').trim();
+      scheduleQmDriverInviteRefresh('socket', inviteId || undefined);
+    },
   });
 
   useEffect(() => {
@@ -18853,6 +18881,23 @@ function DriverDashboard({
     onMatched: handleQuickMatchDriverMatched,
   });
 
+  useEffect(() => {
+    quickMatchDriverEnabledRef.current = quickMatchDriverEnabled;
+  }, [quickMatchDriverEnabled]);
+
+  useEffect(() => {
+    quickMatchDriverRefreshRef.current = quickMatchDriverSession.refresh;
+  }, [quickMatchDriverSession.refresh]);
+
+  useEffect(() => {
+    return () => {
+      if (qmInviteDeliveryRefreshTimerRef.current != null) {
+        clearTimeout(qmInviteDeliveryRefreshTimerRef.current);
+        qmInviteDeliveryRefreshTimerRef.current = null;
+      }
+    };
+  }, []);
+
   /** QM ops ses — restore/resume’da bekleyen davet sessiz; yeni invite_id çalar */
   const quickMatchOpsRestoreFinishedRef = useRef(false);
   const quickMatchOpsResumeBaselineInviteIdRef = useRef<string | null>(null);
@@ -18929,6 +18974,45 @@ function DriverDashboard({
     trustedDirectDriverSession.isRestoring,
     trustedDirectDriverSession.status,
     trustedDirectDriverSession.invite?.id,
+  ]);
+
+  // 🔔 QM invite push — tap (quick_match_invite; normal new_offer/tag_id akışına girmez)
+  useEffect(() => {
+    const data = lastTappedNotificationData as Record<string, unknown> | null | undefined;
+    if (!data) return;
+    if (String(data.type || '').trim().toLowerCase() !== 'quick_match_invite') return;
+    clearLastTappedNotification();
+    setScreen('dashboard');
+    if (quickMatchDriverEnabled) {
+      const inviteId = String(data.invite_id || '').trim();
+      scheduleQmDriverInviteRefresh('push_tap', inviteId || undefined);
+    }
+  }, [
+    lastTappedNotificationData,
+    clearLastTappedNotification,
+    quickMatchDriverEnabled,
+    scheduleQmDriverInviteRefresh,
+    setScreen,
+  ]);
+
+  // 🔔 QM invite push — foreground (tıklamadan refresh; ses modal pending ile gelir)
+  useEffect(() => {
+    const n = driverForegroundOfferNotification;
+    if (!n?.request) return;
+    const raw = n.request.content?.data as Record<string, unknown> | undefined;
+    if (!raw) return;
+    if (String(raw.type || '').trim().toLowerCase() !== 'quick_match_invite') return;
+    const nid = n.request.identifier;
+    if (lastQmPushNotificationIdRef.current === nid) return;
+    lastQmPushNotificationIdRef.current = nid;
+    if (quickMatchDriverEnabled) {
+      const inviteId = String(raw.invite_id || '').trim();
+      scheduleQmDriverInviteRefresh('push_foreground', inviteId || undefined);
+    }
+  }, [
+    driverForegroundOfferNotification,
+    quickMatchDriverEnabled,
+    scheduleQmDriverInviteRefresh,
   ]);
 
   // 🔔 TDM invite push — tap (trusted_direct_invite; normal new_offer/tag_id akışına girmez)

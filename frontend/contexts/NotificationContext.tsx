@@ -114,6 +114,9 @@ function routingTapDedupeKey(normalized: Record<string, unknown>): string {
   if (typeLo === 'trusted_direct_invite') {
     return `${typeLo}:${String(normalized.invite_id || '').trim()}`;
   }
+  if (typeLo === 'quick_match_invite') {
+    return `${typeLo}:${String(normalized.invite_id || '').trim()}`;
+  }
   return `${typeLo}:${String(
     normalized.tag_id || normalized.conversation_id || normalized.session_id || '',
   ).trim()}`;
