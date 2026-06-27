@@ -173,6 +173,10 @@ import {
   resolveDriverLoadDataPollMs,
   resolveQmTdmIdleRefreshMs,
   shouldSkipIdleDriverOfferPolls,
+  shouldRunDriverOfferSafetyPoll,
+  DRIVER_OFFER_SAFETY_POLL_MS,
+  DRIVER_OFFER_RECONNECT_DEBOUNCE_MS,
+  DRIVER_OFFER_RECOVERY_MIN_INTERVAL_MS,
   logPollGateSkip,
   logPollGateForceRefresh,
   type RealtimeHealthSnapshot,
@@ -15872,6 +15876,11 @@ function DriverDashboard({
   }, [stopDriverOfferAlarmLoop]);
 
   const driverDataPollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const driverOfferSafetyPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const driverOfferRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const driverOfferLastRecoveryAtRef = useRef(0);
+  const driverSocketRegisteredPrevRef = useRef(false);
+  const loadDispatchPendingOfferRef = useRef<() => Promise<void>>(async () => {});
   const driverCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
@@ -18445,6 +18454,80 @@ function DriverDashboard({
       console.warn('dispatch-pending-offer:', e);
     }
   };
+  loadDispatchPendingOfferRef.current = loadDispatchPendingOffer;
+
+  const scheduleDriverPendingOfferRecovery = useCallback(
+    (reason: string) => {
+      if (forceEndLockRef.current || !user?.id) return;
+      const now = Date.now();
+      if (now - driverOfferLastRecoveryAtRef.current < DRIVER_OFFER_RECOVERY_MIN_INTERVAL_MS) {
+        perfLog('DRIVER_OFFER_RECOVERY_THROTTLED', {
+          reason,
+          min_interval_ms: DRIVER_OFFER_RECOVERY_MIN_INTERVAL_MS,
+        });
+        return;
+      }
+      if (driverOfferRecoveryTimerRef.current != null) {
+        clearTimeout(driverOfferRecoveryTimerRef.current);
+      }
+      driverOfferRecoveryTimerRef.current = setTimeout(() => {
+        driverOfferRecoveryTimerRef.current = null;
+        driverOfferLastRecoveryAtRef.current = Date.now();
+        logPollGateForceRefresh('driver_dispatch_pending', reason);
+        loadDispatchPendingOfferRef.current().catch((e) =>
+          perfLog('loadDispatchPendingOffer recovery error:', e),
+        );
+      }, DRIVER_OFFER_RECONNECT_DEBOUNCE_MS);
+    },
+    [user?.id],
+  );
+
+  useEffect(() => {
+    const wasRegistered = driverSocketRegisteredPrevRef.current;
+    driverSocketRegisteredPrevRef.current = driverSocketRegistered;
+    if (!user?.id || !driverSocketRegistered || wasRegistered) return;
+    scheduleDriverPendingOfferRecovery('socket_registered');
+  }, [driverSocketRegistered, user?.id, scheduleDriverPendingOfferRecovery]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const tick = () => {
+      if (forceEndLockRef.current) return;
+      const st = String(activeTag?.status || '').toLowerCase();
+      const busy =
+        !!activeTag &&
+        (st === 'matched' || st === 'in_progress' || st === 'driver_on_the_way');
+      if (busy) return;
+      const health: RealtimeHealthSnapshot = {
+        isConnected: driverSocketConnected,
+        isRegistered: driverSocketRegistered,
+      };
+      if (!shouldRunDriverOfferSafetyPoll(health)) return;
+      logPollGateForceRefresh('driver_dispatch_pending', 'safety_poll');
+      loadDispatchPendingOfferRef.current().catch((e) =>
+        perfLog('loadDispatchPendingOffer safety poll error:', e),
+      );
+    };
+    const interval = setInterval(tick, DRIVER_OFFER_SAFETY_POLL_MS);
+    driverOfferSafetyPollIntervalRef.current = interval;
+    perfLog('DRIVER_OFFER_SAFETY_POLL_START', {
+      interval_ms: DRIVER_OFFER_SAFETY_POLL_MS,
+    });
+    return () => {
+      clearInterval(interval);
+      driverOfferSafetyPollIntervalRef.current = null;
+      if (driverOfferRecoveryTimerRef.current != null) {
+        clearTimeout(driverOfferRecoveryTimerRef.current);
+        driverOfferRecoveryTimerRef.current = null;
+      }
+    };
+  }, [
+    user?.id,
+    driverSocketConnected,
+    driverSocketRegistered,
+    activeTag?.id,
+    activeTag?.status,
+  ]);
 
   const loadActiveTag = async (): Promise<Record<string, unknown> | null> => {
     if (forceEndLockRef.current) {

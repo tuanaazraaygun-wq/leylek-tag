@@ -10,6 +10,15 @@ export const REALTIME_STALE_MS = 45_000;
 export const DRIVER_POLL_BASE_MS = 2500;
 export const DRIVER_POLL_HEALTHY_MS = 10_000;
 
+/** Sprint 5E-2 — lightweight dispatch-pending check while socket healthy (idle driver). */
+export const DRIVER_OFFER_SAFETY_POLL_MS = 12_000;
+
+/** Sprint 5E-2 — debounce reconnect/register recovery bursts. */
+export const DRIVER_OFFER_RECONNECT_DEBOUNCE_MS = 800;
+
+/** Sprint 5E-2 — minimum gap between recovery fetches (connect + register). */
+export const DRIVER_OFFER_RECOVERY_MIN_INTERVAL_MS = 3000;
+
 export const PASSENGER_POLL_HEALTHY_TRIP_MS = 8000;
 export const PASSENGER_POLL_HEALTHY_IDLE_MS = 12_000;
 
@@ -112,8 +121,17 @@ export function resolveQmTdmIdleRefreshMs(snapshot: RealtimeHealthSnapshot): num
 }
 
 /**
- * When socket is healthy, skip idle driver offer polls (dispatch-pending + requests).
+ * Sprint 5E-2 — lightweight dispatch-pending safety poll while socket is healthy.
+ * Heavy driver/requests poll remains gated by shouldSkipIdleDriverOfferPolls.
+ */
+export function shouldRunDriverOfferSafetyPoll(snapshot: RealtimeHealthSnapshot): boolean {
+  return isRealtimeHealthy(snapshot);
+}
+
+/**
+ * When socket is healthy, skip heavy idle driver offer polls (dispatch-pending + requests).
  * Active-tag poll still runs on the outer loadData tick (at slower interval).
+ * Sprint 5E-2: dispatch-pending is also covered by shouldRunDriverOfferSafetyPoll interval.
  */
 export function shouldSkipIdleDriverOfferPolls(
   snapshot: RealtimeHealthSnapshot,
