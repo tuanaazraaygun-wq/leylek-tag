@@ -263,7 +263,6 @@ export default function ChatBubble({
   const userIdRef = useRef(userId);
   const scrollToBottomRef = useRef(scrollToBottom);
 
-  const scrollToBottomRef = useRef(scrollToBottom);
   const onInboundFromOtherRef = useRef(onInboundFromOther);
 
   useEffect(() => {
