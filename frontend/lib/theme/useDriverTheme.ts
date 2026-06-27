@@ -132,6 +132,11 @@ export type DriverOfferScreenLightSurfaces = {
   reqNewBadge: ViewStyle;
   reqNewBadgeText: TextStyle;
   reqDismissText: TextStyle;
+  reqCardWrapExpired: ViewStyle;
+  reqCardExpired: ViewStyle;
+  reqAcceptBtnOuterExpired: ViewStyle;
+  reqAcceptBtnExpired: ViewStyle;
+  reqAcceptTextExpired: TextStyle;
 };
 
 const DRIVER_UI_DARK: DriverUiColors = {
@@ -395,6 +400,14 @@ function buildDriverOfferScreenLightSurfaces(tokens: LhThemeTokens): DriverOffer
     },
     reqNewBadgeText: { color: tokens.accent.primary },
     reqDismissText: { color: tokens.text.muted },
+    reqCardWrapExpired: { opacity: 0.62 },
+    reqCardExpired: { backgroundColor: tokens.bg.glass },
+    reqAcceptBtnOuterExpired: { opacity: 0.88 },
+    reqAcceptBtnExpired: {
+      backgroundColor: tokens.text.muted,
+      borderColor: tokens.border.default,
+    },
+    reqAcceptTextExpired: { color: tokens.text.inverse, opacity: 0.82 },
   };
 }
 

@@ -37,3 +37,57 @@ export function resolveOfferCountdownTier(remainingSec: number): OfferCountdownT
 export function isDriverOfferFresh(firstSeenAtMs: number, nowMs: number = Date.now()): boolean {
   return nowMs - firstSeenAtMs < DRIVER_OFFER_NEW_EMPHASIS_MS;
 }
+
+export function isDriverOfferExpired(
+  request: { dispatch_timeout?: number | null },
+  firstSeenAtMs: number,
+  nowMs: number = Date.now(),
+): boolean {
+  const totalSec = resolveDriverOfferCountdownTotalSec(request);
+  return computeDriverOfferCountdownRemainingSec(firstSeenAtMs, totalSec, nowMs) <= 0;
+}
+
+export function resolveOfferFirstSeenAtMs(
+  tagKey: string,
+  firstShownAtByTag: Record<string, number>,
+  nowMs: number = Date.now(),
+): number {
+  const key = String(tagKey || '').trim();
+  if (!key) return nowMs;
+  return firstShownAtByTag[key] ?? nowMs;
+}
+
+/** Sprint 5E-4A — active offers first; expired sink to bottom (stable within tier). */
+export function compareDriverOffersByUrgency(
+  a: { id?: string; tag_id?: string; dispatch_timeout?: number | null },
+  b: { id?: string; tag_id?: string; dispatch_timeout?: number | null },
+  firstShownAtByTag: Record<string, number>,
+  nowMs: number = Date.now(),
+): number {
+  const keyA = String(a.tag_id || a.id || '').trim();
+  const keyB = String(b.tag_id || b.id || '').trim();
+  const seenA = resolveOfferFirstSeenAtMs(keyA, firstShownAtByTag, nowMs);
+  const seenB = resolveOfferFirstSeenAtMs(keyB, firstShownAtByTag, nowMs);
+  const expA = isDriverOfferExpired(a, seenA, nowMs);
+  const expB = isDriverOfferExpired(b, seenB, nowMs);
+  if (expA !== expB) {
+    return expA ? 1 : -1;
+  }
+  if (!expA) {
+    const remA = computeDriverOfferCountdownRemainingSec(
+      seenA,
+      resolveDriverOfferCountdownTotalSec(a),
+      nowMs,
+    );
+    const remB = computeDriverOfferCountdownRemainingSec(
+      seenB,
+      resolveDriverOfferCountdownTotalSec(b),
+      nowMs,
+    );
+    if (remA !== remB) {
+      return remB - remA;
+    }
+    return seenB - seenA;
+  }
+  return seenB - seenA;
+}

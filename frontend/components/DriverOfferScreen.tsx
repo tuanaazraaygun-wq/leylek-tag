@@ -60,6 +60,7 @@ import {
   computeDriverOfferCountdownRemainingSec,
   resolveDriverOfferCountdownTotalSec,
   resolveOfferCountdownTier,
+  compareDriverOffersByUrgency,
   DRIVER_OFFER_NEW_EMPHASIS_MS,
   DRIVER_OFFER_URGENCY_PULSE_MS,
   DRIVER_OFFER_URGENCY_PULSE_CYCLES,
@@ -1132,6 +1133,7 @@ function RequestCard({
   globalAcceptFrozen,
   setGlobalAcceptFrozen,
   isFreshOffer = false,
+  firstSeenAtMs,
 }: { 
   request: PassengerRequest; 
   driverLocation: { latitude: number; longitude: number } | null;
@@ -1146,6 +1148,8 @@ function RequestCard({
   globalAcceptFrozen: boolean;
   setGlobalAcceptFrozen: (v: boolean) => void;
   isFreshOffer?: boolean;
+  /** Parent-owned anchor for countdown + sort alignment (5E-4A). */
+  firstSeenAtMs?: number;
 }) {
   const { offerScreenSurfaces: osLt, ui } = useDriverTheme();
   const [accepting, setAccepting] = useState(false);
@@ -1153,7 +1157,7 @@ function RequestCard({
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const urgencyGlowAnim = useRef(new Animated.Value(0)).current;
   const seenLayoutReportedRef = useRef(false);
-  const firstSeenAtRef = useRef(Date.now());
+  const firstSeenAtRef = useRef(firstSeenAtMs ?? Date.now());
   const countdownTotalSec = useMemo(
     () => resolveDriverOfferCountdownTotalSec(request),
     [request.dispatch_timeout],
@@ -1162,13 +1166,14 @@ function RequestCard({
     computeDriverOfferCountdownRemainingSec(firstSeenAtRef.current, countdownTotalSec),
   );
   const countdownTier: OfferCountdownTier = resolveOfferCountdownTier(countdownSec);
+  const isExpiredCard = countdownTier === 'expired';
   const hasDispatchTimeoutHint =
     Number.isFinite(Number(request.dispatch_timeout)) && Number(request.dispatch_timeout) > 0;
 
   useEffect(() => {
     seenLayoutReportedRef.current = false;
-    firstSeenAtRef.current = Date.now();
-  }, [request.tag_id, request.id]);
+    firstSeenAtRef.current = firstSeenAtMs ?? Date.now();
+  }, [request.tag_id, request.id, firstSeenAtMs]);
 
   useEffect(() => {
     const tick = () => {
@@ -1182,7 +1187,7 @@ function RequestCard({
   }, [countdownTotalSec, request.tag_id, request.id]);
 
   useEffect(() => {
-    if (!isFreshOffer) {
+    if (!isFreshOffer || isExpiredCard) {
       urgencyGlowAnim.setValue(0);
       return;
     }
@@ -1205,7 +1210,7 @@ function RequestCard({
       loop.stop();
       urgencyGlowAnim.setValue(0);
     };
-  }, [isFreshOffer, request.tag_id, request.id, urgencyGlowAnim]);
+  }, [isFreshOffer, isExpiredCard, request.tag_id, request.id, urgencyGlowAnim]);
 
   const reportSeenIfVisible = useCallback(() => {
     if (seenLayoutReportedRef.current) return;
@@ -1447,22 +1452,38 @@ function RequestCard({
     inputRange: [0, 1],
     outputRange: ['rgba(34,211,238,0.16)', 'rgba(34,211,238,0.62)'],
   });
-  const acceptGradientColors = osLt
-    ? (['#0891B2', '#06B6D4'] as const)
-    : (['#0E7490', '#0891B2', '#22D3EE'] as const);
+  const acceptGradientColors = isExpiredCard
+    ? osLt
+      ? (['#64748B', '#94A3B8'] as const)
+      : (['#1E3A5F', '#334155', '#475569'] as const)
+    : osLt
+      ? (['#0891B2', '#06B6D4'] as const)
+      : (['#0E7490', '#0891B2', '#22D3EE'] as const);
 
   return (
     <Animated.View
-      style={[styles.reqCardWrap, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}
+      style={[
+        styles.reqCardWrap,
+        isExpiredCard && styles.reqCardWrapExpired,
+        isExpiredCard && osLt?.reqCardWrapExpired,
+        { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
+      ]}
       onLayout={handleOfferCardLayout}
     >
       <Animated.View
         style={[
           styles.reqCardUrgencyRing,
-          isFreshOffer ? { borderColor: urgencyBorderColor } : styles.reqCardUrgencyRingIdle,
+          isFreshOffer && !isExpiredCard
+            ? { borderColor: urgencyBorderColor }
+            : styles.reqCardUrgencyRingIdle,
+          isExpiredCard && styles.reqCardUrgencyRingExpired,
         ]}
       >
-      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.reqCard, osLt?.reqCard]}>
+      <GlassSurface
+        variant="plain"
+        borderRadius={LDS_RADIUS.lg}
+        style={[styles.reqCard, isExpiredCard && styles.reqCardExpired, osLt?.reqCard, osLt?.reqCardExpired]}
+      >
         <View style={styles.reqUrgencyRow}>
           <View style={[styles.reqCountdownPill, countdownPillStyle, osLt?.reqCountdownPill]}>
             <Ionicons name="timer-outline" size={12} color={countdownIconColor} />
@@ -1598,7 +1619,12 @@ function RequestCard({
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.reqAcceptBtnOuter, accepting && styles.acceptButtonDisabledOuter]}
+            style={[
+              styles.reqAcceptBtnOuter,
+              isExpiredCard && styles.reqAcceptBtnOuterExpired,
+              isExpiredCard && osLt?.reqAcceptBtnOuterExpired,
+              accepting && styles.acceptButtonDisabledOuter,
+            ]}
             onPress={async () => {
               if (accepting || globalAcceptFrozen) return;
 
@@ -1713,7 +1739,9 @@ function RequestCard({
                 end={{ x: 1, y: 0.5 }}
                 style={[
                   styles.reqAcceptGradient,
+                  isExpiredCard && styles.reqAcceptGradientExpired,
                   osLt?.reqAcceptBtn,
+                  isExpiredCard && osLt?.reqAcceptBtnExpired,
                   accepting && styles.acceptButtonDisabled,
                 ]}
               >
@@ -1721,8 +1749,20 @@ function RequestCard({
                   <ActivityIndicator size="small" color="#F8FAFC" />
                 ) : (
                   <>
-                    <Ionicons name="checkmark-circle" size={18} color="#F8FAFC" />
-                    <PremiumText variant="step" style={[styles.reqAcceptBtnText, osLt?.reqAcceptText]}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color={isExpiredCard ? 'rgba(248,250,252,0.78)' : '#F8FAFC'}
+                    />
+                    <PremiumText
+                      variant="step"
+                      style={[
+                        styles.reqAcceptBtnText,
+                        isExpiredCard && styles.reqAcceptBtnTextExpired,
+                        osLt?.reqAcceptText,
+                        isExpiredCard && osLt?.reqAcceptTextExpired,
+                      ]}
+                    >
                       Kabul et
                     </PremiumText>
                   </>
@@ -1868,6 +1908,8 @@ export default function DriverOfferScreen({
   const knownOfferTagIdsRef = useRef<Set<string>>(new Set());
   const freshOfferClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listHeaderPulse = useRef(new Animated.Value(1)).current;
+  const offerFirstShownAtRef = useRef<Record<string, number>>({});
+  const [offerSortTick, setOfferSortTick] = useState(0);
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapSeekingPins, setMapSeekingPins] = useState<DriverMapSeekingPin[]>([]);
@@ -1986,6 +2028,36 @@ export default function DriverOfferScreen({
     }
     return requests;
   }, [requests, vehicleKind]);
+
+  const sortedVisibleRequests = useMemo(() => {
+    const now = Date.now();
+    const active = new Set<string>();
+    for (const req of visibleRequests) {
+      const key = String(req.tag_id || req.id || '').trim();
+      if (!key) continue;
+      active.add(key);
+      if (offerFirstShownAtRef.current[key] == null) {
+        offerFirstShownAtRef.current[key] = now;
+      }
+    }
+    for (const key of Object.keys(offerFirstShownAtRef.current)) {
+      if (!active.has(key)) {
+        delete offerFirstShownAtRef.current[key];
+      }
+    }
+    if (visibleRequests.length <= 1) return visibleRequests;
+    return [...visibleRequests].sort((a, b) =>
+      compareDriverOffersByUrgency(a, b, offerFirstShownAtRef.current, now),
+    );
+  }, [visibleRequests, offerSortTick]);
+
+  useEffect(() => {
+    if (visibleRequests.length === 0) return;
+    const id = setInterval(() => {
+      setOfferSortTick((t) => t + 1);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [visibleRequests.length]);
 
   const listedTagIds = useMemo(() => {
     const s = new Set<string>();
@@ -2566,7 +2638,8 @@ export default function DriverOfferScreen({
           </View>
         ) : (
           <FlatList
-            data={visibleRequests.slice(0, 20)}
+            data={sortedVisibleRequests.slice(0, 20)}
+            extraData={offerSortTick}
             keyExtractor={(item, index) => item.id || item.request_id || index.toString()}
             renderItem={({ item, index }) => {
               const tagKey = String(item.tag_id || item.id || '').trim();
@@ -2585,6 +2658,9 @@ export default function DriverOfferScreen({
                 globalAcceptFrozen={globalAcceptFrozen}
                 setGlobalAcceptFrozen={setGlobalAcceptFrozen}
                 isFreshOffer={!!tagKey && freshOfferTagId === tagKey}
+                firstSeenAtMs={
+                  tagKey ? offerFirstShownAtRef.current[tagKey] : undefined
+                }
               />
             );}}
             contentContainerStyle={[styles.listContent, mapExpanded && styles.listContentMapExpanded]}
@@ -3771,6 +3847,15 @@ const styles = StyleSheet.create({
   reqCardWrap: {
     marginTop: LDS_SPACING.xxs,
   },
+  reqCardWrapExpired: {
+    opacity: 0.58,
+  },
+  reqCardUrgencyRingExpired: {
+    borderColor: 'rgba(100,116,139,0.18)',
+  },
+  reqCardExpired: {
+    backgroundColor: 'rgba(8,17,31,0.22)',
+  },
   reqCardUrgencyRing: {
     borderRadius: LDS_RADIUS.lg + 2,
     borderWidth: LDS_BORDER_WIDTH.standard,
@@ -4042,6 +4127,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...LDS_ELEVATION.chip,
   },
+  reqAcceptBtnOuterExpired: {
+    opacity: 0.82,
+  },
   reqAcceptGradient: {
     flex: 1,
     minHeight: 52,
@@ -4054,6 +4142,10 @@ const styles = StyleSheet.create({
     borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: 'rgba(34,211,238,0.45)',
     borderTopColor: 'rgba(34,211,238,0.62)',
+  },
+  reqAcceptGradientExpired: {
+    borderColor: 'rgba(100,116,139,0.32)',
+    borderTopColor: 'rgba(148,163,184,0.28)',
   },
   acceptButtonDisabledOuter: {
     opacity: 0.72,
@@ -4068,6 +4160,10 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
     letterSpacing: 0.22,
     fontSize: 15,
+  },
+  reqAcceptBtnTextExpired: {
+    color: 'rgba(248,250,252,0.78)',
+    fontWeight: '700',
   },
   reqBottomMetaRow: {
     marginTop: LDS_SPACING.sm,
