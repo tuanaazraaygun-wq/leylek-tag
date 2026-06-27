@@ -11,6 +11,7 @@ import {
   journeyCrossChannelGate,
   journeyFinishGate,
   journeyFinishSessionGate,
+  journeyForceEndAcceptedSessionGate,
   journeyForceEndSonicGate,
   journeyPaymentSonicGate,
   journeyPaymentErrorGate,
@@ -313,6 +314,13 @@ class JourneySonicController {
   }
 
   private async playForceEnd(kind: JourneyForceEndKind, options?: JourneySonicOptions): Promise<void> {
+    const tagId = this.normalizeTagId(options?.tagId);
+    if (kind === 'accepted') {
+      if (!journeyForceEndAcceptedSessionGate.tryPass(tagId)) {
+        return;
+      }
+      journeyFinishSessionGate.tryPass(tagId);
+    }
     const sourceKey = kind === 'accepted' ? 'forceEndAccepted' : 'forceEndRejected';
     const volumeKey = kind === 'accepted' ? 'forceEndAccepted' : 'forceEndRejected';
     await this.playOneShot(
@@ -342,6 +350,7 @@ class JourneySonicController {
     journeyCrossChannelGate.reset();
     journeyStartSessionGate.reset();
     journeyFinishSessionGate.reset();
+    journeyForceEndAcceptedSessionGate.reset();
     journeyForceEndSonicGate.reset();
     journeyQrErrorKindGate.reset();
   }

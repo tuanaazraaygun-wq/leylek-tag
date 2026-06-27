@@ -235,7 +235,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
-import { playJourneyBoardingRemoteAck, playJourneyFinishSonic } from '../lib/journeySonicController';
+import { playJourneyBoardingRemoteAck, playJourneyFinishSonic, playJourneyForceEndAccepted, playJourneyForceEndRejected, playJourneyPaymentError } from '../lib/journeySonicController';
 import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playChatInboundSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, resetQuickMatchDriverOpsSoundGate, resetDriverOfferSoundGate, preloadTrustedDirectOpsSound } from '../utils/sound';
 import { offerSoundController } from '../lib/offerSoundController';
 import {
@@ -7972,6 +7972,15 @@ function PassengerDashboard({
   
   // 🆕 QR Modal State
   const [showQRModal, setShowQRModal] = useState(false);
+  const passengerShowQRModalRef = useRef(false);
+  const passengerTripEndRemoteAckTagRef = useRef<string | null>(null);
+  passengerShowQRModalRef.current = showQRModal;
+
+  useEffect(() => {
+    if (showQRModal) {
+      passengerTripEndRemoteAckTagRef.current = null;
+    }
+  }, [showQRModal]);
 
   const tripPaymentDetails = useTripPaymentDetails();
   const [driverPaymentSheetVisible, setDriverPaymentSheetVisible] = useState(false);
@@ -8160,8 +8169,10 @@ function PassengerDashboard({
         return;
       }
       appAlert('Hata', result.message);
+      void playJourneyPaymentError({ tagId });
     } catch {
       appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+      void playJourneyPaymentError({ tagId });
     } finally {
       tripEndIbanCompleteInFlightRef.current = false;
     }
@@ -8184,8 +8195,10 @@ function PassengerDashboard({
         return;
       }
       appAlert('Hata', result.message);
+      void playJourneyPaymentError({ tagId });
     } catch {
       appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+      void playJourneyPaymentError({ tagId });
     } finally {
       tripEndIbanCompleteInFlightRef.current = false;
     }
@@ -9002,6 +9015,9 @@ function PassengerDashboard({
   const finalizePassengerForceEnd = useCallback(
     (data: Record<string, unknown>) => {
       const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
+      if (tid) {
+        void playJourneyForceEndAccepted({ tagId: tid });
+      }
       armForceEndLock('passenger_force_end_finalize');
       passengerPostForceEndRef.current = true;
       resumeActiveTagPollAfterForceEndRef.current = true;
@@ -9621,15 +9637,33 @@ function PassengerDashboard({
     onShowRatingModal: (data) => {
       perfLog('⭐ YOLCU - PUANLAMA MODALI AÇ (Socket):', data);
       if ((data as { should_rate?: boolean }).should_rate !== true) return;
-      setShowQRModal(false);
-      scheduleRatingModalAfterQrDismiss(() => {
-        setRatingModalData({
-          visible: true,
-          tagId: data.tag_id,
-          rateUserId: data.rate_user_id,
-          rateUserName: data.rate_user_name,
+
+      const schedulePassengerRating = () => {
+        scheduleRatingModalAfterQrDismiss(() => {
+          setRatingModalData({
+            visible: true,
+            tagId: data.tag_id,
+            rateUserId: data.rate_user_id,
+            rateUserName: data.rate_user_name,
+          });
         });
-      });
+      };
+
+      if (!passengerShowQRModalRef.current) {
+        setShowQRModal(false);
+        schedulePassengerRating();
+        return;
+      }
+
+      const tagKey = String(data.tag_id || '').trim();
+      if (!tagKey || passengerTripEndRemoteAckTagRef.current === tagKey) {
+        return;
+      }
+      passengerTripEndRemoteAckTagRef.current = tagKey;
+
+      void playJourneyFinishSonic({ tagId: tagKey });
+      setShowQRModal(false);
+      schedulePassengerRating();
     },
     onBoardingConfirmed: (data) => {
       const tid = data?.tag_id;
@@ -13526,6 +13560,7 @@ function PassengerDashboard({
                         return;
                       }
                       perfLog('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'passenger' });
+                      void playJourneyForceEndAccepted({ tagId: tid });
                       perfLog('FORCE_END_FINALIZED', {
                         tagId: tid,
                         requestedBy: passengerDriverForceReview.initiatorId,
@@ -13603,6 +13638,7 @@ function PassengerDashboard({
                         return;
                       }
                       perfLog('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'passenger' });
+                      void playJourneyForceEndRejected({ tagId: tid });
                       perfLog('FORCE_END_FINALIZED', {
                         tagId: tid,
                         requestedBy: passengerDriverForceReview.initiatorId,
@@ -16559,6 +16595,9 @@ function DriverDashboard({
   const finalizeDriverForceEnd = useCallback(
     (data: Record<string, unknown>) => {
       const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
+      if (tid) {
+        void playJourneyForceEndAccepted({ tagId: tid });
+      }
       perfLog('DRIVER_EXIT_REASON', {
         source: 'finalizeDriverForceEnd',
         reason: 'trip_force_ended',
@@ -17428,8 +17467,10 @@ function DriverDashboard({
         return;
       }
       appAlert('Hata', result.message);
+      void playJourneyPaymentError({ tagId });
     } catch {
       appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+      void playJourneyPaymentError({ tagId });
     } finally {
       setTransferPaymentSubmitting(false);
     }
@@ -17458,8 +17499,10 @@ function DriverDashboard({
           return;
         }
         appAlert('Hata', result.message);
+        void playJourneyPaymentError({ tagId });
       } catch {
         appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+        void playJourneyPaymentError({ tagId });
       } finally {
         setTransferPaymentSubmitting(false);
       }
@@ -21180,6 +21223,7 @@ function DriverDashboard({
               return;
             }
             perfLog('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'driver' });
+            void playJourneyForceEndAccepted({ tagId: tid });
             perfLog('FORCE_END_FINALIZED', {
               tagId: tid,
               requestedBy: driverPassengerForceEndReview.initiatorId,
@@ -21257,6 +21301,7 @@ function DriverDashboard({
               return;
             }
             perfLog('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'driver' });
+            void playJourneyForceEndRejected({ tagId: tid });
             perfLog('FORCE_END_FINALIZED', {
               tagId: tid,
               requestedBy: driverPassengerForceEndReview.initiatorId,

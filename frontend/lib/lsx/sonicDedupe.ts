@@ -239,6 +239,24 @@ export const journeyFinishSessionGate = {
   },
 };
 
+/** Force-end accepted — once per tag; also suppresses journey finish for that tag (5C-4). */
+export const journeyForceEndAcceptedSessionGate = {
+  firedTagIds: new Set<string>(),
+
+  tryPass(tagId?: string | null): boolean {
+    const id = String(tagId || '').trim() || '__anonymous__';
+    if (this.firedTagIds.has(id)) {
+      return false;
+    }
+    this.firedTagIds.add(id);
+    return true;
+  },
+
+  reset() {
+    this.firedTagIds.clear();
+  },
+};
+
 /** Driver offer — per-tag session dedupe (socket / push / poll). */
 export const driverOfferSessionGate = {
   chimedIds: new Set<string>(),
