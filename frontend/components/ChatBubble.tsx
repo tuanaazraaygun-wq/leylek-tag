@@ -14,7 +14,6 @@ import {
   Dimensions,
   Platform,
   Keyboard,
-  Vibration,
   Modal,
   Pressable,
 } from 'react-native';
@@ -22,7 +21,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { Audio } from 'expo-av';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { getSupabase } from '../lib/supabase';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
@@ -57,6 +55,8 @@ interface ChatBubbleProps {
   incomingMessage?: { text: string; senderId: string; timestamp: number } | null;
   /** Parent incomingMessage state temizliği (duplicate inject önleme) */
   onIncomingMessageHandled?: () => void;
+  /** Broadcast / follow-up — parent unread + peek + sonic (chat closed or minimized) */
+  onInboundFromOther?: (payload: { text: string; senderId: string; timestamp: number }) => void;
   /** Biniş doğrulandı — yeni mesaj gönderimi kapalı (yayın + REST) */
   tripCommsLocked?: boolean;
 }
@@ -153,6 +153,7 @@ export default function ChatBubble({
   tagId,
   incomingMessage = null,
   onIncomingMessageHandled,
+  onInboundFromOther,
   tripCommsLocked = false,
 }: ChatBubbleProps) {
   const otherFirst = useMemo(
@@ -262,6 +263,13 @@ export default function ChatBubble({
   const userIdRef = useRef(userId);
   const scrollToBottomRef = useRef(scrollToBottom);
 
+  const scrollToBottomRef = useRef(scrollToBottom);
+  const onInboundFromOtherRef = useRef(onInboundFromOther);
+
+  useEffect(() => {
+    onInboundFromOtherRef.current = onInboundFromOther;
+  }, [onInboundFromOther]);
+
   useEffect(() => {
     visibleRef.current = visible;
   }, [visible]);
@@ -369,10 +377,15 @@ export default function ChatBubble({
         };
 
         setMessages((prev) => mergeMessages(prev, [newMessage]));
-        Vibration.vibrate(200);
 
         if (!visibleRef.current || isMinimizedRef.current) {
           setUnreadCount((prev) => prev + 1);
+          const ts = newMessage.timestamp.getTime();
+          onInboundFromOtherRef.current?.({
+            text: newMessage.text,
+            senderId: String(msg.senderId || ''),
+            timestamp: ts,
+          });
         } else {
           scrollToBottomRef.current(true);
         }

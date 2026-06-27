@@ -45,6 +45,11 @@ import { useTrustSessionController } from '../hooks/useTrustSessionController';
 import { agoraVoiceService } from '../services/agoraVoiceService';
 import { agoraUidFromUserId } from '../lib/agoraUid';
 import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
+import {
+  clipMatchedChatPreview,
+  MATCHED_CHAT_PEEK_MS,
+  type MatchedChatPeek,
+} from '../lib/matchedChatAwareness';
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
 import PassengerDriverForceEndReviewModal from '../components/PassengerDriverForceEndReviewModal';
 import MutualTripEndReviewModal from '../components/MutualTripEndReviewModal';
@@ -230,7 +235,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
-import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, resetQuickMatchDriverOpsSoundGate, resetDriverOfferSoundGate, preloadTrustedDirectOpsSound } from '../utils/sound';
+import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, playChatInboundSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, resetQuickMatchDriverOpsSoundGate, resetDriverOfferSoundGate, preloadTrustedDirectOpsSound } from '../utils/sound';
 import { offerSoundController } from '../lib/offerSoundController';
 import {
   cleanupCallSonic,
@@ -7832,7 +7837,10 @@ function PassengerDashboard({
   // 🆕 Chat State'leri (Yolcu)
   const [passengerChatVisible, setPassengerChatVisible] = useState(false);
   const [passengerIncomingMessage, setPassengerIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
-  const [firstChatTapBanner, setFirstChatTapBanner] = useState<{ title: string; subtitle: string } | null>(null);
+  const [passengerChatUnread, setPassengerChatUnread] = useState(0);
+  const [passengerChatPeek, setPassengerChatPeek] = useState<MatchedChatPeek | null>(null);
+  const passengerChatPeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const passengerChatAwarenessDedupeRef = useRef<{ key: string; at: number } | null>(null);
   const {
     lastTappedNotificationData: paxChatNotifData,
     clearLastTappedNotification: paxClearChatNotif,
@@ -7866,7 +7874,12 @@ function PassengerDashboard({
         await AsyncStorage.removeItem(MATCH_RESUME_UI_RESET_KEY);
         setPassengerChatVisible(false);
         setPassengerEndTripModalVisible(false);
-        setFirstChatTapBanner(null);
+        setPassengerChatUnread(0);
+        setPassengerChatPeek(null);
+        if (passengerChatPeekTimerRef.current) {
+          clearTimeout(passengerChatPeekTimerRef.current);
+          passengerChatPeekTimerRef.current = null;
+        }
       } catch {
         /* ignore */
       }
@@ -9018,7 +9031,12 @@ function PassengerDashboard({
       setPassengerEndTripModalVisible(false);
       setShowTripEndModal(false);
       setTripEndRequesterType(null);
-      setFirstChatTapBanner(null);
+      setPassengerChatUnread(0);
+      setPassengerChatPeek(null);
+      if (passengerChatPeekTimerRef.current) {
+        clearTimeout(passengerChatPeekTimerRef.current);
+        passengerChatPeekTimerRef.current = null;
+      }
       setShowQRModal(false);
       setShowPriceModal(false);
       resetPriceOfferPaymentUi();
@@ -9078,6 +9096,88 @@ function PassengerDashboard({
       onPending();
     },
     [finalizePassengerForceEnd],
+  );
+
+  const clearPassengerChatPeekTimer = useCallback(() => {
+    if (passengerChatPeekTimerRef.current) {
+      clearTimeout(passengerChatPeekTimerRef.current);
+      passengerChatPeekTimerRef.current = null;
+    }
+  }, []);
+
+  const resetPassengerChatAwareness = useCallback(() => {
+    setPassengerChatUnread(0);
+    clearPassengerChatPeekTimer();
+    setPassengerChatPeek(null);
+    passengerChatAwarenessDedupeRef.current = null;
+  }, [clearPassengerChatPeekTimer]);
+
+  const showPassengerChatPeek = useCallback(
+    (senderLabel: string, preview: string) => {
+      clearPassengerChatPeekTimer();
+      const clipped = clipMatchedChatPreview(preview);
+      if (!clipped) return;
+      setPassengerChatPeek({ senderLabel, preview: clipped });
+      passengerChatPeekTimerRef.current = setTimeout(() => {
+        setPassengerChatPeek(null);
+        passengerChatPeekTimerRef.current = null;
+      }, MATCHED_CHAT_PEEK_MS);
+    },
+    [clearPassengerChatPeekTimer],
+  );
+
+  const openPassengerMatchedChat = useCallback(() => {
+    setPassengerChatVisible(true);
+    resetPassengerChatAwareness();
+  }, [resetPassengerChatAwareness]);
+
+  const applyPassengerChatInboundAwareness = useCallback(
+    (payload: {
+      text: string;
+      senderId: string;
+      timestamp: number;
+      senderLabel?: string;
+      fromDriver?: boolean;
+    }) => {
+      const uid = user?.id;
+      if (uid && payload.senderId && String(payload.senderId) === String(uid)) return;
+
+      const dedupeKey = `${payload.senderId}|${clipMatchedChatPreview(payload.text, 64)}`;
+      const prevDedupe = passengerChatAwarenessDedupeRef.current;
+      const now = Date.now();
+      if (prevDedupe && prevDedupe.key === dedupeKey && now - prevDedupe.at < 4000) return;
+      passengerChatAwarenessDedupeRef.current = { key: dedupeKey, at: now };
+
+      setPassengerIncomingMessage({
+        text: payload.text,
+        senderId: payload.senderId,
+        timestamp: payload.timestamp,
+      });
+
+      if (passengerChatVisible) return;
+
+      setPassengerChatUnread((c) => {
+        const next = c + 1;
+        if (c === 0) {
+          const label =
+            payload.senderLabel ??
+            (payload.fromDriver === true ? 'Sürücü' : payload.fromDriver === false ? 'Yolcu' : 'Sürücü');
+          showPassengerChatPeek(label, payload.text);
+        }
+        return next;
+      });
+
+      if (!showCallScreen && !incomingCallData) {
+        void playChatInboundSound();
+      }
+    },
+    [
+      user?.id,
+      passengerChatVisible,
+      showCallScreen,
+      incomingCallData,
+      showPassengerChatPeek,
+    ],
   );
 
   const {
@@ -9434,17 +9534,28 @@ function PassengerDashboard({
       const createdRaw = (data as { created_at?: string }).created_at;
       const parsedTs = createdRaw ? new Date(createdRaw).getTime() : NaN;
       const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
-      if (preview) {
-        setPassengerIncomingMessage({
-          text: preview,
-          senderId: String((data as { sender_id?: string }).sender_id || ''),
-          timestamp,
-        });
-      }
-      if (passengerChatVisible) return;
-      setFirstChatTapBanner({
-        title: data.from_driver ? 'Sürücü size yazdı' : 'Yolcu size yazdı',
-        subtitle: preview || 'Cevap vermek için dokun',
+      applyPassengerChatInboundAwareness({
+        text: preview || 'Yeni mesaj',
+        senderId: String((data as { sender_id?: string }).sender_id || ''),
+        timestamp,
+        senderLabel: data.from_driver ? 'Sürücü' : 'Yolcu',
+        fromDriver: data.from_driver,
+      });
+    },
+    onNewMessage: (data) => {
+      if (!data?.tag_id) return;
+      if (activeTag?.id && data.tag_id !== activeTag.id) return;
+      const preview = String(data.message || '').trim();
+      if (!preview) return;
+      const parsedTs = data.timestamp ? new Date(data.timestamp).getTime() : NaN;
+      const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
+      const fromDriver = String(data.sender_id || '') === String(activeTag?.driver_id || '');
+      applyPassengerChatInboundAwareness({
+        text: preview,
+        senderId: String(data.sender_id || ''),
+        timestamp,
+        senderLabel: fromDriver ? 'Sürücü' : 'Yolcu',
+        fromDriver,
       });
     },
     onForceEndCounterpartyPrompt: (data) => {
@@ -10640,8 +10751,14 @@ function PassengerDashboard({
       if (!activeTag?.id || tagId !== String(activeTag.id)) {
         void loadActiveTag();
       }
-      setPassengerChatVisible(true);
-      setFirstChatTapBanner(null);
+      if (!passengerChatVisible) {
+        const preview = String(d.message_preview || d.message || '').trim();
+        setPassengerChatUnread((c) => Math.max(c, 1));
+        showPassengerChatPeek(
+          d.from_driver === true || String(d.from_driver).toLowerCase() === 'true' ? 'Sürücü' : 'Sürücü',
+          preview || 'Yeni mesaj',
+        );
+      }
       return;
     }
 
@@ -10660,11 +10777,17 @@ function PassengerDashboard({
       void loadActiveTag();
       void refreshOffersForTag(tagId);
     }
-  }, [paxChatNotifData, paxClearChatNotif, activeTag?.id, loadActiveTag, refreshOffersForTag, setScreen]);
+  }, [paxChatNotifData, paxClearChatNotif, activeTag?.id, loadActiveTag, refreshOffersForTag, setScreen, passengerChatVisible, showPassengerChatPeek]);
 
   useEffect(() => {
-    if (passengerChatVisible) setFirstChatTapBanner(null);
-  }, [passengerChatVisible]);
+    if (passengerChatVisible) {
+      resetPassengerChatAwareness();
+    }
+  }, [passengerChatVisible, resetPassengerChatAwareness]);
+
+  useEffect(() => {
+    resetPassengerChatAwareness();
+  }, [activeTag?.id, resetPassengerChatAwareness]);
 
   const makePricePrefetchKey = (
     plat: number,
@@ -12868,24 +12991,21 @@ function PassengerDashboard({
                     </GlassSurface>
                   </View>
                 ) : null}
-                {firstChatTapBanner ? (
+                {passengerChatPeek ? (
                   <TouchableOpacity
                     activeOpacity={0.9}
-                    onPress={() => {
-                      setPassengerChatVisible(true);
-                      setFirstChatTapBanner(null);
-                    }}
+                    onPress={openPassengerMatchedChat}
                     style={styles.passengerTripBannerWrap}
                   >
                     <GlassSurface variant="plain" style={[styles.passengerTripBannerAlert, jLt?.tripBannerAlert]} borderRadius={LDS_RADIUS.md}>
                       <PremiumText variant="body" style={styles.passengerTripBannerTitle}>
-                        {firstChatTapBanner.title}
+                        {passengerChatPeek.senderLabel} yazdı
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.passengerTripBannerBody}>
-                        {firstChatTapBanner.subtitle}
+                        {passengerChatPeek.preview}
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.passengerTripBannerHint}>
-                        Mesajı görmek için tıklayın
+                        Yanıtlamak için dokunun
                       </PremiumText>
                     </GlassSurface>
                   </TouchableOpacity>
@@ -13019,10 +13139,8 @@ function PassengerDashboard({
                     router.push('/trusted-network?role=passenger' as never);
                   }}
                   trustedInviteRefreshNonce={trustedInviteRefreshNonce}
-                  onChat={() => {
-                    // 🆕 Chat aç - Yolcu → Sürücüye Yaz
-                    setPassengerChatVisible(true);
-                  }}
+                  onChat={openPassengerMatchedChat}
+                  chatUnreadCount={passengerChatUnread}
                   onOpenLeylekZekaSupport={openLeylekZekaFromMap}
                   onInRideComplaintForceEnd={async ({ reasonKey, details }) => {
                     await awaitSocketRegisterBeforeCriticalAction(
@@ -13528,6 +13646,14 @@ function PassengerDashboard({
                   tripCommsLocked={!!activeTag?.boarding_confirmed_at}
                   incomingMessage={passengerIncomingMessage}
                   onIncomingMessageHandled={() => setPassengerIncomingMessage(null)}
+                  onInboundFromOther={(payload) => {
+                    const fromDriver = String(payload.senderId || '') === String(activeTag?.driver_id || '');
+                    applyPassengerChatInboundAwareness({
+                      ...payload,
+                      senderLabel: fromDriver ? 'Sürücü' : 'Yolcu',
+                      fromDriver,
+                    });
+                  }}
                   onSendMessage={(text, receiverId) => {
                     // Socket ile ANLIK gönder
                     perfLog('📤 [YOLCU] onSendMessage callback:', { 
@@ -15905,7 +16031,10 @@ function DriverDashboard({
   // 🆕 Chat State'leri (Sürücü)
   const [driverChatVisible, setDriverChatVisible] = useState(false);
   const [driverIncomingMessage, setDriverIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
-  const [driverFirstChatTapBanner, setDriverFirstChatTapBanner] = useState<{ title: string; subtitle: string } | null>(null);
+  const [driverChatUnread, setDriverChatUnread] = useState(0);
+  const [driverChatPeek, setDriverChatPeek] = useState<MatchedChatPeek | null>(null);
+  const driverChatPeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const driverChatAwarenessDedupeRef = useRef<{ key: string; at: number } | null>(null);
   
   // 🆕 End Trip Modal State'leri (Sürücü)
   const [driverEndTripModalVisible, setDriverEndTripModalVisible] = useState(false);
@@ -15936,7 +16065,12 @@ function DriverDashboard({
         await AsyncStorage.removeItem(MATCH_RESUME_UI_RESET_KEY);
         setDriverChatVisible(false);
         setDriverEndTripModalVisible(false);
-        setDriverFirstChatTapBanner(null);
+        setDriverChatUnread(0);
+        setDriverChatPeek(null);
+        if (driverChatPeekTimerRef.current) {
+          clearTimeout(driverChatPeekTimerRef.current);
+          driverChatPeekTimerRef.current = null;
+        }
         setShowQRModal(false);
       } catch {
         /* ignore */
@@ -16454,7 +16588,12 @@ function DriverDashboard({
       setDriverEndTripModalVisible(false);
       setShowTripEndModal(false);
       setTripEndRequesterType(null);
-      setDriverFirstChatTapBanner(null);
+      setDriverChatUnread(0);
+      setDriverChatPeek(null);
+      if (driverChatPeekTimerRef.current) {
+        clearTimeout(driverChatPeekTimerRef.current);
+        driverChatPeekTimerRef.current = null;
+      }
       setShowQRModal(false);
       clearDriverTrustState();
       if (!ratingModalVisibleRef.current) {
@@ -16499,6 +16638,88 @@ function DriverDashboard({
       onPending();
     },
     [finalizeDriverForceEnd],
+  );
+
+  const clearDriverChatPeekTimer = useCallback(() => {
+    if (driverChatPeekTimerRef.current) {
+      clearTimeout(driverChatPeekTimerRef.current);
+      driverChatPeekTimerRef.current = null;
+    }
+  }, []);
+
+  const resetDriverChatAwareness = useCallback(() => {
+    setDriverChatUnread(0);
+    clearDriverChatPeekTimer();
+    setDriverChatPeek(null);
+    driverChatAwarenessDedupeRef.current = null;
+  }, [clearDriverChatPeekTimer]);
+
+  const showDriverChatPeek = useCallback(
+    (senderLabel: string, preview: string) => {
+      clearDriverChatPeekTimer();
+      const clipped = clipMatchedChatPreview(preview);
+      if (!clipped) return;
+      setDriverChatPeek({ senderLabel, preview: clipped });
+      driverChatPeekTimerRef.current = setTimeout(() => {
+        setDriverChatPeek(null);
+        driverChatPeekTimerRef.current = null;
+      }, MATCHED_CHAT_PEEK_MS);
+    },
+    [clearDriverChatPeekTimer],
+  );
+
+  const openDriverMatchedChat = useCallback(() => {
+    setDriverChatVisible(true);
+    resetDriverChatAwareness();
+  }, [resetDriverChatAwareness]);
+
+  const applyDriverChatInboundAwareness = useCallback(
+    (payload: {
+      text: string;
+      senderId: string;
+      timestamp: number;
+      senderLabel?: string;
+      fromDriver?: boolean;
+    }) => {
+      const uid = user?.id;
+      if (uid && payload.senderId && String(payload.senderId) === String(uid)) return;
+
+      const dedupeKey = `${payload.senderId}|${clipMatchedChatPreview(payload.text, 64)}`;
+      const prevDedupe = driverChatAwarenessDedupeRef.current;
+      const now = Date.now();
+      if (prevDedupe && prevDedupe.key === dedupeKey && now - prevDedupe.at < 4000) return;
+      driverChatAwarenessDedupeRef.current = { key: dedupeKey, at: now };
+
+      setDriverIncomingMessage({
+        text: payload.text,
+        senderId: payload.senderId,
+        timestamp: payload.timestamp,
+      });
+
+      if (driverChatVisible) return;
+
+      setDriverChatUnread((c) => {
+        const next = c + 1;
+        if (c === 0) {
+          const label =
+            payload.senderLabel ??
+            (payload.fromDriver === true ? 'Sürücü' : payload.fromDriver === false ? 'Yolcu' : 'Yolcu');
+          showDriverChatPeek(label, payload.text);
+        }
+        return next;
+      });
+
+      if (!showCallScreen && !driverIncomingCallData) {
+        void playChatInboundSound();
+      }
+    },
+    [
+      user?.id,
+      driverChatVisible,
+      showCallScreen,
+      driverIncomingCallData,
+      showDriverChatPeek,
+    ],
   );
 
   const {
@@ -16944,17 +17165,28 @@ function DriverDashboard({
       const createdRaw = (data as { created_at?: string }).created_at;
       const parsedTs = createdRaw ? new Date(createdRaw).getTime() : NaN;
       const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
-      if (preview) {
-        setDriverIncomingMessage({
-          text: preview,
-          senderId: String((data as { sender_id?: string }).sender_id || ''),
-          timestamp,
-        });
-      }
-      if (driverChatVisible) return;
-      setDriverFirstChatTapBanner({
-        title: data.from_driver ? 'Sürücü size yazdı' : 'Yolcu size yazdı',
-        subtitle: preview || 'Cevap vermek için dokun',
+      applyDriverChatInboundAwareness({
+        text: preview || 'Yeni mesaj',
+        senderId: String((data as { sender_id?: string }).sender_id || ''),
+        timestamp,
+        senderLabel: data.from_driver ? 'Sürücü' : 'Yolcu',
+        fromDriver: data.from_driver,
+      });
+    },
+    onNewMessage: (data) => {
+      if (!data?.tag_id) return;
+      if (activeTag?.id && data.tag_id !== activeTag.id) return;
+      const preview = String(data.message || '').trim();
+      if (!preview) return;
+      const parsedTs = data.timestamp ? new Date(data.timestamp).getTime() : NaN;
+      const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
+      const fromDriver = String(data.sender_id || '') === String(user?.id || '');
+      applyDriverChatInboundAwareness({
+        text: preview,
+        senderId: String(data.sender_id || ''),
+        timestamp,
+        senderLabel: fromDriver ? 'Sürücü' : 'Yolcu',
+        fromDriver,
       });
     },
     onForceEndCounterpartyPrompt: (data) => {
@@ -17466,8 +17698,14 @@ function DriverDashboard({
       if (!activeTag?.id || tagId !== String(activeTag.id)) {
         void loadDriverDashboardDataRef.current?.();
       }
-      setDriverChatVisible(true);
-      setDriverFirstChatTapBanner(null);
+      if (!driverChatVisible) {
+        const preview = String(data.message_preview || data.message || '').trim();
+        setDriverChatUnread((c) => Math.max(c, 1));
+        showDriverChatPeek(
+          data.from_driver === true || String(data.from_driver).toLowerCase() === 'true' ? 'Sürücü' : 'Yolcu',
+          preview || 'Yeni mesaj',
+        );
+      }
       return;
     }
 
@@ -17505,11 +17743,19 @@ function DriverDashboard({
     fetchAndAppendOfferFromTagId,
     activeTag?.id,
     setScreen,
+    driverChatVisible,
+    showDriverChatPeek,
   ]);
 
   useEffect(() => {
-    if (driverChatVisible) setDriverFirstChatTapBanner(null);
-  }, [driverChatVisible]);
+    if (driverChatVisible) {
+      resetDriverChatAwareness();
+    }
+  }, [driverChatVisible, resetDriverChatAwareness]);
+
+  useEffect(() => {
+    resetDriverChatAwareness();
+  }, [activeTag?.id, resetDriverChatAwareness]);
 
   // 🔔 Ön planda push geldiğinde (tıklamadan) aynı teklifi listeye ekle
   useEffect(() => {
@@ -19998,24 +20244,21 @@ function DriverDashboard({
               </GlassSurface>
             </View>
           ) : null}
-          {driverFirstChatTapBanner ? (
+          {driverChatPeek ? (
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={() => {
-                setDriverChatVisible(true);
-                setDriverFirstChatTapBanner(null);
-              }}
+              onPress={openDriverMatchedChat}
               style={styles.driverTripBannerWrap}
             >
               <GlassSurface variant="plain" style={[styles.driverTripBannerAlert, jLt?.tripBannerAlert]} borderRadius={LDS_RADIUS.md}>
                 <PremiumText variant="body" style={styles.driverTripBannerTitle}>
-                  {driverFirstChatTapBanner.title}
+                  {driverChatPeek.senderLabel} yazdı
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.driverTripBannerBody}>
-                  {driverFirstChatTapBanner.subtitle}
+                  {driverChatPeek.preview}
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.driverTripBannerHint}>
-                  Mesajı görmek için tıklayın
+                  Yanıtlamak için dokunun
                 </PremiumText>
               </GlassSurface>
             </TouchableOpacity>
@@ -20114,10 +20357,8 @@ function DriverDashboard({
               router.push('/trusted-network?role=driver' as never);
             }}
             trustedInviteRefreshNonce={driverTrustedInviteRefreshNonce}
-            onChat={() => {
-              // 🆕 Chat aç - Sürücü → Yolcuya Yaz
-              setDriverChatVisible(true);
-            }}
+            onChat={openDriverMatchedChat}
+            chatUnreadCount={driverChatUnread}
             onOpenLeylekZekaSupport={openLeylekZekaFromMapDriver}
             onInRideComplaintForceEnd={async ({ reasonKey, details }) => {
               await awaitSocketRegisterBeforeCriticalAction(
@@ -20463,6 +20704,14 @@ function DriverDashboard({
             tripCommsLocked={!!activeTag?.boarding_confirmed_at}
             incomingMessage={driverIncomingMessage}
             onIncomingMessageHandled={() => setDriverIncomingMessage(null)}
+            onInboundFromOther={(payload) => {
+              const fromDriver = String(payload.senderId || '') === String(user?.id || '');
+              applyDriverChatInboundAwareness({
+                ...payload,
+                senderLabel: fromDriver ? 'Sürücü' : 'Yolcu',
+                fromDriver,
+              });
+            }}
             onSendMessage={(text, receiverId) => {
               // Socket ile ANLIK gönder
               perfLog('📤 [SÜRÜCÜ] onSendMessage callback:', { 

@@ -12,6 +12,8 @@ export const SONIC_DEDUPE_MS = {
   paymentConfirmed: 1000,
   feedbackError: 1200,
   uiTap: 70,
+  /** Matched chat inbound — per-tag debounce (Sprint 5B). */
+  chatInbound: 2500,
   /** Call Sonic V2 — loop restart guard (5A-1 foundation). */
   callLoop: 500,
   callConnected: 3000,
@@ -76,6 +78,9 @@ export const feedbackErrorCooldownGate = createCooldownGate(SONIC_DEDUPE_MS.feed
 
 /** UI tap micro click — anti double-fire. */
 export const uiTapCooldownGate = createCooldownGate(SONIC_DEDUPE_MS.uiTap);
+
+/** Matched chat inbound — foreground message sonic (Sprint 5B). */
+export const chatInboundCooldownGate = createCooldownGate(SONIC_DEDUPE_MS.chatInbound);
 
 /** Call Sonic V2 — one-shot stinger cooldowns (5A-1 foundation). */
 export const callConnectedStingerGate = createCooldownGate(SONIC_DEDUPE_MS.callConnected);

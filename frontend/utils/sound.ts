@@ -20,6 +20,7 @@ import {
   qrScanSonicGate,
   quickMatchOpsCooldownGate,
   quickMatchOpsSessionGate,
+  chatInboundCooldownGate,
   SONIC_DEDUPE_MS,
   uiTapCooldownGate,
 } from '../lib/lsx/sonicDedupe';
@@ -776,7 +777,7 @@ export async function playUiTapSound(): Promise<void> {
   }
 }
 
-// ── Call Sonic V2 foundation (5A-1) — placeholder assets; dedicated WAV in 5A-2 ──
+/** Call Sonic V2 foundation — placeholder assets; dedicated WAV in 5A-2 ── */
 
 /** Loop + stinger volumes — tuned for future CallScreenV2 wiring. */
 export const CALL_SONIC_VOLUMES = {
@@ -810,6 +811,38 @@ export type CallSonicStingerKind = 'connected' | 'declined' | 'busy' | 'timeout'
 /** Call waiting loops — UI tones profile (ducking). InCallManager unchanged until 5A-2. */
 export async function loadCallSonicAudioMode(): Promise<void> {
   await loadSounds();
+}
+
+// ── Matched chat inbound — soft message ping (Sprint 5B) ──
+
+const CHAT_INBOUND_VOLUME = 0.34;
+
+/** Placeholder until chat-inbound.wav ships — match-chime family. */
+const CHAT_INBOUND_SOURCE = require('../assets/sounds/match-chime.wav');
+
+/** Foreground matched-trip inbound message — cooldown gated. */
+export async function playChatInboundSound(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+  if (!chatInboundCooldownGate.tryPass()) return;
+
+  try {
+    await loadSounds();
+    const { sound } = await Audio.Sound.createAsync(CHAT_INBOUND_SOURCE, {
+      shouldPlay: false,
+      volume: CHAT_INBOUND_VOLUME,
+      isLooping: false,
+    });
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+      }
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('playChatInboundSound', e);
+  }
 }
 
 /** B4-2 — LSX registry sonic dispatch (flags OFF → no-op). */

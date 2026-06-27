@@ -420,6 +420,8 @@ interface LiveMapViewProps {
   /** Normal TAG: index `calling` — REST/start-call süresince ara butonunu kilitle + “Bağlanıyor…” */
   voiceCallPending?: boolean;
   onChat?: () => void;
+  /** Sprint 5B — unread count for matched-trip Yaz badge */
+  chatUnreadCount?: number;
   onComplete?: () => void;
   onRequestTripEnd?: () => void;
   onForceEnd?: () => void;
@@ -2735,6 +2737,25 @@ function PassengerDriverIbanFab({ onPress }: { onPress: () => void }) {
   );
 }
 
+function MatchedChatUnreadBadge({
+  count,
+  pulseScale,
+}: {
+  count: number;
+  pulseScale: Animated.Value;
+}) {
+  if (count <= 0) return null;
+  const label = count > 9 ? '9+' : String(count);
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.chatUnreadBadge, { transform: [{ scale: pulseScale }] }]}
+    >
+      <Text style={styles.chatUnreadBadgeText}>{label}</Text>
+    </Animated.View>
+  );
+}
+
 export default function LiveMapView({
   userLocation,
   otherLocation,
@@ -2756,6 +2777,7 @@ export default function LiveMapView({
   onCall,
   voiceCallPending = false,
   onChat,
+  chatUnreadCount = 0,
   onComplete,
   onRequestTripEnd,
   onForceEnd,
@@ -2789,6 +2811,28 @@ export default function LiveMapView({
   const mapMarkerChrome: MapMarkerChromeTone = isScopeLight ? 'light' : 'dark';
   const journeyTrustUiEnabled = !EMERGENCY_TRUST_JOURNEY_UI_DISABLED;
   const trustRequestAction = journeyTrustUiEnabled ? onTrustRequest : undefined;
+
+  const chatBadgePulse = useRef(new Animated.Value(1)).current;
+  const prevChatUnreadRef = useRef(0);
+  useEffect(() => {
+    if (chatUnreadCount > prevChatUnreadRef.current) {
+      chatBadgePulse.setValue(1);
+      Animated.sequence([
+        Animated.timing(chatBadgePulse, {
+          toValue: 1.14,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.spring(chatBadgePulse, {
+          toValue: 1,
+          friction: 6,
+          tension: 120,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+    prevChatUnreadRef.current = chatUnreadCount;
+  }, [chatBadgePulse, chatUnreadCount]);
 
   /** Sürücü + yolcu pini pickup yedeği: meeting/dest guard ve loglar tek bayrak (yolcu ekranında hep false) */
   const pickupFallbackForDriver = isDriver && !!otherLocationFromPickupFallback;
@@ -7809,14 +7853,17 @@ export default function LiveMapView({
                           }}
                           accessibilityLabel="Sürücüye yaz"
                         >
-                          <Ionicons
-                            name="chatbubble-ellipses"
-                            size={18}
-                            color={ui.matchedCommIcon}
-                          />
-                          <PremiumText variant="caption" style={[styles.paxBottomChatBtnText, jLt?.paxBottomChatBtnText]} numberOfLines={1}>
-                            Sürücüye Yaz
-                          </PremiumText>
+                          <View style={styles.matchedChatBtnInner}>
+                            <Ionicons
+                              name="chatbubble-ellipses"
+                              size={18}
+                              color={ui.matchedCommIcon}
+                            />
+                            <PremiumText variant="caption" style={[styles.paxBottomChatBtnText, jLt?.paxBottomChatBtnText]} numberOfLines={1}>
+                              Sürücüye Yaz
+                            </PremiumText>
+                            <MatchedChatUnreadBadge count={chatUnreadCount} pulseScale={chatBadgePulse} />
+                          </View>
                         </LiveMapCommHit>
                       ) : null}
                     </View>
@@ -8018,14 +8065,17 @@ export default function LiveMapView({
                           }}
                           accessibilityLabel="Yolcuya yaz"
                         >
-                          <Ionicons
-                            name="chatbubble-ellipses"
-                            size={18}
-                            color={ui.matchedCommIcon}
-                          />
-                          <PremiumText variant="caption" style={[styles.drvBottomChatBtnText, jLt?.drvBottomChatBtnText]} numberOfLines={1}>
-                            Yolcuya Yaz
-                          </PremiumText>
+                          <View style={styles.matchedChatBtnInner}>
+                            <Ionicons
+                              name="chatbubble-ellipses"
+                              size={18}
+                              color={ui.matchedCommIcon}
+                            />
+                            <PremiumText variant="caption" style={[styles.drvBottomChatBtnText, jLt?.drvBottomChatBtnText]} numberOfLines={1}>
+                              Yolcuya Yaz
+                            </PremiumText>
+                            <MatchedChatUnreadBadge count={chatUnreadCount} pulseScale={chatBadgePulse} />
+                          </View>
                         </LiveMapCommHit>
                       ) : null}
                     </View>
@@ -8495,8 +8545,11 @@ export default function LiveMapView({
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    <Ionicons name="chatbubble-ellipses" size={17} color={ui.matchedCommIcon} />
-                    <Text style={[styles.navImmersiveChatText, jLt?.navImmersiveAraText]}>Yaz</Text>
+                    <View style={styles.matchedChatBtnInner}>
+                      <Ionicons name="chatbubble-ellipses" size={17} color={ui.matchedCommIcon} />
+                      <Text style={[styles.navImmersiveChatText, jLt?.navImmersiveAraText]}>Yaz</Text>
+                      <MatchedChatUnreadBadge count={chatUnreadCount} pulseScale={chatBadgePulse} />
+                    </View>
                   </LinearGradient>
                 </LiveMapCommHit>
               ) : (
@@ -10526,6 +10579,33 @@ const styles = StyleSheet.create({
   paxBottomChatBtnText: {
     fontWeight: '800',
     color: 'rgba(243,248,255,0.92)',
+  },
+  matchedChatBtnInner: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: LDS_SPACING.xs,
+  },
+  chatUnreadBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -10,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.92)',
+    zIndex: 2,
+  },
+  chatUnreadBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   paxBottomGuvenBtn: {
     minWidth: 76,
