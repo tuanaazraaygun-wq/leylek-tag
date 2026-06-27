@@ -15,8 +15,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import tag_pricing as _tag_pricing
+from services.dispatch_ranking_shadow import (
+    analyze_dispatch_ranking_shadow,
+    build_dispatch_ranking_shadow_log_payload,
+    dispatch_ranking_shadow_enabled,
+)
+from services.match_location_freshness import get_location_max_age_seconds
 
 logger = logging.getLogger(__name__)
+
+_DISPATCH_RANKING_SHADOW_LOG_TOP_N = 10
 
 TABLE_QUICK_MATCH_REQUESTS = "quick_match_requests"
 TABLE_QUICK_MATCH_INVITES = "quick_match_invites"
@@ -901,6 +909,95 @@ async def _maybe_advance_all_busy_retry(
     )
 
 
+def _quick_match_dispatch_ranking_shadow_log(
+    *,
+    eligible: List[dict],
+    request_id: str,
+    max_eta_min: int,
+    invite_id: Optional[str] = None,
+) -> None:
+    """Sprint 5E-6D — shadow rank telemetry after production ETA sort; ordering unchanged."""
+    if not dispatch_ranking_shadow_enabled():
+        return
+    if not eligible:
+        return
+    rid = str(request_id or "").strip()
+    try:
+        max_age_sec = get_location_max_age_seconds()
+    except Exception:
+        max_age_sec = 120
+    try:
+        candidates: List[dict] = []
+        for rank, row in enumerate(eligible, start=1):
+            did = _norm_actor_id(row.get("driver_id"))
+            if not did:
+                continue
+            candidates.append(
+                {
+                    "driver_id": did,
+                    "distance_km": row.get("distance_km"),
+                    "duration_min": row.get("duration_min"),
+                    "rating": row.get("rating"),
+                    "freshness_sec": row.get("freshness_sec"),
+                    "vehicle_match": True,
+                    "current_rank": rank,
+                }
+            )
+        if not candidates:
+            return
+        distances = [float(r.get("distance_km") or 0) for r in candidates]
+        distance_cap_km = max(max(distances, default=0.0), float(get_quick_match_radius_km()), 1.0)
+        analyzed = analyze_dispatch_ranking_shadow(
+            candidates,
+            mode="quick_match",
+            max_eta_min=float(max_eta_min),
+            max_age_sec=max_age_sec,
+            distance_cap_km=distance_cap_km,
+        )
+        by_driver = {
+            str(item.get("driver_id") or "").strip().lower(): item for item in analyzed
+        }
+        ts = _utcnow_iso()
+        eligible_count = len(eligible)
+        for row in eligible[:_DISPATCH_RANKING_SHADOW_LOG_TOP_N]:
+            did = _norm_actor_id(row.get("driver_id"))
+            if not did:
+                continue
+            result = by_driver.get(did)
+            if not result:
+                continue
+            payload = dict(
+                result.get("log_payload")
+                or build_dispatch_ranking_shadow_log_payload(
+                    result,
+                    mode="quick_match",
+                    request_id=rid,
+                    eligible_count=eligible_count,
+                )
+            )
+            payload["mode"] = "quick_match"
+            payload["request_id"] = _qm_funnel_id(rid)
+            payload["quick_match_request_id"] = _qm_funnel_id(rid)
+            if invite_id:
+                payload["invite_id"] = _qm_funnel_id(invite_id)
+            payload["driver_id"] = _qm_funnel_id(did)
+            payload["max_eta"] = int(max_eta_min)
+            payload["eligible_count"] = eligible_count
+            payload["ts"] = ts
+            payload["acceptance_score"] = None
+            payload["response_score"] = None
+            payload["fairness_score"] = None
+            logger.info(
+                "[dispatch_ranking_shadow] %s",
+                json.dumps(payload, ensure_ascii=False, default=str),
+            )
+    except Exception as exc:
+        logger.warning(
+            "[dispatch_ranking_shadow] log_error mode=quick_match exc=%s",
+            repr(exc),
+        )
+
+
 async def _quick_match_pick_next_driver(
     request_row: dict,
     *,
@@ -930,6 +1027,11 @@ async def _quick_match_pick_next_driver(
     eligible_count = len(eligible)
     busy_skipped_count = 0
     max_eta_min = get_quick_match_max_eta_min()
+    _quick_match_dispatch_ranking_shadow_log(
+        eligible=eligible,
+        request_id=request_id,
+        max_eta_min=max_eta_min,
+    )
     for candidate in eligible:
         driver_id = _norm_actor_id(candidate.get("driver_id"))
         if not driver_id:
