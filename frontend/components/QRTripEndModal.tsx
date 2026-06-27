@@ -22,12 +22,13 @@ import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
 import {
+  playJourneyFinishSonic,
   playJourneyQrDuplicateError,
   playJourneyQrErrorForApiDetail,
   playJourneyQrInvalidError,
   playJourneyQrNetworkError,
+  playJourneyTripEndScanSuccess,
 } from '../lib/journeySonicController';
-import { playQrScanSuccessSound } from '../utils/sound';
 import { tapButtonHaptic } from '../utils/touchHaptics';
 import { perfLog } from '../utils/perfDiagLog';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
@@ -239,6 +240,7 @@ export default function QRTripEndModal({
             elapsed_ms: Date.now() - verifyStartedAt,
           });
           Vibration.vibrate([0, 100, 50, 100]);
+          void playJourneyFinishSonic({ tagId });
           onComplete(true, driverUserId, result.driver_name || firstName);
           onClose();
           return 'success';
@@ -329,7 +331,7 @@ export default function QRTripEndModal({
       }
 
       lastScannedValueRef.current = { data: '', ts: 0 };
-      void playQrScanSuccessSound();
+      void playJourneyTripEndScanSuccess({ tagId });
       setCameraReady(false);
       setScanSuccessBeat(true);
       await tripEndSuccessBeatDelay();
