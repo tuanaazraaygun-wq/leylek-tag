@@ -35,6 +35,42 @@ export type JourneySonicOptions = {
   bypassCrossChannel?: boolean;
 };
 
+/** Map backend/API detail text to journey QR error kind (Sprint 5C-1). */
+export function classifyJourneyQrApiDetail(detail: string): JourneyQrErrorKind {
+  const d = String(detail || '').toLowerCase();
+  if (d.includes('süresi dolmuş') || d.includes('expired')) {
+    return 'expired';
+  }
+  if (
+    d.includes('kullanılmış') ||
+    d.includes('duplicate') ||
+    d.includes('already used') ||
+    d.includes('already_used') ||
+    d.includes('zaten')
+  ) {
+    return 'duplicate';
+  }
+  return 'invalid';
+}
+
+export async function playJourneyQrErrorForApiDetail(
+  detail: string,
+  options?: JourneySonicOptions,
+): Promise<void> {
+  const kind = classifyJourneyQrApiDetail(detail);
+  switch (kind) {
+    case 'expired':
+      await journeySonicController.playQrExpiredError(options);
+      break;
+    case 'duplicate':
+      await journeySonicController.playQrDuplicateError(options);
+      break;
+    default:
+      await journeySonicController.playQrInvalidError(options);
+      break;
+  }
+}
+
 type OneShotKey = keyof typeof JOURNEY_SONIC_SOURCES;
 
 class JourneySonicController {

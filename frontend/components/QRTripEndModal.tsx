@@ -21,7 +21,13 @@ import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
-import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
+import {
+  playJourneyQrDuplicateError,
+  playJourneyQrErrorForApiDetail,
+  playJourneyQrInvalidError,
+  playJourneyQrNetworkError,
+} from '../lib/journeySonicController';
+import { playQrScanSuccessSound } from '../utils/sound';
 import { tapButtonHaptic } from '../utils/touchHaptics';
 import { perfLog } from '../utils/perfDiagLog';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
@@ -214,6 +220,7 @@ export default function QRTripEndModal({
           result = raw ? JSON.parse(raw) : {};
         } catch {
           console.error('QR complete-qr non-JSON:', raw.slice(0, 200));
+          void playJourneyQrNetworkError({ tagId });
           appAlert(
             'Yanıt okunamadı',
             response.ok
@@ -238,6 +245,7 @@ export default function QRTripEndModal({
         }
 
         if (response.status === 409) {
+          void playJourneyQrDuplicateError({ tagId });
           return 'conflict';
         }
 
@@ -248,12 +256,14 @@ export default function QRTripEndModal({
             : typeof detailRaw === 'object' && detailRaw?.message
               ? String(detailRaw.message)
               : 'Yolculuk bitirilemedi. Kısa bir süre sonra tekrar deneyin.';
+        void playJourneyQrErrorForApiDetail(detailMsg, { tagId });
         appAlert('Tamamlanamadı', detailMsg, [{ text: 'Tamam', style: 'default' }], {
           variant: 'warning',
         });
         return 'error';
       } catch (error) {
         console.error('QR complete error:', error);
+        void playJourneyQrNetworkError({ tagId });
         appAlert(
           'Bağlantı kurulamadı',
           'İnternet bağlantını kontrol edip tekrar deneyin.',
@@ -293,7 +303,7 @@ export default function QRTripEndModal({
       const qrTagId = params.get('t');
 
       if (!driverUserId || !qrTagId) {
-        void playQrScanErrorSound();
+        void playJourneyQrInvalidError({ tagId });
         appAlert(
           'Geçersiz kod',
           'QR kodu okunamadı. Tekrar deneyin.',
@@ -306,7 +316,7 @@ export default function QRTripEndModal({
       }
 
       if (qrTagId !== tagId) {
-        void playQrScanErrorSound();
+        void playJourneyQrInvalidError({ tagId });
         appAlert(
           'Uyumsuz kod',
           'Bu QR kod bu yolculuğa ait değil.',

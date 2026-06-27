@@ -16,7 +16,11 @@ import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
-import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
+import {
+  playJourneyQrErrorForApiDetail,
+  playJourneyQrNetworkError,
+} from '../lib/journeySonicController';
+import { playQrScanSuccessSound } from '../utils/sound';
 import { tapButtonHaptic } from '../utils/touchHaptics';
 import { perfLog } from '../utils/perfDiagLog';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
@@ -172,7 +176,7 @@ export default function BoardingScanModal({
         const tok = await waitForPersistedAccessToken();
         if (!tok?.trim()) {
           if (!closingRef.current) {
-            void playQrScanErrorSound();
+            void playJourneyQrNetworkError({ tagId });
             appAlert('Oturum', 'Biniş doğrulamak için yeniden giriş yapın.');
           }
           return;
@@ -196,14 +200,14 @@ export default function BoardingScanModal({
           json = raw ? JSON.parse(raw) : {};
         } catch {
           if (!closingRef.current) {
-            void playQrScanErrorSound();
+            void playJourneyQrNetworkError({ tagId });
             appAlert('Hata', 'Sunucu yanıtı okunamadı');
           }
           return;
         }
         if (res.status === 401) {
           if (!closingRef.current) {
-            void playQrScanErrorSound();
+            void playJourneyQrNetworkError({ tagId });
             appAlert('Oturum', json.detail || 'Oturum süresi dolmuş olabilir; yeniden giriş yapın.');
           }
           return;
@@ -252,22 +256,23 @@ export default function BoardingScanModal({
           if (closingRef.current) {
             return;
           }
-          void playQrScanErrorSound();
-          const detail = (json.detail || '').toLowerCase();
+          const detail = json.detail || '';
+          void playJourneyQrErrorForApiDetail(detail, { tagId });
+          const detailLo = detail.toLowerCase();
           const expiredOrInvalid =
-            detail.includes('süresi dolmuş') ||
-            detail.includes('geçersiz') ||
-            detail.includes('kullanılmış');
+            detailLo.includes('süresi dolmuş') ||
+            detailLo.includes('geçersiz') ||
+            detailLo.includes('kullanılmış');
           if (expiredOrInvalid) {
             cooldownUntilRef.current = Date.now() + BOARDING_SCAN_RESCAN_COOLDOWN_MS;
             appAlert('Biniş doğrulanamadı', 'Sürücüden yeni biniş kodu isteyin.');
           } else {
-            appAlert('Biniş doğrulanamadı', json.detail || 'Tekrar deneyin');
+            appAlert('Biniş doğrulanamadı', detail || 'Tekrar deneyin');
           }
         }
       } catch {
         if (!closingRef.current) {
-          void playQrScanErrorSound();
+          void playJourneyQrNetworkError({ tagId });
           appAlert('Hata', 'Ağ hatası — internet bağlantınızı kontrol edin');
         }
       } finally {

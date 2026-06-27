@@ -18,7 +18,11 @@ import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/bord
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
-import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
+import {
+  playJourneyQrInvalidError,
+  playJourneyQrNetworkError,
+} from '../lib/journeySonicController';
+import { playQrScanSuccessSound } from '../utils/sound';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 
 type MuhabbetTripQrScanModalProps = {
@@ -179,7 +183,7 @@ export default function MuhabbetTripQrScanModal({
     );
     const title = mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';
     if (!token) {
-      void playQrScanErrorSound();
+      void playJourneyQrInvalidError();
       Alert.alert(
         title,
         parsedUrl
@@ -197,10 +201,10 @@ export default function MuhabbetTripQrScanModal({
         void playQrScanSuccessSound();
         setTimeout(onClose, 180);
       } else {
-        void playQrScanErrorSound();
+        void playJourneyQrInvalidError();
       }
     } catch (error) {
-      void playQrScanErrorSound();
+      void playJourneyQrNetworkError();
       console.warn('[LYO_QR_SCAN_CONFIRM_ERROR]', error);
     } finally {
       setTimeout(() => {
