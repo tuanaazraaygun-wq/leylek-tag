@@ -7776,19 +7776,85 @@ function PassengerDashboard({
   // 🆕 Eşleşme sağlanıyor state'i
   const [matchingInProgress, setMatchingInProgress] = useState(false);
   const passengerMatchTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const passengerMatchTransitionFailsafeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const passengerMatchLastTagKeyRef = useRef<string | null>(null);
   const passengerMatchPrevStatusRef = useRef<string | null>(null);
   const passengerMatchTransitionFromAcceptRef = useRef(false);
   const passengerMatchOverlayDoneTagIdRef = useRef<string | null>(null);
 
+  const clearPassengerMatchTransitionTimers = useCallback(() => {
+    if (passengerMatchTransitionTimerRef.current) {
+      clearTimeout(passengerMatchTransitionTimerRef.current);
+      passengerMatchTransitionTimerRef.current = null;
+    }
+    if (passengerMatchTransitionFailsafeTimerRef.current) {
+      clearTimeout(passengerMatchTransitionFailsafeTimerRef.current);
+      passengerMatchTransitionFailsafeTimerRef.current = null;
+    }
+  }, []);
+
+  const dismissMatchingInProgressOverlay = useCallback(
+    (reason?: string) => {
+      clearPassengerMatchTransitionTimers();
+      setMatchingInProgress(false);
+      passengerMatchTransitionFromAcceptRef.current = false;
+      if (reason) {
+        perfLog('TAG_MATCH_TRANSITION_CLEAR', JSON.stringify({ reason }));
+      }
+    },
+    [clearPassengerMatchTransitionTimers],
+  );
+
+  const scheduleMatchingInProgressOverlayHide = useCallback(
+    (holdMs: number = TAG_MATCH_TRANSITION_HOLD_MS, onHide?: () => void) => {
+      clearPassengerMatchTransitionTimers();
+      const finish = () => {
+        clearPassengerMatchTransitionTimers();
+        setMatchingInProgress(false);
+        passengerMatchTransitionFromAcceptRef.current = false;
+        onHide?.();
+      };
+      passengerMatchTransitionTimerRef.current = setTimeout(() => {
+        passengerMatchTransitionTimerRef.current = null;
+        finish();
+      }, holdMs);
+      passengerMatchTransitionFailsafeTimerRef.current = setTimeout(() => {
+        passengerMatchTransitionFailsafeTimerRef.current = null;
+        perfLog(
+          'TAG_MATCH_TRANSITION_FAILSAFE',
+          JSON.stringify({ hold_ms: holdMs + 500 }),
+        );
+        finish();
+      }, holdMs + 500);
+    },
+    [clearPassengerMatchTransitionTimers],
+  );
+
   useEffect(() => {
     return () => {
-      if (passengerMatchTransitionTimerRef.current) {
-        clearTimeout(passengerMatchTransitionTimerRef.current);
-        passengerMatchTransitionTimerRef.current = null;
-      }
+      clearPassengerMatchTransitionTimers();
     };
-  }, []);
+  }, [clearPassengerMatchTransitionTimers]);
+
+  useEffect(() => {
+    if (!activeTag?.id) {
+      if (matchingInProgress) {
+        dismissMatchingInProgressOverlay('no_active_tag');
+      }
+      return;
+    }
+    const st = String(activeTag.status ?? '').trim().toLowerCase();
+    if (st === 'cancelled' || st === 'expired' || st === 'completed') {
+      dismissMatchingInProgressOverlay(`tag_status_${st}`);
+    }
+  }, [
+    activeTag?.id,
+    activeTag?.status,
+    matchingInProgress,
+    dismissMatchingInProgressOverlay,
+  ]);
 
   /** Normal TAG yolcu: poll/socket ile `matched` olduğunda overlay (accept API ile yarışmaz — ref) */
   useEffect(() => {
@@ -7800,6 +7866,9 @@ function PassengerDashboard({
       passengerMatchLastTagKeyRef.current = tagKey;
       passengerMatchPrevStatusRef.current = st;
       passengerMatchOverlayDoneTagIdRef.current = null;
+      if (tagKey === '<no-tag>') {
+        dismissMatchingInProgressOverlay('tag_key_cleared');
+      }
       return;
     }
 
@@ -7813,17 +7882,10 @@ function PassengerDashboard({
     if (passengerMatchTransitionFromAcceptRef.current) return;
     if (passengerMatchOverlayDoneTagIdRef.current === id) return;
 
-    if (passengerMatchTransitionTimerRef.current) {
-      clearTimeout(passengerMatchTransitionTimerRef.current);
-      passengerMatchTransitionTimerRef.current = null;
-    }
     passengerMatchOverlayDoneTagIdRef.current = id;
     setMatchingInProgress(true);
-    passengerMatchTransitionTimerRef.current = setTimeout(() => {
-      passengerMatchTransitionTimerRef.current = null;
-      setMatchingInProgress(false);
-    }, TAG_MATCH_TRANSITION_HOLD_MS);
-  }, [activeTag?.id, activeTag?.status]);
+    scheduleMatchingInProgressOverlayHide(TAG_MATCH_TRANSITION_HOLD_MS);
+  }, [activeTag?.id, activeTag?.status, dismissMatchingInProgressOverlay, scheduleMatchingInProgressOverlayHide]);
 
   // 🔥 Cancelled Alert'in bir kez gösterilmesi için flag
   const [cancelledAlertShown, setCancelledAlertShown] = useState(false);
@@ -9035,7 +9097,7 @@ function PassengerDashboard({
       } catch {
         /* noop */
       }
-      setMatchingInProgress(false);
+      dismissMatchingInProgressOverlay('force_end_finalize');
       setCurrentRequestId(null);
       if (!ratingModalVisibleRef.current) {
         setRatingModalData(null);
@@ -11971,20 +12033,13 @@ function PassengerDashboard({
         // Teklifleri temizle
         clearOffers();
 
-        if (passengerMatchTransitionTimerRef.current) {
-          clearTimeout(passengerMatchTransitionTimerRef.current);
-          passengerMatchTransitionTimerRef.current = null;
-        }
         const ms = TAG_MATCH_TRANSITION_HOLD_MS;
-        passengerMatchTransitionTimerRef.current = setTimeout(() => {
-          passengerMatchTransitionTimerRef.current = null;
-          passengerMatchTransitionFromAcceptRef.current = false;
-          setMatchingInProgress(false);
+        scheduleMatchingInProgressOverlayHide(ms, () => {
           perfLog(
             'TAG_MATCH_TRANSITION_HIDE',
             JSON.stringify({ role: 'passenger', tag_id: activeTag?.id ?? null, ms }),
           );
-        }, ms);
+        });
 
         void playMatchChimeSound();
         
@@ -13848,7 +13903,7 @@ function PassengerDashboard({
           styles.passengerHomeLayer,
           showDestinationPicker ? styles.passengerHomeLayerBehindPickerOpen : undefined,
         ]}
-        pointerEvents={showDestinationPicker ? 'none' : 'auto'}
+        pointerEvents="auto"
       >
         <CockpitBackground />
       <ScrollView 
@@ -14385,6 +14440,7 @@ function PassengerDashboard({
         visible={showDestinationPicker}
         animationType="slide"
         onRequestClose={handleDestinationPickerBackPress}
+        onDismiss={closeDestinationPickerModal}
       >
         <View style={styles.destinationModalRoot}>
           {destinationPickerPhase === 'map' ? (
@@ -20205,7 +20261,6 @@ function DriverDashboard({
               dwsLt?.cockpitOfferGround,
               driverInviteDeckDimVisible && { opacity: 0.38 },
             ]}
-            pointerEvents={driverInviteDeckDimVisible ? 'none' : 'auto'}
           >
             <DriverOfferScreen
               embedded

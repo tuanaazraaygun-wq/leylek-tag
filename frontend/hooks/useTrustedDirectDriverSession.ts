@@ -355,14 +355,19 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
     setIsAccepting(true);
     setErrorMessage(null);
 
-    const result = await acceptTrustedDirectInvite(iid);
+    let result: Awaited<ReturnType<typeof acceptTrustedDirectInvite>>;
+    try {
+      result = await acceptTrustedDirectInvite(iid);
+    } finally {
+      acceptInFlightRef.current = false;
+      if (mountedRef.current) {
+        setIsAccepting(false);
+      }
+    }
 
-    acceptInFlightRef.current = false;
     if (!mountedRef.current || generation !== generationRef.current) {
       return false;
     }
-
-    setIsAccepting(false);
 
     if (result.ok === false) {
       const refreshResult = await getCurrentTrustedDirectInvite();
@@ -401,14 +406,19 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
     setIsDeclining(true);
     setErrorMessage(null);
 
-    const result = await declineTrustedDirectInvite(iid);
+    let result: Awaited<ReturnType<typeof declineTrustedDirectInvite>>;
+    try {
+      result = await declineTrustedDirectInvite(iid);
+    } finally {
+      declineInFlightRef.current = false;
+      if (mountedRef.current) {
+        setIsDeclining(false);
+      }
+    }
 
-    declineInFlightRef.current = false;
     if (!mountedRef.current || generation !== generationRef.current) {
       return false;
     }
-
-    setIsDeclining(false);
 
     if (result.ok === false) {
       const refreshResult = await getCurrentTrustedDirectInvite();

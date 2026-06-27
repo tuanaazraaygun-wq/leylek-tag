@@ -354,14 +354,19 @@ export function useQuickMatchDriverSession(options: UseQuickMatchDriverSessionOp
     setIsAccepting(true);
     setErrorMessage(null);
 
-    const result = await acceptQuickMatchInvite(iid);
+    let result: Awaited<ReturnType<typeof acceptQuickMatchInvite>>;
+    try {
+      result = await acceptQuickMatchInvite(iid);
+    } finally {
+      acceptInFlightRef.current = false;
+      if (mountedRef.current) {
+        setIsAccepting(false);
+      }
+    }
 
-    acceptInFlightRef.current = false;
     if (!mountedRef.current || generation !== generationRef.current) {
       return false;
     }
-
-    setIsAccepting(false);
 
     if (result.ok === false) {
       const refreshResult = await getCurrentQuickMatchInvite();
@@ -400,14 +405,19 @@ export function useQuickMatchDriverSession(options: UseQuickMatchDriverSessionOp
     setIsDeclining(true);
     setErrorMessage(null);
 
-    const result = await declineQuickMatchInvite(iid);
+    let result: Awaited<ReturnType<typeof declineQuickMatchInvite>>;
+    try {
+      result = await declineQuickMatchInvite(iid);
+    } finally {
+      declineInFlightRef.current = false;
+      if (mountedRef.current) {
+        setIsDeclining(false);
+      }
+    }
 
-    declineInFlightRef.current = false;
     if (!mountedRef.current || generation !== generationRef.current) {
       return false;
     }
-
-    setIsDeclining(false);
 
     if (result.ok === false) {
       const refreshResult = await getCurrentQuickMatchInvite();
