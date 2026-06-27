@@ -22,6 +22,16 @@ export const SONIC_DEDUPE_MS = {
   callTimeout: 3000,
   callOffline: 4000,
   callEnded: 2000,
+  /** Journey Sonic V2 foundation (Sprint 5C-0) — not wired to QR modals yet. */
+  journeyBoardingScan: 500,
+  journeyBoardingRemote: 1200,
+  journeyTripEndScan: 500,
+  journeyFinish: 2000,
+  journeyPayment: 1000,
+  journeyPaymentError: 1200,
+  journeyForceEnd: 1500,
+  journeyQrErrorKind: 800,
+  journeyCrossChannel: 300,
 } as const;
 
 export type CooldownGate = {
@@ -119,6 +129,113 @@ export const qrScanSonicGate = {
       this.lastErrorAt = now;
     }
     return true;
+  },
+};
+
+/** Journey boarding scan — local decode/API success blip (5C-0). */
+export const journeyBoardingScanGate = createCooldownGate(SONIC_DEDUPE_MS.journeyBoardingScan);
+
+/** Driver remote boarding ack — peer scanned while QR modal open (5C-0). */
+export const journeyBoardingRemoteGate = createCooldownGate(SONIC_DEDUPE_MS.journeyBoardingRemote);
+
+/** Trip-end QR decode success — pre-complete-qr (5C-0). */
+export const journeyTripEndScanGate = createCooldownGate(SONIC_DEDUPE_MS.journeyTripEndScan);
+
+/** Journey finish sting — post trip complete (5C-0). */
+export const journeyFinishGate = createCooldownGate(SONIC_DEDUPE_MS.journeyFinish);
+
+/** Journey payment wrapper — separate instance from production payment gate (5C-0). */
+export const journeyPaymentSonicGate = createCooldownGate(SONIC_DEDUPE_MS.journeyPayment);
+
+/** Journey payment failure — separate from QR network errors (5C-0). */
+export const journeyPaymentErrorGate = createCooldownGate(SONIC_DEDUPE_MS.journeyPaymentError);
+
+/** Force-end accepted / rejected — shared window (5C-0). */
+export type JourneyForceEndKind = 'accepted' | 'rejected';
+
+export const journeyForceEndSonicGate = {
+  lastAcceptedAt: 0,
+  lastRejectedAt: 0,
+
+  tryPass(kind: JourneyForceEndKind): boolean {
+    const now = Date.now();
+    const cooldown = SONIC_DEDUPE_MS.journeyForceEnd;
+    const lastAt = kind === 'accepted' ? this.lastAcceptedAt : this.lastRejectedAt;
+    if (now - lastAt < cooldown) {
+      return false;
+    }
+    if (kind === 'accepted') {
+      this.lastAcceptedAt = now;
+    } else {
+      this.lastRejectedAt = now;
+    }
+    return true;
+  },
+
+  reset() {
+    this.lastAcceptedAt = 0;
+    this.lastRejectedAt = 0;
+  },
+};
+
+/** QR error taxonomy — invalid / expired / duplicate / network (5C-0). */
+export type JourneyQrErrorKind = 'invalid' | 'expired' | 'duplicate' | 'network';
+
+export const journeyQrErrorKindGate = {
+  lastByKind: {} as Partial<Record<JourneyQrErrorKind, number>>,
+
+  tryPass(kind: JourneyQrErrorKind): boolean {
+    const now = Date.now();
+    const cooldown = SONIC_DEDUPE_MS.journeyQrErrorKind;
+    const lastAt = this.lastByKind[kind] ?? 0;
+    if (now - lastAt < cooldown) {
+      return false;
+    }
+    this.lastByKind[kind] = now;
+    return true;
+  },
+
+  reset() {
+    this.lastByKind = {};
+  },
+};
+
+/** Suppress lower-priority journey blips after finish/payment (5C-0). */
+export const journeyCrossChannelGate = createCooldownGate(SONIC_DEDUPE_MS.journeyCrossChannel);
+
+/** Journey start — once per tag per app session (5C-0). */
+export const journeyStartSessionGate = {
+  firedTagIds: new Set<string>(),
+
+  tryPass(tagId?: string | null): boolean {
+    const id = String(tagId || '').trim() || '__anonymous__';
+    if (this.firedTagIds.has(id)) {
+      return false;
+    }
+    this.firedTagIds.add(id);
+    return true;
+  },
+
+  reset() {
+    this.firedTagIds.clear();
+  },
+};
+
+/** Journey finish — once per tag per app session (5C-0). */
+export const journeyFinishSessionGate = {
+  firedTagIds: new Set<string>(),
+
+  tryPass(tagId?: string | null): boolean {
+    const id = String(tagId || '').trim() || '__anonymous__';
+    if (this.firedTagIds.has(id)) {
+      return false;
+    }
+    this.firedTagIds.add(id);
+    return true;
+  },
+
+  reset() {
+    this.firedTagIds.clear();
   },
 };
 

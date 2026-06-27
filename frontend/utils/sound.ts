@@ -813,6 +813,52 @@ export async function loadCallSonicAudioMode(): Promise<void> {
   await loadSounds();
 }
 
+// ── Journey Sonic V2 foundation — placeholder assets; dedicated WAV in 5C-1+ ──
+
+/** One-shot volumes for journeySonicController (not wired to QR modals until 5C-1). */
+export const JOURNEY_SONIC_VOLUMES = {
+  boardingScanSuccess: 0.5,
+  boardingRemoteAck: 0.42,
+  journeyStart: 0.46,
+  tripEndScanSuccess: 0.48,
+  journeyFinish: 0.52,
+  paymentSuccess: 0.52,
+  qrErrorInvalid: 0.48,
+  qrErrorExpired: 0.46,
+  qrErrorDuplicate: 0.44,
+  qrErrorNetwork: 0.48,
+  paymentError: 0.5,
+  forceEndAccepted: 0.32,
+  forceEndRejected: 0.34,
+} as const;
+
+/**
+ * Placeholder sources — map to existing bundle WAV until journey-*.wav assets ship.
+ * Swap requires in 5C-1+ only; controller API stays stable.
+ */
+export const JOURNEY_SONIC_SOURCES = {
+  boardingScanSuccess: require('../assets/sounds/qr-scan-success.wav'),
+  boardingRemoteAck: require('../assets/sounds/match-chime.wav'),
+  journeyStart: require('../assets/sounds/match-chime.wav'),
+  tripEndScanSuccess: require('../assets/sounds/qr-scan-success.wav'),
+  journeyFinish: require('../assets/sounds/payment-confirmed.wav'),
+  paymentSuccess: require('../assets/sounds/payment-confirmed.wav'),
+  qrErrorInvalid: require('../assets/sounds/qr-scan-error.wav'),
+  qrErrorExpired: require('../assets/sounds/qr-scan-error.wav'),
+  qrErrorDuplicate: require('../assets/sounds/ui-tap.wav'),
+  qrErrorNetwork: require('../assets/sounds/feedback-error.wav'),
+  paymentError: require('../assets/sounds/feedback-error.wav'),
+  forceEndAccepted: require('../assets/sounds/payment-confirmed.wav'),
+  forceEndRejected: require('../assets/sounds/feedback-error.wav'),
+} as const;
+
+export type JourneyQrErrorKind = 'invalid' | 'expired' | 'duplicate' | 'network';
+
+/** Journey one-shots — same ducking profile as QR/match until 5C-1 wiring. */
+export async function loadJourneySonicAudioMode(): Promise<void> {
+  await loadSounds();
+}
+
 // ── Matched chat inbound — soft message ping (Sprint 5B) ──
 
 const CHAT_INBOUND_VOLUME = 0.34;
