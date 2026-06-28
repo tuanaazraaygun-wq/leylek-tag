@@ -27193,6 +27193,42 @@ async def get_driver_activation_status(user_id: str):
 
 # ==================== GELİŞMİŞ ADMİN PANELİ ====================
 
+def _admin_parse_dashboard_ts(raw: Any) -> Optional[datetime]:
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        dt = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
+    except Exception:
+        return None
+
+
+def _admin_offer_sent_to_seen_ms(sent_at_raw: Any, seen_at_raw: Any) -> Optional[int]:
+    sent_dt = _admin_parse_dashboard_ts(sent_at_raw)
+    seen_dt = _admin_parse_dashboard_ts(seen_at_raw)
+    if sent_dt is None or seen_dt is None:
+        return None
+    return max(0, int((seen_dt - sent_dt).total_seconds() * 1000))
+
+
+def _admin_latency_percentile_ms(values: list[int], percentile: float) -> Optional[int]:
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    ordered = sorted(values)
+    n = len(ordered)
+    rank = (n - 1) * percentile
+    lo = int(math.floor(rank))
+    hi = min(lo + 1, n - 1)
+    if lo == hi:
+        return ordered[lo]
+    frac = rank - lo
+    return int(round(ordered[lo] + (ordered[hi] - ordered[lo]) * frac))
+
+
 @api_router.get("/admin/dashboard/full")
 async def admin_full_dashboard(admin_phone: str):
     """Admin - Tam dashboard istatistikleri"""
@@ -27417,6 +27453,69 @@ async def admin_full_dashboard(admin_phone: str):
             cancel_unknown_stage = max(0, cancelled_7d - classified)
         except Exception as _cx:
             logger.warning("admin dashboard cancellation metrics: %s", _cx)
+
+        # Enterprise ops — offer latency aggregates (dispatch_queue; count-only + capped sample)
+        offer_latency_window_hours = 24
+        offer_sent_rows_24h = 0
+        offer_seen_rows_24h = 0
+        offer_unseen_sent_count_24h = 0
+        offer_sent_to_seen_avg_ms = None
+        offer_sent_to_seen_p50_ms = None
+        offer_sent_to_seen_p95_ms = None
+        try:
+            offer_latency_since = (now - timedelta(hours=offer_latency_window_hours)).isoformat()
+            offer_sent_rows_24h = (
+                supabase.table("dispatch_queue")
+                .select("id", count="exact")
+                .gte("sent_at", offer_latency_since)
+                .not_.is_("sent_at", "null")
+                .execute()
+                .count
+                or 0
+            )
+            offer_seen_rows_24h = (
+                supabase.table("dispatch_queue")
+                .select("id", count="exact")
+                .gte("sent_at", offer_latency_since)
+                .not_.is_("sent_at", "null")
+                .not_.is_("driver_seen_at", "null")
+                .execute()
+                .count
+                or 0
+            )
+            offer_unseen_sent_count_24h = (
+                supabase.table("dispatch_queue")
+                .select("id", count="exact")
+                .eq("status", "sent")
+                .gte("sent_at", offer_latency_since)
+                .is_("driver_seen_at", "null")
+                .execute()
+                .count
+                or 0
+            )
+            offer_latency_sample = (
+                supabase.table("dispatch_queue")
+                .select("sent_at, driver_seen_at, status")
+                .gte("sent_at", offer_latency_since)
+                .not_.is_("sent_at", "null")
+                .not_.is_("driver_seen_at", "null")
+                .order("sent_at", desc=True)
+                .limit(1000)
+                .execute()
+            )
+            latency_ms_values: list[int] = []
+            for row in offer_latency_sample.data or []:
+                ms = _admin_offer_sent_to_seen_ms(row.get("sent_at"), row.get("driver_seen_at"))
+                if ms is not None:
+                    latency_ms_values.append(ms)
+            if latency_ms_values:
+                offer_sent_to_seen_avg_ms = int(
+                    round(sum(latency_ms_values) / len(latency_ms_values))
+                )
+                offer_sent_to_seen_p50_ms = _admin_latency_percentile_ms(latency_ms_values, 0.50)
+                offer_sent_to_seen_p95_ms = _admin_latency_percentile_ms(latency_ms_values, 0.95)
+        except Exception as _ol:
+            logger.warning("admin dashboard offer_latency metrics: %s", _ol)
         
         return {
             "success": True,
@@ -27456,6 +27555,15 @@ async def admin_full_dashboard(admin_phone: str):
                 },
                 "socket": {
                     "health": "unknown",
+                },
+                "offer_latency": {
+                    "window_hours": offer_latency_window_hours,
+                    "sent_rows_24h": offer_sent_rows_24h,
+                    "seen_rows_24h": offer_seen_rows_24h,
+                    "unseen_sent_count_24h": offer_unseen_sent_count_24h,
+                    "sent_to_seen_avg_ms": offer_sent_to_seen_avg_ms,
+                    "sent_to_seen_p50_ms": offer_sent_to_seen_p50_ms,
+                    "sent_to_seen_p95_ms": offer_sent_to_seen_p95_ms,
                 },
             }
         }
