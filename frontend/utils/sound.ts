@@ -861,22 +861,29 @@ export async function loadJourneySonicAudioMode(): Promise<void> {
 
 // ── Matched chat inbound — soft message ping (Sprint 5B) ──
 
-const CHAT_INBOUND_VOLUME = 0.34;
+const CHAT_INBOUND_VOLUME = 0.48;
+const CHAT_INBOUND_FIRST_VOLUME = 0.58;
 
 /** Placeholder until chat-inbound.wav ships — match-chime family. */
 const CHAT_INBOUND_SOURCE = require('../assets/sounds/match-chime.wav');
 
+export type PlayChatInboundSoundOptions = {
+  /** İlk okunmamış mesaj — match chime cooldown'ını atla. */
+  bypassCooldown?: boolean;
+};
+
 /** Foreground matched-trip inbound message — cooldown gated. */
-export async function playChatInboundSound(): Promise<void> {
+export async function playChatInboundSound(options?: PlayChatInboundSoundOptions): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
-  if (!chatInboundCooldownGate.tryPass()) return;
+  const bypassCooldown = options?.bypassCooldown === true;
+  if (!bypassCooldown && !chatInboundCooldownGate.tryPass()) return;
 
   try {
     await loadSounds();
     const { sound } = await Audio.Sound.createAsync(CHAT_INBOUND_SOURCE, {
       shouldPlay: false,
-      volume: CHAT_INBOUND_VOLUME,
+      volume: bypassCooldown ? CHAT_INBOUND_FIRST_VOLUME : CHAT_INBOUND_VOLUME,
       isLooping: false,
     });
     await sound.setPositionAsync(0);

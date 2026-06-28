@@ -25447,6 +25447,34 @@ async def send_chat_message(msg: ChatMessageCreate):
             except Exception as socket_err:
                 logger.warning(f"⚠️ first_chat_message socket failed: {socket_err}")
 
+        _created_at = saved_message.get("created_at")
+        _message_id = saved_message.get("id")
+        _new_msg_payload = {
+            "tag_id": msg.tag_id,
+            "sender_id": msg.sender_id,
+            "receiver_id": msg.receiver_id,
+            "sender_name": sender_name,
+            "message": msg.message,
+            "text": msg.message,
+            "timestamp": _created_at,
+            "created_at": _created_at,
+            "message_id": _message_id,
+            "from_driver": from_driver,
+        }
+        try:
+            await emit_socket_event_to_user(
+                str(msg.receiver_id).strip(),
+                "new_message",
+                _new_msg_payload,
+            )
+        except Exception as _nm_err:
+            logger.warning(
+                "new_message socket emit failed receiver=%s tag=%s: %s",
+                _mask_log_id(msg.receiver_id),
+                _short_log_id(msg.tag_id),
+                _nm_err,
+            )
+
         return {
             "success": True,
             "message_id": saved_message["id"],

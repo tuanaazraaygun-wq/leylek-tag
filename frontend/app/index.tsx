@@ -48,6 +48,7 @@ import { agoraUidFromUserId } from '../lib/agoraUid';
 import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import {
   clipMatchedChatPreview,
+  MATCHED_CHAT_FIRST_PEEK_MS,
   MATCHED_CHAT_PEEK_MS,
   type MatchedChatPeek,
 } from '../lib/matchedChatAwareness';
@@ -7922,9 +7923,14 @@ function PassengerDashboard({
   const [passengerChatVisible, setPassengerChatVisible] = useState(false);
   const [passengerIncomingMessage, setPassengerIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
   const [passengerChatUnread, setPassengerChatUnread] = useState(0);
+  const passengerChatUnreadRef = useRef(0);
   const [passengerChatPeek, setPassengerChatPeek] = useState<MatchedChatPeek | null>(null);
   const passengerChatPeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const passengerChatAwarenessDedupeRef = useRef<{ key: string; at: number } | null>(null);
+
+  useEffect(() => {
+    passengerChatUnreadRef.current = passengerChatUnread;
+  }, [passengerChatUnread]);
   const {
     lastTappedNotificationData: paxChatNotifData,
     clearLastTappedNotification: paxClearChatNotif,
@@ -9290,15 +9296,20 @@ function PassengerDashboard({
   }, [clearPassengerChatPeekTimer]);
 
   const showPassengerChatPeek = useCallback(
-    (senderLabel: string, preview: string) => {
+    (senderLabel: string, preview: string, opts?: { isFirst?: boolean }) => {
       clearPassengerChatPeekTimer();
       const clipped = clipMatchedChatPreview(preview);
       if (!clipped) return;
-      setPassengerChatPeek({ senderLabel, preview: clipped });
+      const isFirst = opts?.isFirst === true;
+      setPassengerChatPeek({
+        senderLabel,
+        preview: clipped,
+        headline: isFirst ? 'Yeni mesaj' : undefined,
+      });
       passengerChatPeekTimerRef.current = setTimeout(() => {
         setPassengerChatPeek(null);
         passengerChatPeekTimerRef.current = null;
-      }, MATCHED_CHAT_PEEK_MS);
+      }, isFirst ? MATCHED_CHAT_FIRST_PEEK_MS : MATCHED_CHAT_PEEK_MS);
     },
     [clearPassengerChatPeekTimer],
   );
@@ -9315,14 +9326,25 @@ function PassengerDashboard({
       timestamp: number;
       senderLabel?: string;
       fromDriver?: boolean;
+      isFirstInbound?: boolean;
     }) => {
       const uid = user?.id;
       if (uid && payload.senderId && String(payload.senderId) === String(uid)) return;
 
+      const isFirstUnread =
+        payload.isFirstInbound === true ||
+        (!passengerChatVisible && passengerChatUnreadRef.current === 0);
       const dedupeKey = `${payload.senderId}|${clipMatchedChatPreview(payload.text, 64)}`;
       const prevDedupe = passengerChatAwarenessDedupeRef.current;
       const now = Date.now();
-      if (prevDedupe && prevDedupe.key === dedupeKey && now - prevDedupe.at < 4000) return;
+      if (
+        !isFirstUnread &&
+        prevDedupe &&
+        prevDedupe.key === dedupeKey &&
+        now - prevDedupe.at < 4000
+      ) {
+        return;
+      }
       passengerChatAwarenessDedupeRef.current = { key: dedupeKey, at: now };
 
       setPassengerIncomingMessage({
@@ -9333,28 +9355,20 @@ function PassengerDashboard({
 
       if (passengerChatVisible) return;
 
+      const label =
+        payload.senderLabel ??
+        (payload.fromDriver === true ? 'Sürücü' : payload.fromDriver === false ? 'Yolcu' : 'Sürücü');
+
       setPassengerChatUnread((c) => {
-        const next = c + 1;
-        if (c === 0) {
-          const label =
-            payload.senderLabel ??
-            (payload.fromDriver === true ? 'Sürücü' : payload.fromDriver === false ? 'Yolcu' : 'Sürücü');
-          showPassengerChatPeek(label, payload.text);
-        }
-        return next;
+        showPassengerChatPeek(label, payload.text, { isFirst: isFirstUnread || c === 0 });
+        return c + 1;
       });
 
-      if (!showCallScreen && !incomingCallData) {
-        void playChatInboundSound();
+      if (!showCallScreen) {
+        void playChatInboundSound({ bypassCooldown: isFirstUnread });
       }
     },
-    [
-      user?.id,
-      passengerChatVisible,
-      showCallScreen,
-      incomingCallData,
-      showPassengerChatPeek,
-    ],
+    [user?.id, passengerChatVisible, showCallScreen, showPassengerChatPeek],
   );
 
   const {
@@ -9715,12 +9729,15 @@ function PassengerDashboard({
         timestamp,
         senderLabel: data.from_driver ? 'Sürücü' : 'Yolcu',
         fromDriver: data.from_driver,
+        isFirstInbound: true,
       });
     },
     onNewMessage: (data) => {
       if (!data?.tag_id) return;
       if (activeTag?.id && data.tag_id !== activeTag.id) return;
-      const preview = String(data.message || '').trim();
+      const preview = String(
+        data.message || (data as { text?: string }).text || '',
+      ).trim();
       if (!preview) return;
       const parsedTs = data.timestamp ? new Date(data.timestamp).getTime() : NaN;
       const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
@@ -10950,6 +10967,7 @@ function PassengerDashboard({
         showPassengerChatPeek(
           d.from_driver === true || String(d.from_driver).toLowerCase() === 'true' ? 'Sürücü' : 'Sürücü',
           preview || 'Yeni mesaj',
+          { isFirst: true },
         );
       }
       return;
@@ -13185,8 +13203,18 @@ function PassengerDashboard({
                     style={styles.passengerTripBannerWrap}
                   >
                     <GlassSurface variant="plain" style={[styles.passengerTripBannerAlert, jLt?.tripBannerAlert]} borderRadius={LDS_RADIUS.md}>
+                      {passengerChatPeek.headline ? (
+                        <PremiumText
+                          variant="body"
+                          style={[styles.passengerTripBannerTitle, jLt?.tripBannerHintAccent]}
+                        >
+                          {passengerChatPeek.headline}
+                        </PremiumText>
+                      ) : null}
                       <PremiumText variant="body" style={styles.passengerTripBannerTitle}>
-                        {passengerChatPeek.senderLabel} yazdı
+                        {passengerChatPeek.headline
+                          ? passengerChatPeek.senderLabel
+                          : `${passengerChatPeek.senderLabel} yazdı`}
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.passengerTripBannerBody}>
                         {passengerChatPeek.preview}
@@ -16255,9 +16283,14 @@ function DriverDashboard({
   const [driverChatVisible, setDriverChatVisible] = useState(false);
   const [driverIncomingMessage, setDriverIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
   const [driverChatUnread, setDriverChatUnread] = useState(0);
+  const driverChatUnreadRef = useRef(0);
   const [driverChatPeek, setDriverChatPeek] = useState<MatchedChatPeek | null>(null);
   const driverChatPeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const driverChatAwarenessDedupeRef = useRef<{ key: string; at: number } | null>(null);
+
+  useEffect(() => {
+    driverChatUnreadRef.current = driverChatUnread;
+  }, [driverChatUnread]);
   
   // 🆕 End Trip Modal State'leri (Sürücü)
   const [driverEndTripModalVisible, setDriverEndTripModalVisible] = useState(false);
@@ -16965,15 +16998,20 @@ function DriverDashboard({
   }, [clearDriverChatPeekTimer]);
 
   const showDriverChatPeek = useCallback(
-    (senderLabel: string, preview: string) => {
+    (senderLabel: string, preview: string, opts?: { isFirst?: boolean }) => {
       clearDriverChatPeekTimer();
       const clipped = clipMatchedChatPreview(preview);
       if (!clipped) return;
-      setDriverChatPeek({ senderLabel, preview: clipped });
+      const isFirst = opts?.isFirst === true;
+      setDriverChatPeek({
+        senderLabel,
+        preview: clipped,
+        headline: isFirst ? 'Yeni mesaj' : undefined,
+      });
       driverChatPeekTimerRef.current = setTimeout(() => {
         setDriverChatPeek(null);
         driverChatPeekTimerRef.current = null;
-      }, MATCHED_CHAT_PEEK_MS);
+      }, isFirst ? MATCHED_CHAT_FIRST_PEEK_MS : MATCHED_CHAT_PEEK_MS);
     },
     [clearDriverChatPeekTimer],
   );
@@ -16990,14 +17028,25 @@ function DriverDashboard({
       timestamp: number;
       senderLabel?: string;
       fromDriver?: boolean;
+      isFirstInbound?: boolean;
     }) => {
       const uid = user?.id;
       if (uid && payload.senderId && String(payload.senderId) === String(uid)) return;
 
+      const isFirstUnread =
+        payload.isFirstInbound === true ||
+        (!driverChatVisible && driverChatUnreadRef.current === 0);
       const dedupeKey = `${payload.senderId}|${clipMatchedChatPreview(payload.text, 64)}`;
       const prevDedupe = driverChatAwarenessDedupeRef.current;
       const now = Date.now();
-      if (prevDedupe && prevDedupe.key === dedupeKey && now - prevDedupe.at < 4000) return;
+      if (
+        !isFirstUnread &&
+        prevDedupe &&
+        prevDedupe.key === dedupeKey &&
+        now - prevDedupe.at < 4000
+      ) {
+        return;
+      }
       driverChatAwarenessDedupeRef.current = { key: dedupeKey, at: now };
 
       setDriverIncomingMessage({
@@ -17008,28 +17057,20 @@ function DriverDashboard({
 
       if (driverChatVisible) return;
 
+      const label =
+        payload.senderLabel ??
+        (payload.fromDriver === true ? 'Sürücü' : payload.fromDriver === false ? 'Yolcu' : 'Yolcu');
+
       setDriverChatUnread((c) => {
-        const next = c + 1;
-        if (c === 0) {
-          const label =
-            payload.senderLabel ??
-            (payload.fromDriver === true ? 'Sürücü' : payload.fromDriver === false ? 'Yolcu' : 'Yolcu');
-          showDriverChatPeek(label, payload.text);
-        }
-        return next;
+        showDriverChatPeek(label, payload.text, { isFirst: isFirstUnread || c === 0 });
+        return c + 1;
       });
 
-      if (!showCallScreen && !driverIncomingCallData) {
-        void playChatInboundSound();
+      if (!showCallScreen) {
+        void playChatInboundSound({ bypassCooldown: isFirstUnread });
       }
     },
-    [
-      user?.id,
-      driverChatVisible,
-      showCallScreen,
-      driverIncomingCallData,
-      showDriverChatPeek,
-    ],
+    [user?.id, driverChatVisible, showCallScreen, showDriverChatPeek],
   );
 
   const {
@@ -17490,12 +17531,15 @@ function DriverDashboard({
         timestamp,
         senderLabel: data.from_driver ? 'Sürücü' : 'Yolcu',
         fromDriver: data.from_driver,
+        isFirstInbound: true,
       });
     },
     onNewMessage: (data) => {
       if (!data?.tag_id) return;
       if (activeTag?.id && data.tag_id !== activeTag.id) return;
-      const preview = String(data.message || '').trim();
+      const preview = String(
+        data.message || (data as { text?: string }).text || '',
+      ).trim();
       if (!preview) return;
       const parsedTs = data.timestamp ? new Date(data.timestamp).getTime() : NaN;
       const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
@@ -20733,8 +20777,18 @@ function DriverDashboard({
               style={styles.driverTripBannerWrap}
             >
               <GlassSurface variant="plain" style={[styles.driverTripBannerAlert, jLt?.tripBannerAlert]} borderRadius={LDS_RADIUS.md}>
+                {driverChatPeek.headline ? (
+                  <PremiumText
+                    variant="body"
+                    style={[styles.driverTripBannerTitle, jLt?.tripBannerHintAccent]}
+                  >
+                    {driverChatPeek.headline}
+                  </PremiumText>
+                ) : null}
                 <PremiumText variant="body" style={styles.driverTripBannerTitle}>
-                  {driverChatPeek.senderLabel} yazdı
+                  {driverChatPeek.headline
+                    ? driverChatPeek.senderLabel
+                    : `${driverChatPeek.senderLabel} yazdı`}
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.driverTripBannerBody}>
                   {driverChatPeek.preview}
