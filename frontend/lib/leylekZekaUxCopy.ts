@@ -44,7 +44,7 @@ const DEFAULT_COPY: LeylekZekaBaseCopy = {
   ],
   idleHints: [
     'Uygulama adımlarında takılırsan kısa ve güvenli şekilde açıklayabilirim.',
-    'Normal TAG, Leylek Teklifi, Muhabbet, QR ve Güven Al başlıklarını anlatabilirim.',
+    'Normal eşleşme, Leylek Teklifi, Muhabbet, QR ve Güven Al başlıklarını anlatabilirim.',
   ],
 };
 
@@ -58,13 +58,13 @@ const ROLE_SELECT_COPY: LeylekZekaBaseCopy = {
   starterPrompts: [
     'Yolcu akışı nasıl çalışır?',
     'Sürücü akışı nasıl çalışır?',
-    'Normal TAG ile Leylek Teklifi farkı nedir?',
+    'Normal eşleşme ile Leylek Teklifi farkı nedir?',
     'Güven Al ne işe yarar?',
   ],
   idleHints: [
     'Yolcu akışı yolculuk başlatmaya, sürücü akışı teklifleri takip etmeye odaklanır.',
     'Rol seçimini değiştirmeden önce hangi ekranda devam edeceğini birlikte netleştirebiliriz.',
-    'Leylek Teklifi ve normal TAG akışlarını kısa başlıklarla anlatabilirim.',
+    'Leylek Teklifi ve normal eşleşme akışlarını kısa başlıklarla anlatabilirim.',
   ],
 };
 
@@ -84,7 +84,7 @@ const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaBaseCopy> =
     ],
     idleHints: [
       'Yolculuk başlatmadan önce başlangıç, hedef ve araç tercihini kontrol edebilirsin.',
-      'Normal TAG ve Leylek Teklifi arasındaki kullanım farkını anlatabilirim.',
+      'Normal eşleşme ve Leylek Teklifi arasındaki kullanım farkını anlatabilirim.',
       'Güven Al ve QR adımlarının ne işe yaradığını açıklayabilirim.',
     ],
   },
@@ -150,7 +150,7 @@ const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaBaseCopy> =
     intentScope: 'driver_idle_guide',
     emptyTitle: 'Sürücü ekranı rehberi',
     emptyBody:
-      'Teklifleri görme, KYC durumu, normal TAG ve Leylek Teklifi adımlarını açıklayabilirim. Gerçek bölgesel veri olmadan yönlendirme yapmam; sadece ekran kullanımını anlatırım.',
+      'Teklifleri görme, KYC durumu, normal eşleşme ve Leylek Teklifi adımlarını açıklayabilirim. Gerçek bölgesel veri olmadan yönlendirme yapmam; sadece ekran kullanımını anlatırım.',
     placeholder: 'Örn. Sürücü teklifleri nasıl görür?',
     starterPrompts: [
       'Sürücü teklifleri nasıl görür?',
