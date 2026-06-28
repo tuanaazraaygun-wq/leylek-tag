@@ -279,6 +279,12 @@ const API_URL = API_BASE_URL;
 /** PIN ekranına geçerken phone state kaybolursa verify-pin boş phone göndermesin */
 const PENDING_PIN_LOGIN_PHONE_KEY = 'pending_pin_login_phone';
 
+function voiceCallIdsMatch(a?: string | null, b?: string | null): boolean {
+  const x = String(a ?? '').trim();
+  const y = String(b ?? '').trim();
+  return !!x && !!y && x === y;
+}
+
 /** Giriş / OTP / yeniden gönder: `handleSendOTP` ile aynı 10 haneli 5… normalize */
 function loginPhoneToCleanTen(raw: string): string {
   let c = raw.replace(/\D/g, '');
@@ -9003,6 +9009,78 @@ function PassengerDashboard({
     [closePassengerCallUi],
   );
 
+  const shouldPassengerForceIncomingCallTeardown = useCallback(
+    (eventCallId?: string | null) => {
+      const eid = String(eventCallId ?? '').trim();
+      const screenId = String(callScreenData?.callId ?? '').trim();
+      const incomingId = String(incomingCallData?.callId ?? '').trim();
+      if (eid) {
+        if (screenId && voiceCallIdsMatch(eid, screenId)) return true;
+        if (incomingId && voiceCallIdsMatch(eid, incomingId)) return true;
+        return false;
+      }
+      if (callAccepted) return false;
+      return showCallScreen || !!incomingCallData;
+    },
+    [
+      callScreenData?.callId,
+      incomingCallData?.callId,
+      incomingCallData,
+      showCallScreen,
+      callAccepted,
+    ],
+  );
+
+  const stopPassengerCallAudio = useCallback(() => {
+    try {
+      InCallManager.stopRingback();
+      InCallManager.stopRingtone();
+      Vibration.cancel();
+      InCallManager.stop();
+    } catch {
+      /* noop */
+    }
+    void stopAllCallSonic();
+  }, []);
+
+  const tearDownPassengerIncomingCall = useCallback(
+    (data: { call_id?: string } | null | undefined, source: 'cancelled' | 'ended') => {
+      const eventCallId = data?.call_id;
+      if (!shouldPassengerForceIncomingCallTeardown(eventCallId)) {
+        if (
+          callAccepted &&
+          eventCallId &&
+          voiceCallIdsMatch(eventCallId, callScreenData?.callId)
+        ) {
+          setCallEnded(true);
+        }
+        return;
+      }
+      try {
+        perfLog(
+          'CALL_INCOMING_TEARDOWN',
+          JSON.stringify({
+            role: 'passenger',
+            source,
+            call_id: eventCallId ?? null,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      stopPassengerCallAudio();
+      void agoraVoiceService.leaveChannelAndDestroy().catch(() => {});
+      closePassengerCallUi();
+    },
+    [
+      shouldPassengerForceIncomingCallTeardown,
+      callAccepted,
+      callScreenData?.callId,
+      stopPassengerCallAudio,
+      closePassengerCallUi,
+    ],
+  );
+
   useEffect(() => {
     if (!showCallScreen || !callScreenData || callScreenData.mode !== 'caller' || !user?.id) return;
     if (callAccepted) return;
@@ -9301,13 +9379,11 @@ function PassengerDashboard({
     userRole: 'passenger',
     onCallCancelled: (data) => {
       perfLog('🚫 YOLCU - ARAMA İPTAL EDİLDİ:', data);
-      callCheck('clearIncomingCall', clearIncomingCall);
-      clearIncomingCall();
+      tearDownPassengerIncomingCall(data as { call_id?: string }, 'cancelled');
     },
     onCallEndedNew: (data) => {
       perfLog('📴 YOLCU - CALL_ENDED (Backend-driven):', data);
-      callCheck('clearIncomingCall', clearIncomingCall);
-      clearIncomingCall();
+      tearDownPassengerIncomingCall(data as { call_id?: string }, 'ended');
     },
     onIncomingCall: (data) => {
       perfLog('📞 YOLCU - GELEN ARAMA (socket):', data);
@@ -9342,7 +9418,7 @@ function PassengerDashboard({
     },
     onCallEnded: (data) => {
       perfLog('📴 YOLCU - ARAMA SONLANDIRILDI:', data);
-      setCallEnded(true);
+      tearDownPassengerIncomingCall(data as { call_id?: string }, 'ended');
     },
     onCallRinging: (data) => {
       perfLog('🔔 YOLCU - ARAMA DURUMU:', data);
@@ -16514,6 +16590,78 @@ function DriverDashboard({
     [closeDriverCallUi],
   );
 
+  const shouldDriverForceIncomingCallTeardown = useCallback(
+    (eventCallId?: string | null) => {
+      const eid = String(eventCallId ?? '').trim();
+      const screenId = String(callScreenData?.callId ?? '').trim();
+      const incomingId = String(driverIncomingCallData?.callId ?? '').trim();
+      if (eid) {
+        if (screenId && voiceCallIdsMatch(eid, screenId)) return true;
+        if (incomingId && voiceCallIdsMatch(eid, incomingId)) return true;
+        return false;
+      }
+      if (callAccepted) return false;
+      return showCallScreen || !!driverIncomingCallData;
+    },
+    [
+      callScreenData?.callId,
+      driverIncomingCallData?.callId,
+      driverIncomingCallData,
+      showCallScreen,
+      callAccepted,
+    ],
+  );
+
+  const stopDriverCallAudio = useCallback(() => {
+    try {
+      InCallManager.stopRingback();
+      InCallManager.stopRingtone();
+      Vibration.cancel();
+      InCallManager.stop();
+    } catch {
+      /* noop */
+    }
+    void stopAllCallSonic();
+  }, []);
+
+  const tearDownDriverIncomingCall = useCallback(
+    (data: { call_id?: string } | null | undefined, source: 'cancelled' | 'ended') => {
+      const eventCallId = data?.call_id;
+      if (!shouldDriverForceIncomingCallTeardown(eventCallId)) {
+        if (
+          callAccepted &&
+          eventCallId &&
+          voiceCallIdsMatch(eventCallId, callScreenData?.callId)
+        ) {
+          setCallEnded(true);
+        }
+        return;
+      }
+      try {
+        perfLog(
+          'CALL_INCOMING_TEARDOWN',
+          JSON.stringify({
+            role: 'driver',
+            source,
+            call_id: eventCallId ?? null,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      stopDriverCallAudio();
+      void agoraVoiceService.leaveChannelAndDestroy().catch(() => {});
+      closeDriverCallUi();
+    },
+    [
+      shouldDriverForceIncomingCallTeardown,
+      callAccepted,
+      callScreenData?.callId,
+      stopDriverCallAudio,
+      closeDriverCallUi,
+    ],
+  );
+
   useEffect(() => {
     if (!showCallScreen || !callScreenData || callScreenData.mode !== 'caller' || !user?.id) return;
     if (callAccepted) return;
@@ -16901,11 +17049,11 @@ function DriverDashboard({
     userRole: 'driver',
     onCallCancelled: (data) => {
       perfLog('🚫 ŞOFÖR - ARAMA İPTAL EDİLDİ:', data);
-      driverClearIncomingCall();
+      tearDownDriverIncomingCall(data as { call_id?: string }, 'cancelled');
     },
     onCallEndedNew: (data) => {
       perfLog('📴 ŞOFÖR - CALL_ENDED:', data);
-      driverClearIncomingCall();
+      tearDownDriverIncomingCall(data as { call_id?: string }, 'ended');
     },
     onIncomingCall: (data) => {
       perfLog('📞 ŞOFÖR - GELEN ARAMA (socket):', data);
@@ -16944,7 +17092,7 @@ function DriverDashboard({
     },
     onCallEnded: (data) => {
       perfLog('📴 ŞOFÖR - ESKİ ARAMA BİTTİ:', data);
-      setCallEnded(true);
+      tearDownDriverIncomingCall(data as { call_id?: string }, 'ended');
     },
     onCallRinging: (data) => {
       perfLog('🔔 ŞOFÖR - ARAMA DURUMU:', data);

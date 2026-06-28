@@ -21977,11 +21977,18 @@ async def end_call(user_id: str, call_id: str = None):
                 peer_uid = caller_raw
             if not peer_uid:
                 return
+            row_status = str(row.get("status") or "ended").strip().lower() or "ended"
             try:
                 await emit_socket_event_to_user(
                     peer_uid,
                     "call_ended",
-                    {"call_id": cid, "ended_by": user_id},
+                    {
+                        "call_id": cid,
+                        "ended_by": user_id,
+                        "status": row_status,
+                        "caller_id": caller_raw,
+                        "receiver_id": receiver_raw,
+                    },
                 )
             except Exception as emit_err:
                 logger.warning(
@@ -22025,6 +22032,33 @@ async def end_call(user_id: str, call_id: str = None):
 async def cancel_call(user_id: str, call_id: str = None):
     """Aramayı iptal et (henüz cevaplanmadan) - Supabase'de güncelle"""
     try:
+        cancelled_rows: list = []
+
+        async def _emit_call_cancelled(row: dict) -> None:
+            cid = str(row.get("call_id") or "").strip()
+            if not cid:
+                return
+            caller_raw = str(row.get("caller_id") or "").strip()
+            receiver_raw = str(row.get("receiver_id") or "").strip()
+            payload = {
+                "call_id": cid,
+                "caller_id": caller_raw,
+                "receiver_id": receiver_raw,
+                "status": "cancelled",
+                "cancelled_by": user_id,
+            }
+            for uid in (receiver_raw, caller_raw):
+                if not uid:
+                    continue
+                try:
+                    await emit_socket_event_to_user(uid, "call_cancelled", payload)
+                except Exception as emit_err:
+                    logger.warning(
+                        "voice/cancel-call call_cancelled emit failed user=%s: %s",
+                        _mask_log_id(uid),
+                        emit_err,
+                    )
+
         if call_id:
             # call_id "call_xxx" formatındaysa düzelt
             if not call_id.startswith("call_"):
@@ -22037,14 +22071,20 @@ async def cancel_call(user_id: str, call_id: str = None):
             }).eq("call_id", call_id).eq("caller_id", user_id).eq("status", "ringing").execute()
             
             if result.data:
+                cancelled_rows = result.data
                 logger.info("📵 SUPABASE: Arama iptal edildi: %s", _short_log_id(call_id))
         else:
             # Kullanıcının aktif ringing aramalarını iptal et
-            supabase.table("calls").update({
+            result = supabase.table("calls").update({
                 "status": "cancelled",
                 "ended_at": datetime.utcnow().isoformat(),
                 "ended_by": user_id
             }).eq("caller_id", user_id).eq("status", "ringing").execute()
+            if result.data:
+                cancelled_rows = result.data
+
+        for row in cancelled_rows:
+            await _emit_call_cancelled(row)
         
         return {"success": True}
     except Exception as e:
