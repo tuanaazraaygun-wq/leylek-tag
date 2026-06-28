@@ -27231,14 +27231,16 @@ async def admin_full_dashboard(admin_phone: str):
         except:
             pass
 
-        # Enterprise ops — dispatch queue (count-only; failures must not break legacy dashboard)
+        # Enterprise ops — dispatch queue (count-only; last 24h open rows; failures must not break legacy dashboard)
         dispatch_queue_depth = 0
         dispatch_oldest_wait_seconds = None
         try:
+            dispatch_queue_since = (now - timedelta(hours=24)).isoformat()
             dq_count = (
                 supabase.table("dispatch_queue")
                 .select("id", count="exact")
                 .in_("status", ["sent", "waiting"])
+                .gte("created_at", dispatch_queue_since)
                 .execute()
             )
             dispatch_queue_depth = dq_count.count or 0
@@ -27247,6 +27249,7 @@ async def admin_full_dashboard(admin_phone: str):
                     supabase.table("dispatch_queue")
                     .select("created_at")
                     .in_("status", ["sent", "waiting"])
+                    .gte("created_at", dispatch_queue_since)
                     .order("created_at")
                     .limit(1)
                     .execute()
