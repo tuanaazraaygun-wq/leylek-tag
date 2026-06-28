@@ -2347,6 +2347,9 @@ def _dispatch_offer_seen_telemetry_enabled() -> bool:
 
 
 _OFFER_SEEN_SOURCES = frozenset({"socket", "poll", "push", "requests", "unknown"})
+_OFFER_SEEN_TAG_STATUSES = frozenset(
+    {"waiting", "pending", "offers_received", "matched", "in_progress"}
+)
 
 
 def _dispatch_db_backed_revoke_enabled() -> bool:
@@ -18559,7 +18562,7 @@ async def driver_offer_seen(
             return {"success": True, "recorded": False, "reason": "tag_not_found"}
 
         tag_status = str(tr.data[0].get("status") or "").strip().lower()
-        if tag_status != "waiting":
+        if tag_status not in _OFFER_SEEN_TAG_STATUSES:
             logger.info(
                 "[offer_seen_skip_tag_status] tag_id=%s driver_id=%s source=%s status=%s",
                 tag_id,
@@ -18567,7 +18570,7 @@ async def driver_offer_seen(
                 src,
                 tag_status,
             )
-            return {"success": True, "recorded": False, "reason": "tag_not_waiting"}
+            return {"success": True, "recorded": False, "reason": "tag_not_trackable"}
 
         existing = (
             supabase.table("dispatch_queue")
