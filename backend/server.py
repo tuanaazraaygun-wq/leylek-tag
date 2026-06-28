@@ -18571,10 +18571,10 @@ async def driver_offer_seen(
 
         existing = (
             supabase.table("dispatch_queue")
-            .select("id, driver_seen_at, sent_at")
+            .select("id, driver_seen_at, sent_at, status")
             .eq("tag_id", tag_id)
             .eq("driver_id", resolved_id)
-            .eq("status", "sent")
+            .in_("status", ["sent", "accepted"])
             .limit(1)
             .execute()
         )
@@ -18585,7 +18585,7 @@ async def driver_offer_seen(
                 _mask_log_id(resolved_id),
                 src,
             )
-            return {"success": True, "recorded": False, "reason": "no_sent_row"}
+            return {"success": True, "recorded": False, "reason": "no_dispatch_row"}
 
         row = existing.data[0]
         if row.get("driver_seen_at") is not None:
@@ -18602,7 +18602,7 @@ async def driver_offer_seen(
             supabase.table("dispatch_queue")
             .update({"driver_seen_at": now_iso, "driver_seen_source": src})
             .eq("id", row["id"])
-            .eq("status", "sent")
+            .in_("status", ["sent", "accepted"])
             .is_("driver_seen_at", "null")
             .execute()
         )
