@@ -27230,6 +27230,110 @@ async def admin_full_dashboard(admin_phone: str):
             active_promos_count = active_promos.count or 0
         except:
             pass
+
+        # Enterprise ops — dispatch queue (count-only; failures must not break legacy dashboard)
+        dispatch_queue_depth = 0
+        dispatch_oldest_wait_seconds = None
+        try:
+            dq_count = (
+                supabase.table("dispatch_queue")
+                .select("id", count="exact")
+                .in_("status", ["sent", "waiting"])
+                .execute()
+            )
+            dispatch_queue_depth = dq_count.count or 0
+            if dispatch_queue_depth > 0:
+                dq_oldest = (
+                    supabase.table("dispatch_queue")
+                    .select("created_at")
+                    .in_("status", ["sent", "waiting"])
+                    .order("created_at")
+                    .limit(1)
+                    .execute()
+                )
+                if dq_oldest.data:
+                    oldest_raw = dq_oldest.data[0].get("created_at")
+                    if oldest_raw:
+                        oldest_dt = datetime.fromisoformat(str(oldest_raw).replace("Z", "+00:00"))
+                        if oldest_dt.tzinfo is None:
+                            oldest_dt = oldest_dt.replace(tzinfo=timezone.utc)
+                        dispatch_oldest_wait_seconds = max(
+                            0,
+                            int((datetime.now(timezone.utc) - oldest_dt.astimezone(timezone.utc)).total_seconds()),
+                        )
+        except Exception as _dq:
+            logger.warning("admin dashboard dispatch_queue metrics: %s", _dq)
+
+        # Enterprise ops — trip cancellation aggregates (7d rate + stage counts; today cancel count)
+        cancelled_today_count = 0
+        cancellation_rate_pct = 0.0
+        cancel_before_match = 0
+        cancel_after_match_before_boarding = 0
+        cancel_after_boarding = 0
+        cancel_unknown_stage = 0
+        try:
+            cancelled_today_res = (
+                supabase.table("tags")
+                .select("id", count="exact")
+                .eq("type", TAG_TYPE_NORMAL)
+                .eq("status", "cancelled")
+                .gte("cancelled_at", today_start)
+                .execute()
+            )
+            cancelled_today_count = cancelled_today_res.count or 0
+
+            cancelled_7d_res = (
+                supabase.table("tags")
+                .select("id", count="exact")
+                .eq("type", TAG_TYPE_NORMAL)
+                .eq("status", "cancelled")
+                .gte("cancelled_at", week_start)
+                .execute()
+            )
+            cancelled_7d = cancelled_7d_res.count or 0
+            completed_7d = completed_week.count or 0
+            denom = cancelled_7d + completed_7d
+            if denom > 0:
+                cancellation_rate_pct = round((cancelled_7d / denom) * 100.0, 1)
+
+            cbm = (
+                supabase.table("tags")
+                .select("id", count="exact")
+                .eq("type", TAG_TYPE_NORMAL)
+                .eq("status", "cancelled")
+                .gte("cancelled_at", week_start)
+                .is_("matched_at", "null")
+                .execute()
+            )
+            cancel_before_match = cbm.count or 0
+
+            camb = (
+                supabase.table("tags")
+                .select("id", count="exact")
+                .eq("type", TAG_TYPE_NORMAL)
+                .eq("status", "cancelled")
+                .gte("cancelled_at", week_start)
+                .not_.is_("matched_at", "null")
+                .is_("boarding_confirmed_at", "null")
+                .execute()
+            )
+            cancel_after_match_before_boarding = camb.count or 0
+
+            cab = (
+                supabase.table("tags")
+                .select("id", count="exact")
+                .eq("type", TAG_TYPE_NORMAL)
+                .eq("status", "cancelled")
+                .gte("cancelled_at", week_start)
+                .not_.is_("boarding_confirmed_at", "null")
+                .execute()
+            )
+            cancel_after_boarding = cab.count or 0
+
+            classified = cancel_before_match + cancel_after_match_before_boarding + cancel_after_boarding
+            cancel_unknown_stage = max(0, cancelled_7d - classified)
+        except Exception as _cx:
+            logger.warning("admin dashboard cancellation metrics: %s", _cx)
         
         return {
             "success": True,
@@ -27246,14 +27350,30 @@ async def admin_full_dashboard(admin_phone: str):
                     "completed_today": completed_today.count or 0,
                     "completed_week": completed_week.count or 0,
                     "active": active_trips.count or 0,
-                    "waiting": waiting_trips.count or 0
+                    "waiting": waiting_trips.count or 0,
+                    "cancelled_today": cancelled_today_count,
+                    "cancellation_rate": cancellation_rate_pct,
+                    "cancel_before_match": cancel_before_match,
+                    "cancel_after_match_before_boarding": cancel_after_match_before_boarding,
+                    "cancel_after_boarding": cancel_after_boarding,
+                    "cancel_unknown_stage": cancel_unknown_stage,
+                },
+                "dispatch": {
+                    "queue_depth": dispatch_queue_depth,
+                    "oldest_wait_seconds": dispatch_oldest_wait_seconds,
                 },
                 "kyc": {
                     "pending": kyc_pending_count
                 },
                 "promos": {
                     "active": active_promos_count
-                }
+                },
+                "push": {
+                    "with_token": push_token_count,
+                },
+                "socket": {
+                    "health": "unknown",
+                },
             }
         }
     except HTTPException:
