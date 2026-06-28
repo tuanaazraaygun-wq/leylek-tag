@@ -4670,10 +4670,10 @@ async def resolve_force_end_counterparty(
         _db_ms += (time.monotonic() - _t_db) * 1000.0
     except Exception as e:
         logger.error(f"resolve_force_end_counterparty: tag okunamadı: {e}")
-        return {"success": False, "error": "TAG okunamadı"}
+        return {"success": False, "error": "Yolculuk kaydı okunamadı"}
 
     if not tr.data:
-        return {"success": False, "error": "TAG bulunamadı"}
+        return {"success": False, "error": "Yolculuk bulunamadı"}
 
     tag = tr.data[0]
     st_tag = (tag.get("status") or "").lower()
@@ -4979,10 +4979,10 @@ async def apply_force_end_trip_and_notify(
         _db_ms += (time.monotonic() - _t_db) * 1000.0
     except Exception as e:
         logger.error(f"apply_force_end_trip: tag okunamadı: {e}")
-        return {"success": False, "error": "TAG okunamadı"}
+        return {"success": False, "error": "Yolculuk kaydı okunamadı"}
 
     if not tr.data:
-        return {"success": False, "error": "TAG bulunamadı"}
+        return {"success": False, "error": "Yolculuk bulunamadı"}
 
     tag = tr.data[0]
     pid_raw = tag.get("passenger_id")
@@ -11429,7 +11429,7 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
     otp_storage[cleaned_phone] = entry
 
     otp_code = str(random.randint(100000, 999999))
-    message = f"Leylek TAG dogrulama kodunuz: {otp_code}"
+    message = f"Leylek Yolculuk dogrulama kodunuz: {otp_code}"
     sms_result = await send_sms_via_netgsm(cleaned_phone, message)
 
     if sms_result["success"]:
@@ -15669,7 +15669,7 @@ async def create_tag(request: CreateTagRequest, user_id: str = None):
                 "share_link": share_link
             }
         
-        raise HTTPException(status_code=500, detail="TAG oluşturulamadı")
+        raise HTTPException(status_code=500, detail="Yolculuk oluşturulamadı")
     except HTTPException:
         raise
     except Exception as e:
@@ -16617,13 +16617,13 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
             )
             st = (ref.data[0].get("status") or "").lower() if ref.data else ""
             if st == "cancelled":
-                return {"success": True, "message": "TAG iptal edildi"}
+                return {"success": True, "message": "Yolculuk iptal edildi"}
             logger.info(
                 "PASSENGER_CANCEL_BLOCKED status=%s tag_id=%s",
                 st or "missing",
                 tag_id,
             )
-            return {"success": False, "message": "TAG iptal edilemez"}
+            return {"success": False, "message": "Yolculuk iptal edilemez"}
 
         invalidate_tag_cache(tag_id, resolved_id or pid, driver_id)
 
@@ -16654,7 +16654,7 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
         except Exception:
             pass
         
-        return {"success": True, "message": "TAG iptal edildi"}
+        return {"success": True, "message": "Yolculuk iptal edildi"}
     except Exception as e:
         logger.error(f"Cancel tag error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -16710,13 +16710,13 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
             )
             st = (ref.data[0].get("status") or "").lower() if ref.data else ""
             if st == "cancelled":
-                return {"success": True, "message": "TAG iptal edildi"}
+                return {"success": True, "message": "Yolculuk iptal edildi"}
             logger.info(
                 "PASSENGER_CANCEL_BLOCKED status=%s tag_id=%s",
                 st or "missing",
                 tid,
             )
-            return {"success": False, "message": "TAG iptal edilemez"}
+            return {"success": False, "message": "Yolculuk iptal edilemez"}
 
         invalidate_tag_cache(tid, resolved_id or pid, driver_id)
         
@@ -16760,7 +16760,7 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
             logger.warning(f"Socket emit hatası: {socket_err}")
         
         logger.info(f"✅ TAG iptal edildi: {tid}")
-        return {"success": True, "message": "TAG iptal edildi"}
+        return {"success": True, "message": "Yolculuk iptal edildi"}
     except HTTPException:
         raise
     except Exception as e:
@@ -17444,7 +17444,7 @@ async def send_offer(
         # TAG bilgisi
         tag_result = supabase.table("tags").select("*").eq("id", tid).execute()
         if not tag_result.data:
-            raise HTTPException(status_code=404, detail="TAG bulunamadı")
+            raise HTTPException(status_code=404, detail="Yolculuk bulunamadı")
         
         tag = tag_result.data[0]
 
@@ -18963,7 +18963,7 @@ async def force_end_trip_http(
 
         tag_result = supabase.table("tags").select("*").eq("id", str(tag_id).strip()).limit(1).execute()
         if not tag_result.data:
-            raise HTTPException(status_code=404, detail="TAG bulunamadı")
+            raise HTTPException(status_code=404, detail="Yolculuk bulunamadı")
         tag = tag_result.data[0]
 
         pid = tag.get("passenger_id")
@@ -19712,7 +19712,7 @@ async def test_push_notification_by_phone(
     admin_phone: str,
     phone: str,
     title: str = "Test Bildirimi",
-    body: str = "Leylek TAG bildirim sistemi testi – başarılı."
+    body: str = "Leylek Yolculuk bildirim sistemi testi – başarılı."
 ):
     """Admin: Telefon numarasına göre test push bildirimi gönder (sadece admin)."""
     if admin_phone not in ADMIN_PHONE_NUMBERS:
@@ -20088,7 +20088,7 @@ async def admin_push_test(admin_phone: str):
         _push_test_data = {"type": "admin_push_test", "ts": datetime.utcnow().isoformat()}
         message = {
             "to": token,
-            "title": "Leylek TAG Test",
+            "title": "Leylek Yolculuk Test",
             "body": "Push test bildirimi – endpoint /api/admin/push-test",
             "sound": "default",
             "priority": "high",
@@ -23768,7 +23768,7 @@ async def rate_user_after_trip(
         tag = tag_result.data[0]
         typ = str(tag.get("type") or "").strip().lower()
         if typ == TAG_TYPE_MUHABBET:
-            return {"success": False, "detail": "Bu uç yalnızca normal TAG için"}
+            return {"success": False, "detail": "Bu uç yalnızca normal yolculuk için"}
 
         p_raw = tag.get("passenger_id")
         d_raw = tag.get("driver_id")
@@ -24233,7 +24233,7 @@ async def landing_page():
         with open(os.path.join(templates_path, "landing.html"), "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     except:
-        return HTMLResponse(content="<h1>Leylek TAG</h1><p>Ana sayfa yükleniyor...</p>")
+        return HTMLResponse(content="<h1>Leylek Yolculuk</h1><p>Ana sayfa yükleniyor...</p>")
 
 @app.get("/gizlilik-politikasi", response_class=HTMLResponse)
 async def privacy_policy():
