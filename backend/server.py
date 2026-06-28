@@ -2123,6 +2123,11 @@ def _offer_delivery_obs_log(event: str, **fields: Any) -> None:
     Socket/FCM payload'a yazılmaz; yalnızca sunucu log korelasyonu.
     """
     try:
+        tid_raw = fields.get("tag_id")
+        if tid_raw and "elapsed_ms" not in fields and "elapsed_ms_from_offer_created" not in fields:
+            latency_fields = _dispatch_latency_for_log(tid_raw)
+            if latency_fields:
+                fields = {**fields, **latency_fields}
         payload: dict[str, Any] = {
             "event": event,
             "ts": datetime.now(timezone.utc).isoformat(),
@@ -2143,6 +2148,13 @@ def _dispatch_funnel_log(step: str, **fields: Any) -> None:
     Query: grep '[dispatch_funnel]' server logs; join tag_id across steps.
     """
     try:
+        tid_raw = fields.get("tag_id")
+        if step == "offer_created" and tid_raw:
+            _dispatch_latency_mark(tid_raw, step)
+        elif tid_raw and step != "offer_created":
+            latency_fields = _dispatch_latency_for_log(tid_raw)
+            if latency_fields:
+                fields = {**fields, **latency_fields}
         payload: dict[str, Any] = {
             "step": step,
             "ts": datetime.now(timezone.utc).isoformat(),
@@ -2155,8 +2167,76 @@ def _dispatch_funnel_log(step: str, **fields: Any) -> None:
             else:
                 payload[key] = val
         logger.info("[dispatch_funnel] %s", json.dumps(payload, ensure_ascii=False, default=str))
+        if step in _DISPATCH_LATENCY_TERMINAL_STEPS and tid_raw:
+            _dispatch_latency_clear(tid_raw)
     except Exception as _df_e:
         logger.info("[dispatch_funnel] step=%s log_error=%s", step, _df_e)
+
+
+# Normal ride dispatch funnel — monotonic elapsed_ms anchors (log-only; TTL bounded).
+_dispatch_latency_anchors: dict[str, float] = {}
+_DISPATCH_LATENCY_ANCHOR_TTL_SEC = 600.0
+_DISPATCH_LATENCY_MAX_ENTRIES = 2000
+_DISPATCH_LATENCY_TERMINAL_STEPS = frozenset(
+    {"dispatch_exhausted", "accept_success", "accept_lost_race"},
+)
+
+
+def _dispatch_latency_cleanup(now: Optional[float] = None) -> None:
+    try:
+        ref = now if now is not None else time.monotonic()
+        cutoff = ref - _DISPATCH_LATENCY_ANCHOR_TTL_SEC
+        for key, ts in list(_dispatch_latency_anchors.items()):
+            if ts < cutoff:
+                del _dispatch_latency_anchors[key]
+        overflow = len(_dispatch_latency_anchors) - _DISPATCH_LATENCY_MAX_ENTRIES
+        if overflow > 0:
+            for key, _ in sorted(_dispatch_latency_anchors.items(), key=lambda item: item[1])[:overflow]:
+                _dispatch_latency_anchors.pop(key, None)
+    except Exception:
+        pass
+
+
+def _dispatch_latency_mark(tag_id: Any, step: Optional[str] = None) -> None:
+    tid = str(tag_id or "").strip()
+    if not tid:
+        return
+    try:
+        now = time.monotonic()
+        _dispatch_latency_anchors[tid] = now
+        _dispatch_latency_cleanup(now)
+    except Exception:
+        pass
+
+
+def _dispatch_latency_elapsed_ms(tag_id: Any) -> Optional[int]:
+    tid = str(tag_id or "").strip()
+    if not tid:
+        return None
+    try:
+        anchor = _dispatch_latency_anchors.get(tid)
+        if anchor is None:
+            return None
+        return max(0, int((time.monotonic() - anchor) * 1000))
+    except Exception:
+        return None
+
+
+def _dispatch_latency_for_log(tag_id: Any) -> dict[str, int]:
+    ms = _dispatch_latency_elapsed_ms(tag_id)
+    if ms is None:
+        return {}
+    return {"elapsed_ms_from_offer_created": ms, "elapsed_ms": ms}
+
+
+def _dispatch_latency_clear(tag_id: Any) -> None:
+    tid = str(tag_id or "").strip()
+    if not tid:
+        return
+    try:
+        _dispatch_latency_anchors.pop(tid, None)
+    except Exception:
+        pass
 
 
 # Sürücüye aynı tag teklif FCM: socket register + set-ride-vehicle-kind + reconnect kısa aralıkta aynı push'u tetikleyebilir.
