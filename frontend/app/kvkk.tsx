@@ -10,7 +10,7 @@ const KVKK_SECTIONS: LegalSection[] = [
   {
     title: '1. Veri Sorumlusu',
     body:
-      'Leylek Tag mobil uygulaması kapsamında kişisel verileriniz, 6698 sayılı KVKK uyarınca veri sorumlusu sıfatıyla KAREKOD TEKNOLOJİ VE YAZILIM A.Ş. tarafından işlenmektedir.',
+      'Leylek Yolculuk mobil uygulaması kapsamında kişisel verileriniz, 6698 sayılı KVKK uyarınca veri sorumlusu sıfatıyla KAREKOD TEKNOLOJİ VE YAZILIM A.Ş. tarafından işlenmektedir.',
   },
   {
     title: '2. İşlenen Veriler',

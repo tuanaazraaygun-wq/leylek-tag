@@ -10,7 +10,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
   {
     title: '1. Genel İlke',
     body:
-      'Leylek Tag, kullanıcı verilerini yalnızca hizmet sunumu amacıyla işler. Yetkisiz üçüncü kişilerle paylaşılmaz.',
+      'Leylek Yolculuk, kullanıcı verilerini yalnızca hizmet sunumu amacıyla işler. Yetkisiz üçüncü kişilerle paylaşılmaz.',
   },
   {
     title: '2. Konum Verisi',
