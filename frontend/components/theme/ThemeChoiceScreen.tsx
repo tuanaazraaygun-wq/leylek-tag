@@ -134,16 +134,16 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
               accessibilityIgnoresInvertColors
             />
             {isLightPreview ? (
-              <Text style={styles.wordmarkRow} accessibilityRole="header" accessibilityLabel="LeylekTAG">
-                <Text style={styles.wordmarkLeylek}>Leylek</Text>
-                <Text style={styles.wordmarkTag}>TAG</Text>
+              <Text style={styles.wordmarkRow} accessibilityRole="header" accessibilityLabel="Leylek Yolculuk">
+                <Text style={styles.wordmarkLeylek}>Leylek </Text>
+                <Text style={styles.wordmarkTag}>Yolculuk</Text>
               </Text>
             ) : null}
           </View>
 
           <View style={styles.header} accessibilityRole="header">
             <ThemedText tokens={tokens} variant="title">
-              LeylekTAG'i Black tema ile gece, White tema ile gündüz rahat kullanabilirsiniz.
+              Leylek Yolculuk'u Black tema ile gece, White tema ile gündüz rahat kullanabilirsiniz.
             </ThemedText>
             <ThemedText tokens={tokens} variant="subtitle">
               Daha sonra Ayarlar'dan istediğiniz zaman değiştirebilirsiniz.

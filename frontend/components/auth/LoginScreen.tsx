@@ -202,7 +202,7 @@ export function LoginScreen({
           accessibilityRole="summary"
         >
           <PremiumText variant="caption" muted style={[trustStyles.stripLabel, isAuthLight && trustStyles.stripLabelLight]}>
-            LeylekTAG güven katmanı
+            Leylek Yolculuk güven katmanı
           </PremiumText>
           <View style={trustStyles.chipRow}>
             {trustItems.map((item) => (

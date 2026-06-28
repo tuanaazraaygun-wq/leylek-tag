@@ -473,7 +473,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
         <Animated.View style={[styles.glassPlate, Platform.OS !== 'web' ? { opacity: taglineAnim } : {}]}>
           <Text style={styles.headlineSoft} accessibilityRole="header">
             <Text style={styles.headlineLeylek}>Leylek </Text>
-            <Text style={styles.headlineTag}>TAG</Text>
+            <Text style={styles.headlineTag}>Yolculuk</Text>
           </Text>
           <Text style={styles.mainSubtitle}>Güvenli Yolculuk Paylaşımı</Text>
           <Text style={styles.minorLine}>Güvenli • Ekonomik • Hızlı</Text>
@@ -547,7 +547,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
       </View>
 
       <View style={[styles.legalContainer, { bottom: bottomLegalOffset }]}>
-        <Text style={styles.legalText}>© 2026 Leylek TAG</Text>
+        <Text style={styles.legalText}>© 2026 Leylek Yolculuk</Text>
         <Text style={styles.legalSubtext}>Tüm hakları saklıdır</Text>
       </View>
     </LinearGradient>

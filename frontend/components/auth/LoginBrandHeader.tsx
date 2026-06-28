@@ -55,7 +55,7 @@ export function LoginBrandHeader({
     <Text
       style={[styles.wordmarkRow, isCompact && styles.wordmarkRowCompact, isShort && styles.wordmarkRowShort]}
       accessibilityRole="header"
-      accessibilityLabel="LeylekTAG"
+      accessibilityLabel="Leylek Yolculuk"
     >
       <Text
         style={[
@@ -64,7 +64,7 @@ export function LoginBrandHeader({
           isCompact && styles.wordmarkLeylekCompact,
         ]}
       >
-        Leylek
+        Leylek{' '}
       </Text>
       <Text
         style={[
@@ -73,7 +73,7 @@ export function LoginBrandHeader({
           isCompact && styles.wordmarkTagCompact,
         ]}
       >
-        TAG
+        Yolculuk
       </Text>
     </Text>
   ) : null;
