@@ -2350,6 +2350,7 @@ _OFFER_SEEN_SOURCES = frozenset({"socket", "poll", "push", "requests", "unknown"
 _OFFER_SEEN_TAG_STATUSES = frozenset(
     {"waiting", "pending", "offers_received", "matched", "in_progress"}
 )
+OFFER_SEEN_LATENCY_MAX_MS = 120000
 
 
 def _dispatch_db_backed_revoke_enabled() -> bool:
@@ -27465,6 +27466,7 @@ async def admin_full_dashboard(admin_phone: str):
         offer_sent_to_seen_avg_ms = None
         offer_sent_to_seen_p50_ms = None
         offer_sent_to_seen_p95_ms = None
+        offer_latency_sample_rows_24h = 0
         try:
             offer_latency_since = (now - timedelta(hours=offer_latency_window_hours)).isoformat()
             offer_sent_rows_24h = (
@@ -27511,12 +27513,16 @@ async def admin_full_dashboard(admin_phone: str):
                 ms = _admin_offer_sent_to_seen_ms(row.get("sent_at"), row.get("driver_seen_at"))
                 if ms is not None:
                     latency_ms_values.append(ms)
-            if latency_ms_values:
+            capped_latency_ms_values = [
+                ms for ms in latency_ms_values if ms <= OFFER_SEEN_LATENCY_MAX_MS
+            ]
+            offer_latency_sample_rows_24h = len(capped_latency_ms_values)
+            if capped_latency_ms_values:
                 offer_sent_to_seen_avg_ms = int(
-                    round(sum(latency_ms_values) / len(latency_ms_values))
+                    round(sum(capped_latency_ms_values) / len(capped_latency_ms_values))
                 )
-                offer_sent_to_seen_p50_ms = _admin_latency_percentile_ms(latency_ms_values, 0.50)
-                offer_sent_to_seen_p95_ms = _admin_latency_percentile_ms(latency_ms_values, 0.95)
+                offer_sent_to_seen_p50_ms = _admin_latency_percentile_ms(capped_latency_ms_values, 0.50)
+                offer_sent_to_seen_p95_ms = _admin_latency_percentile_ms(capped_latency_ms_values, 0.95)
         except Exception as _ol:
             logger.warning("admin dashboard offer_latency metrics: %s", _ol)
         
@@ -27564,6 +27570,8 @@ async def admin_full_dashboard(admin_phone: str):
                     "sent_rows_24h": offer_sent_rows_24h,
                     "seen_rows_24h": offer_seen_rows_24h,
                     "unseen_sent_count_24h": offer_unseen_sent_count_24h,
+                    "latency_sample_max_ms": OFFER_SEEN_LATENCY_MAX_MS,
+                    "latency_sample_rows_24h": offer_latency_sample_rows_24h,
                     "sent_to_seen_avg_ms": offer_sent_to_seen_avg_ms,
                     "sent_to_seen_p50_ms": offer_sent_to_seen_p50_ms,
                     "sent_to_seen_p95_ms": offer_sent_to_seen_p95_ms,
