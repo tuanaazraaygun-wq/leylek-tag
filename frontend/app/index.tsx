@@ -563,8 +563,8 @@ function alertVehicleRegistrationRequired(
   const isMotor = requestedKind === 'motorcycle';
   const primaryLabel = isMotor ? 'Motor Kaydı Oluştur' : 'Araba Kaydı Oluştur';
   const body = isMotor
-    ? 'Motor TAG tekliflerine erişebilmek için motor sürücü kaydınızı tamamlamanız gerekir.'
-    : 'Araba TAG tekliflerine erişebilmek için araba sürücü kaydınızı tamamlamanız gerekir.';
+    ? 'Motor yolculuk tekliflerine erişebilmek için motor sürücü kaydınızı tamamlamanız gerekir.'
+    : 'Araba yolculuk tekliflerine erişebilmek için araba sürücü kaydınızı tamamlamanız gerekir.';
   appAlert(
     'Araç Kaydı Gerekli',
     body,
@@ -11803,7 +11803,7 @@ function PassengerDashboard({
     playTapSound();
     if (!activeTag) return;
     
-    const message = `🚗 Leylek TAG - Yolculuk Teklifi\n\n📍 Nereden: ${activeTag.pickup_location || 'Mevcut konum'}\n📍 Nereye: ${activeTag.dropoff_location}\n💰 Teklif: ${activeTag.offered_price} TL\n⏱️ Tahmini süre: ${activeTag.estimated_minutes || '?'} dk\n\n👉 Sürücü olarak kabul etmek için uygulamayı açın!`;
+    const message = `🚗 Leylek Yolculuk - Teklif\n\n📍 Nereden: ${activeTag.pickup_location || 'Mevcut konum'}\n📍 Nereye: ${activeTag.dropoff_location}\n💰 Teklif: ${activeTag.offered_price} TL\n⏱️ Tahmini süre: ${activeTag.estimated_minutes || '?'} dk\n\n👉 Sürücü olarak kabul etmek için uygulamayı açın!`;
     
     const webAppUrl = 'https://leylektag.com/indir';
     const deepLink = `leylektag://ride/${activeTag.id}`;
@@ -11813,7 +11813,7 @@ function PassengerDashboard({
         // Web için kopyalama veya navigator.share
         if (navigator.share) {
           await navigator.share({
-            title: 'Leylek TAG - Yolculuk Teklifi',
+            title: 'Leylek Yolculuk - Teklif',
             text: message,
             url: webAppUrl,
           });
@@ -11827,7 +11827,7 @@ function PassengerDashboard({
         callCheck('Share.share', Share.share);
         await Share.share({
           message: `${message}\n\nUygulama linki: ${webAppUrl}`,
-          title: 'Leylek TAG - Yolculuk Teklifi',
+          title: 'Leylek Yolculuk - Teklif',
         });
       }
     } catch (error) {
