@@ -151,6 +151,7 @@
     "extra": {
       "router": {},
       "backendUrl": "https://api.karekodteknoloji.com",
+      "dispatchOfferSeenTelemetry": "1",
       "companyLegalName": "Karekod Teknoloji ve Yazılım A.Ş.",
       "leylekZekaPath": "ai/leylekzeka",
       "eas": {

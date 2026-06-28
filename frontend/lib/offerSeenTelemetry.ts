@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { perfLog } from '../utils/perfDiagLog';
 import { API_BASE_URL } from './backendConfig';
@@ -7,9 +8,13 @@ export type OfferSeenSource = 'socket' | 'poll' | 'push' | 'requests' | 'unknown
 
 const reportedTagIds = new Set<string>();
 
-/** EXPO_PUBLIC_DISPATCH_OFFER_SEEN_TELEMETRY=1 — default off; no network when disabled. */
+/** EXPO_PUBLIC_DISPATCH_OFFER_SEEN_TELEMETRY=1 or app.json extra.dispatchOfferSeenTelemetry=1 */
 export function isOfferSeenTelemetryEnabled(): boolean {
-  return (process.env.EXPO_PUBLIC_DISPATCH_OFFER_SEEN_TELEMETRY ?? '0').trim() === '1';
+  const envValue = process.env.EXPO_PUBLIC_DISPATCH_OFFER_SEEN_TELEMETRY;
+  const extraValue = (
+    Constants.expoConfig?.extra as { dispatchOfferSeenTelemetry?: string } | undefined
+  )?.dispatchOfferSeenTelemetry;
+  return String(envValue ?? extraValue ?? '0').trim() === '1';
 }
 
 export function normalizeOfferSeenSource(source: unknown): OfferSeenSource {
