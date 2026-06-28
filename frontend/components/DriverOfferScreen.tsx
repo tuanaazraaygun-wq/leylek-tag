@@ -2555,7 +2555,7 @@ export default function DriverOfferScreen({
                   <View style={styles.emptyBrandDot} />
                 </View>
                 <PremiumText variant="caption" style={[styles.emptyBrandLabel, osLt?.emptyBrandLabel]}>
-                  LeylekTAG · Saha operasyonu
+                  Leylek Yolculuk · Saha operasyonu
                 </PremiumText>
               </View>
 
@@ -2630,7 +2630,7 @@ export default function DriverOfferScreen({
                 <View style={[styles.emptyChip, osLt?.emptyChip]}>
                   <Ionicons name="shield-checkmark-outline" size={11} color={ui.emptyChip} />
                   <PremiumText variant="caption" style={[styles.emptyChipText, osLt?.emptyChipText]}>
-                    LeylekTAG saha
+                    Leylek Yolculuk saha
                   </PremiumText>
                 </View>
               </View>
@@ -2699,7 +2699,7 @@ export default function DriverOfferScreen({
             <View style={styles.fieldOpHudTopRow}>
               <View style={styles.fieldOpHudBrandCol}>
                 <PremiumText variant="caption" style={[styles.fieldOpHudBrand, osLt?.fieldOpHudBrand]}>
-                  LEYLEKTAG
+                  LEYLEK YOLCULUK
                 </PremiumText>
                 {mapExpanded ? (
                   <>

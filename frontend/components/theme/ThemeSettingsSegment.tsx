@@ -48,7 +48,7 @@ export default function ThemeSettingsSegment() {
         Görünüm
       </PremiumText>
       <PremiumText variant="caption" muted style={styles.description}>
-        LeylekTAG temasını seç
+        Leylek Yolculuk temasını seç
       </PremiumText>
 
       <View

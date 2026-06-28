@@ -20447,10 +20447,10 @@ function DriverDashboard({
                     <View
                       style={dws.cockpitHeaderTitleCol}
                       accessibilityRole="header"
-                      accessibilityLabel="LeylekTAG Kokpit"
+                      accessibilityLabel="Leylek Yolculuk Kokpit"
                     >
                       <PremiumText variant="title" style={[dws.cockpitHeaderBrand, dwsLt?.cockpitHeaderBrand]} numberOfLines={1}>
-                        LeylekTAG · Kokpit
+                        Leylek Yolculuk · Kokpit
                       </PremiumText>
                     </View>
                     <View style={dws.cockpitHeaderActions}>

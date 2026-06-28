@@ -276,7 +276,7 @@ export default function PassengerWaitingScreen({
       callCheck('Share.share', Share.share);
       if (typeof Share.share !== 'function') return;
       await Share.share({
-        message: `LeylekTag ile yolculuk arıyorum!\n\n📍 ${pickupAddress}\n📍 ${dropoffAddress}\n💰 ${offeredPrice} TL`,
+        message: `Leylek Yolculuk ile yolculuk arıyorum!\n\n📍 ${pickupAddress}\n📍 ${dropoffAddress}\n💰 ${offeredPrice} TL`,
       });
     } catch (error) {
       console.log('Share error:', error);
@@ -370,7 +370,7 @@ export default function PassengerWaitingScreen({
               Eşleşme aranıyor
             </PremiumText>
             <PremiumText variant="caption" muted style={styles.phaseCaption}>
-              LeylekTAG uygun sürücüleri sırayla değerlendiriyor
+              Leylek Yolculuk uygun sürücüleri sırayla değerlendiriyor
             </PremiumText>
           </View>
 
