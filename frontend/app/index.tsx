@@ -8897,6 +8897,11 @@ function PassengerDashboard({
     boardingCommsClosed: !!activeTag?.boarding_confirmed_at,
   });
 
+  useEffect(() => {
+    if (!trustVideoSession) return;
+    dismissMatchingInProgressOverlay('trust_video_session');
+  }, [trustVideoSession, dismissMatchingInProgressOverlay]);
+
   const isCallActiveRef = useRef(false);
 
   const closePassengerCallUi = useCallback(() => {
@@ -13045,6 +13050,7 @@ function PassengerDashboard({
       <TagMatchTransitionOverlay
         active={
           matchingInProgress &&
+          !trustVideoSession &&
           !(
             activeTag &&
             (activeTag.status === 'matched' || activeTag.status === 'in_progress')
@@ -16396,6 +16402,15 @@ function DriverDashboard({
     openChatForMatchedTrip: () => setDriverChatVisible(true),
     boardingCommsClosed: !!activeTag?.boarding_confirmed_at,
   });
+
+  useEffect(() => {
+    if (!trustVideoSession) return;
+    if (driverMatchTransitionTimerRef.current) {
+      clearTimeout(driverMatchTransitionTimerRef.current);
+      driverMatchTransitionTimerRef.current = null;
+    }
+    setDriverMatchTransitionVisible(false);
+  }, [trustVideoSession]);
 
   // Arama kilidi
   const isCallActiveRef = useRef(false);
@@ -20521,6 +20536,7 @@ function DriverDashboard({
       <TagMatchTransitionOverlay
         active={
           driverMatchTransitionVisible &&
+          !trustVideoSession &&
           !(
             activeTag &&
             !shouldDisableActivityMap &&

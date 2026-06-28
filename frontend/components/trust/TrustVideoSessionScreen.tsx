@@ -8,6 +8,7 @@ import {
   Platform,
   PermissionsAndroid,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RtcSurfaceView } from 'react-native-agora';
@@ -356,7 +357,15 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   const remoteCanvasUid = remoteUid > 0 ? remoteUid : agoraUidFromUserId(peerUserId);
 
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen">
+    <Modal
+      visible
+      transparent={false}
+      animationType="slide"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      onRequestClose={() => void finalizeEnd()}
+    >
+      <StatusBar barStyle="light-content" backgroundColor={P.bgDeep} />
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <LinearGradient colors={[P.bgDeep, P.bgMid, P.bgElev]} locations={[0, 0.48, 1]} style={StyleSheet.absoluteFill} />
         <View style={styles.header}>
