@@ -5,6 +5,7 @@ import {
   declineTrustedDirectInvite,
   getCurrentTrustedDirectInvite,
   mapTdmUserFacingError,
+  TDM_DRIVER_INVITE_HYDRATE_ERROR,
   TDM_POLL_INTERVAL_MS,
   type TrustedDirectAcceptResponse,
   type TrustedDirectApiErrorCode,
@@ -47,6 +48,12 @@ function sessionStatusFromInvite(
     return 'pending';
   }
   return 'idle';
+}
+
+function isHydrateParseFailure(
+  result: Extract<TrustedDirectApiResult<unknown>, { ok: false }>,
+): boolean {
+  return result.code === 'PARSE' && result.message === TDM_DRIVER_INVITE_HYDRATE_ERROR;
 }
 
 function isHardPollStopCode(code: TrustedDirectApiErrorCode): boolean {
@@ -123,12 +130,34 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
         return;
       }
 
+      setIsRestoring(false);
       setInvite(nextInvite);
       setPollErrorMessage(null);
       pollBackoffMsRef.current = pollIntervalMsRef.current;
       setStatus(sessionStatusFromInvite(nextInvite));
     },
     [],
+  );
+
+  const applyHydrateFailure = useCallback(
+    (
+      result: Extract<TrustedDirectApiResult<unknown>, { ok: false }>,
+      generation: number,
+    ) => {
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return;
+      }
+      stopPolling();
+      setInvite(null);
+      setStatus('error');
+      setErrorMessage(
+        isHydrateParseFailure(result)
+          ? TDM_DRIVER_INVITE_HYDRATE_ERROR
+          : mapTdmUserFacingError(result),
+      );
+      setPollErrorMessage(null);
+    },
+    [stopPolling],
   );
 
   const handlePollFailure = useCallback(
@@ -138,6 +167,10 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
       }
 
       if (result.code === 'NETWORK' || result.code === 'SERVER' || result.code === 'PARSE') {
+        if (isHydrateParseFailure(result)) {
+          applyHydrateFailure(result, generation);
+          return;
+        }
         setPollErrorMessage(mapTdmUserFacingError(result));
         pollBackoffMsRef.current = Math.min(
           pollBackoffMsRef.current * 2,
@@ -161,7 +194,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
         setPollErrorMessage(null);
       }
     },
-    [stopPolling],
+    [applyHydrateFailure, stopPolling],
   );
 
   const pollOnce = useCallback(
@@ -279,30 +312,38 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
     setPollErrorMessage(null);
     setStatus('restoring');
 
-    const result = await getCurrentTrustedDirectInvite();
+    try {
+      const result = await getCurrentTrustedDirectInvite();
 
-    if (!mountedRef.current || generation !== generationRef.current) {
-      return;
-    }
-
-    setIsRestoring(false);
-
-    if (result.ok === false) {
-      stopPolling();
-      if (result.code === 'UNAVAILABLE') {
-        setInvite(null);
-        setStatus('idle');
-        setErrorMessage(null);
+      if (!mountedRef.current || generation !== generationRef.current) {
         return;
       }
-      setInvite(null);
-      setStatus('error');
-      setErrorMessage(mapTdmUserFacingError(result));
-      return;
-    }
 
-    applyInvite(result.data, generation);
-  }, [applyInvite, stopPolling]);
+      if (result.ok === false) {
+        stopPolling();
+        if (result.code === 'UNAVAILABLE') {
+          setInvite(null);
+          setStatus('idle');
+          setErrorMessage(null);
+          return;
+        }
+        if (isHydrateParseFailure(result)) {
+          applyHydrateFailure(result, generation);
+          return;
+        }
+        setInvite(null);
+        setStatus('error');
+        setErrorMessage(mapTdmUserFacingError(result));
+        return;
+      }
+
+      applyInvite(result.data, generation);
+    } finally {
+      if (mountedRef.current) {
+        setIsRestoring(false);
+      }
+    }
+  }, [applyHydrateFailure, applyInvite, stopPolling]);
 
   /** Push/poll refresh — no restoring status (keeps offerSoundController audible during fetch). */
   const refresh = useCallback(async () => {
@@ -312,6 +353,9 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
 
     generationRef.current += 1;
     const generation = generationRef.current;
+
+    setErrorMessage(null);
+    setPollErrorMessage(null);
 
     const result = await getCurrentTrustedDirectInvite();
     if (!mountedRef.current || generation !== generationRef.current) {
@@ -334,6 +378,11 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
         return;
       }
 
+      if (isHydrateParseFailure(result)) {
+        applyHydrateFailure(result, generation);
+        return;
+      }
+
       if (isHardPollStopCode(result.code)) {
         stopPolling();
         setStatus('error');
@@ -343,7 +392,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
 
       setPollErrorMessage(mapTdmUserFacingError(result));
     }
-  }, [applyInvite, stopPolling]);
+  }, [applyHydrateFailure, applyInvite, stopPolling]);
 
   const accept = useCallback(async (): Promise<boolean> => {
     const iid = String(inviteRef.current?.id || '').trim();

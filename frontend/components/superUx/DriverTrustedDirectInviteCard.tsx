@@ -25,6 +25,7 @@ import {
   formatTdmDriverDistanceLabel,
   formatTdmVehiclePreference,
 } from '../../lib/trustedHubCopy';
+import { TDM_DRIVER_INVITE_HYDRATE_ERROR } from '../../lib/trustedDirectApi';
 
 export type DriverTrustedDirectSessionView = Pick<
   ReturnType<typeof useTrustedDirectDriverSession>,
@@ -44,6 +45,7 @@ export type DriverTrustedDirectInviteCardProps = {
   onAccept: () => void | Promise<void>;
   onDecline: () => void | Promise<void>;
   onClose: () => void;
+  onRetry?: () => void | Promise<void>;
 };
 
 function secondsUntilExpiry(
@@ -369,6 +371,7 @@ export function DriverTrustedDirectInviteCard({
   onAccept,
   onDecline,
   onClose,
+  onRetry,
 }: DriverTrustedDirectInviteCardProps) {
   const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   const invite = session.invite;
@@ -442,6 +445,58 @@ export function DriverTrustedDirectInviteCard({
     session.pollErrorMessage ? <PollWarningBanner /> : null;
 
   const renderBody = () => {
+    if (session.status === 'pending') {
+      if (!invite || !request) {
+        return (
+          <View style={styles.section}>
+            {renderPollWarning()}
+            <GlassSurface
+              variant="plain"
+              borderRadius={LDS_RADIUS.md}
+              style={[styles.errorCard, qmLt?.errorCard]}
+            >
+              <Ionicons name="alert-circle-outline" size={28} color={LDS_COLOR_ERROR} />
+              <PremiumText variant="body" muted style={styles.errorBody}>
+                {TDM_DRIVER_INVITE_HYDRATE_ERROR}
+              </PremiumText>
+            </GlassSurface>
+            {onRetry ? (
+              <PrimaryButton label="Yeniden dene" onPress={() => void onRetry()} />
+            ) : null}
+            <SecondaryButton label="Kapat" onPress={handleClose} />
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.section}>
+          {renderPollWarning()}
+          <InviteDetailsBlock
+            pickupLabel={pickupLabel}
+            dropoffLabel={dropoffLabel}
+            contributionTl={contributionTl}
+            distanceLabel={distanceLabel}
+            vehicleLabel={vehicleLabel}
+            countdownSec={countdownSec}
+          />
+          <View style={styles.ctaRow}>
+            <SecondaryButton
+              label={ACTION_DECLINE}
+              onPress={handleDecline}
+              disabled={session.isAccepting}
+              loading={session.isDeclining}
+            />
+            <PrimaryButton
+              label={ACTION_ACCEPT}
+              onPress={handleAccept}
+              disabled={session.isDeclining || inviteExpired}
+              loading={session.isAccepting}
+            />
+          </View>
+        </View>
+      );
+    }
+
     if (session.status === 'restoring' || session.isRestoring) {
       return (
         <View style={styles.centerCard}>
@@ -495,41 +550,10 @@ export function DriverTrustedDirectInviteCard({
               {session.errorMessage || 'Doğrudan eşleşme şu an kullanılamıyor.'}
             </PremiumText>
           </GlassSurface>
+          {onRetry ? (
+            <PrimaryButton label="Yeniden dene" onPress={() => void onRetry()} />
+          ) : null}
           <SecondaryButton label="Kapat" onPress={handleClose} />
-        </View>
-      );
-    }
-
-    if (session.status === 'pending') {
-      if (!invite || !request) {
-        return null;
-      }
-
-      return (
-        <View style={styles.section}>
-          {renderPollWarning()}
-          <InviteDetailsBlock
-            pickupLabel={pickupLabel}
-            dropoffLabel={dropoffLabel}
-            contributionTl={contributionTl}
-            distanceLabel={distanceLabel}
-            vehicleLabel={vehicleLabel}
-            countdownSec={countdownSec}
-          />
-          <View style={styles.ctaRow}>
-            <SecondaryButton
-              label={ACTION_DECLINE}
-              onPress={handleDecline}
-              disabled={session.isAccepting}
-              loading={session.isDeclining}
-            />
-            <PrimaryButton
-              label={ACTION_ACCEPT}
-              onPress={handleAccept}
-              disabled={session.isDeclining || inviteExpired}
-              loading={session.isAccepting}
-            />
-          </View>
         </View>
       );
     }

@@ -19734,7 +19734,8 @@ function DriverDashboard({
       trustedDirectDriverSession.status === 'accepting' ||
       trustedDirectDriverSession.status === 'matched' ||
       (trustedDirectDriverSession.status === 'error' &&
-        !!trustedDirectDriverSession.invite));
+        (!!trustedDirectDriverSession.invite ||
+          !!trustedDirectDriverSession.errorMessage)));
 
   const driverInviteDeckDimVisible =
     quickMatchDriverOverlayVisible || trustedDirectDriverOverlayVisible;
@@ -21019,6 +21020,9 @@ function DriverDashboard({
           }}
           onClose={() => {
             trustedDirectDriverSession.clear();
+          }}
+          onRetry={() => {
+            void trustedDirectDriverSession.refresh();
           }}
         />
       </>

@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { perfLog } from '../utils/perfDiagLog';
 import { API_BASE_URL } from './backendConfig';
 import { getPersistedAccessToken } from './sessionToken';
 import { TDM_NOTIFY_RATE_LIMITED } from './trustedHubCopy';
@@ -126,6 +127,9 @@ export type TrustedDirectCurrentInviteResponse = {
   invite: Record<string, unknown> | null;
 };
 
+export const TDM_DRIVER_INVITE_HYDRATE_ERROR =
+  'Davet bilgisi alınamadı. Yeniden dene.';
+
 export type TrustedDirectAcceptResponse = {
   success: true;
   tag: { id: string; status?: string; match_channel?: string };
@@ -198,11 +202,47 @@ function fail(
   return { ok: false, code, message, ...(detail ? { detail } : {}) };
 }
 
+type TdmDriverInviteNormalizeFailReason =
+  | 'missing_raw'
+  | 'missing_id'
+  | 'bad_status'
+  | 'missing_request'
+  | 'bad_request';
+
+function logTdmDriverInviteNormalizeFail(
+  raw: Record<string, unknown> | null | undefined,
+  reason: TdmDriverInviteNormalizeFailReason,
+): void {
+  const requestRaw = raw?.request;
+  perfLog('TDM_DRIVER_INVITE_NORMALIZE_FAIL', {
+    reason,
+    has_invite: Boolean(raw && typeof raw === 'object'),
+    invite_status: String(raw?.status ?? '').trim().toLowerCase() || null,
+    has_request: Boolean(requestRaw && typeof requestRaw === 'object'),
+  });
+}
+
 function normalizeDriverRequestPublic(
   raw: Record<string, unknown> | null | undefined,
+  fallbackRequestId?: string,
 ): TrustedDirectDriverRequestPublic | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const id = String(raw.id || '').trim();
+  if (!raw || typeof raw !== 'object') {
+    if (fallbackRequestId) {
+      return {
+        id: fallbackRequestId,
+        status: 'pending_responder',
+        pickup_label: null,
+        dropoff_label: null,
+        distance_km: 0,
+        distance_band: null,
+        offered_contribution_tl: 0,
+        vehicle_preference: 'car',
+        created_at: null,
+      };
+    }
+    return null;
+  }
+  const id = String(raw.id || fallbackRequestId || '').trim();
   if (!id) return null;
 
   const distanceRaw = raw.distance_km;
@@ -239,17 +279,37 @@ function normalizeDriverRequestPublic(
 function normalizeDriverInvitePublic(
   raw: Record<string, unknown> | null | undefined,
 ): TrustedDirectDriverInvitePublic | null {
-  if (!raw || typeof raw !== 'object') return null;
+  if (!raw || typeof raw !== 'object') {
+    logTdmDriverInviteNormalizeFail(raw, 'missing_raw');
+    return null;
+  }
   const id = String(raw.id || '').trim();
-  if (!id) return null;
+  if (!id) {
+    logTdmDriverInviteNormalizeFail(raw, 'missing_id');
+    return null;
+  }
 
   const status = String(raw.status || '').trim().toLowerCase();
-  if (status !== 'pending_responder') return null;
+  if (status !== 'pending_responder') {
+    logTdmDriverInviteNormalizeFail(raw, 'bad_status');
+    return null;
+  }
 
+  const requestIdFallback = String(raw.request_id || '').trim();
   const requestRaw = raw.request;
-  if (!requestRaw || typeof requestRaw !== 'object') return null;
-  const request = normalizeDriverRequestPublic(requestRaw as Record<string, unknown>);
-  if (!request) return null;
+  let request: TrustedDirectDriverRequestPublic | null = null;
+  if (requestRaw && typeof requestRaw === 'object') {
+    request = normalizeDriverRequestPublic(
+      requestRaw as Record<string, unknown>,
+      requestIdFallback || undefined,
+    );
+  } else if (requestIdFallback) {
+    request = normalizeDriverRequestPublic(null, requestIdFallback);
+  }
+  if (!request) {
+    logTdmDriverInviteNormalizeFail(raw, requestRaw ? 'bad_request' : 'missing_request');
+    return null;
+  }
 
   const expiresInRaw = raw.invite_expires_in_sec;
   let invite_expires_in_sec = 0;
@@ -534,7 +594,11 @@ export async function getCurrentTrustedDirectInvite(): Promise<
   const res = await tdmGet<TrustedDirectCurrentInviteResponse>('/trusted-direct/invites/current');
   if (res.ok === false) return res;
   if (!res.data.invite) return ok(null);
-  const invite = normalizeDriverInvitePublic(res.data.invite as Record<string, unknown>);
+  const rawInvite = res.data.invite as Record<string, unknown>;
+  const invite = normalizeDriverInvitePublic(rawInvite);
+  if (!invite) {
+    return fail('PARSE', TDM_DRIVER_INVITE_HYDRATE_ERROR);
+  }
   return ok(invite);
 }
 
