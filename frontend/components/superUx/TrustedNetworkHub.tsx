@@ -55,6 +55,8 @@ import {
   sectionConnectionsTitle,
   formatTrustedRadarBriefing,
   TDM_ACTIVE_TAG_BLOCK,
+  TDM_CANCEL_CONFIRM_BODY,
+  TDM_CANCEL_CONFIRM_TITLE,
   TDM_CONTRIBUTION_CANCEL,
   TDM_CONTRIBUTION_CONFIRM,
   TDM_CONTRIBUTION_TITLE,
@@ -244,15 +246,26 @@ function TrustedNetworkHub({
     };
   }, [hasActiveTag, role, routeContext, tdmEnabled, tdmPendingBlocked]);
 
-  const handleOrphanCancel = useCallback(async () => {
+  const confirmOrphanCancel = useCallback(() => {
     const rid = String(orphanPending?.id || '').trim();
     if (!rid || orphanCancelling) return;
-    setOrphanCancelling(true);
-    const result = await cancelTrustedDirectRequest(rid);
-    setOrphanCancelling(false);
-    if (result.ok) {
-      setOrphanPending(null);
-    }
+    appAlert(TDM_CANCEL_CONFIRM_TITLE, TDM_CANCEL_CONFIRM_BODY, [
+      { text: 'Vazgeç', style: 'cancel' },
+      {
+        text: TDM_ORPHAN_CANCEL,
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            setOrphanCancelling(true);
+            const result = await cancelTrustedDirectRequest(rid, 'orphan_manual_button');
+            setOrphanCancelling(false);
+            if (result.ok) {
+              setOrphanPending(null);
+            }
+          })();
+        },
+      },
+    ]);
   }, [orphanCancelling, orphanPending?.id]);
 
   const handleLeaveHubForRoute = useCallback(() => {
@@ -651,15 +664,10 @@ function TrustedNetworkHub({
           <Text style={styles.orphanBody}>{TDM_ORPHAN_PENDING_BODY}</Text>
           <View style={styles.orphanActions}>
             <Pressable
-              style={[styles.orphanBtn, styles.orphanBtnPrimary]}
-              onPress={() => void handleOrphanCancel()}
-              disabled={orphanCancelling}
+              style={[styles.orphanBtn, styles.orphanBtnClosePrimary]}
+              onPress={() => router.back()}
             >
-              {orphanCancelling ? (
-                <ActivityIndicator size="small" color={ui.activity} />
-              ) : (
-                <Text style={styles.orphanBtnPrimaryText}>{TDM_ORPHAN_CANCEL}</Text>
-              )}
+              <Text style={styles.orphanBtnClosePrimaryText}>{TDM_ORPHAN_CLOSE}</Text>
             </Pressable>
             <Pressable
               style={styles.orphanBtn}
@@ -667,8 +675,16 @@ function TrustedNetworkHub({
             >
               <Text style={styles.orphanBtnText}>{TDM_ORPHAN_PICK_ROUTE}</Text>
             </Pressable>
-            <Pressable style={styles.orphanBtn} onPress={() => router.back()}>
-              <Text style={styles.orphanBtnText}>{TDM_ORPHAN_CLOSE}</Text>
+            <Pressable
+              style={[styles.orphanBtn, styles.orphanBtnDanger]}
+              onPress={() => confirmOrphanCancel()}
+              disabled={orphanCancelling}
+            >
+              {orphanCancelling ? (
+                <ActivityIndicator size="small" color={ui.activity} />
+              ) : (
+                <Text style={styles.orphanBtnDangerText}>{TDM_ORPHAN_CANCEL}</Text>
+              )}
             </Pressable>
           </View>
         </View>
@@ -1114,6 +1130,24 @@ const styles = StyleSheet.create({
   orphanBtnPrimary: {
     borderColor: 'rgba(248, 113, 113, 0.35)',
     backgroundColor: 'rgba(127, 29, 29, 0.18)',
+  },
+  orphanBtnClosePrimary: {
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+    backgroundColor: 'rgba(8, 47, 73, 0.35)',
+  },
+  orphanBtnClosePrimaryText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: PREMIUM_AUTH_CYAN,
+  },
+  orphanBtnDanger: {
+    borderColor: 'rgba(248, 113, 113, 0.35)',
+    backgroundColor: 'rgba(16, 26, 43, 0.72)',
+  },
+  orphanBtnDangerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#F87171',
   },
   orphanBtnText: {
     fontSize: 13,

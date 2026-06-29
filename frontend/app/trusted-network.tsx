@@ -106,7 +106,7 @@ export default function TrustedNetworkRoute() {
     if (tdmSession.status === 'matching') {
       return;
     }
-    void tdmSession.cancel();
+    void tdmSession.cancel('waiting_manual_button');
   }, [tdmSession]);
 
   return (

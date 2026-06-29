@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { appAlert } from '../../contexts/AppAlertContext';
 import { GlassSurface, PremiumText } from '../../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
 import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
@@ -16,6 +17,8 @@ import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import { useQrPaymentTrustTheme } from '../../lib/theme/useQrPaymentTrustTheme';
 import {
   TDM_WAITING_CANCEL,
+  TDM_CANCEL_CONFIRM_BODY,
+  TDM_CANCEL_CONFIRM_TITLE,
   TDM_WAITING_CREATING_HINT,
   TDM_WAITING_MATCHING_BODY,
   TDM_WAITING_MATCHING_HINT,
@@ -88,6 +91,16 @@ function TrustedDirectWaitingOverlay({
 
   const modalVisible = visible && !dismissedByBack;
 
+  const handleCancelPress = useCallback(() => {
+    if (isCancelling) {
+      return;
+    }
+    appAlert(TDM_CANCEL_CONFIRM_TITLE, TDM_CANCEL_CONFIRM_BODY, [
+      { text: 'Vazgeç', style: 'cancel' },
+      { text: TDM_WAITING_CANCEL, style: 'destructive', onPress: onCancel },
+    ]);
+  }, [isCancelling, onCancel]);
+
   return (
     <Modal
       visible={modalVisible}
@@ -159,7 +172,7 @@ function TrustedDirectWaitingOverlay({
                   isCancelling && styles.cancelBtnDisabled,
                   pressed && !isCancelling && styles.cancelBtnPressed,
                 ]}
-                onPress={onCancel}
+                onPress={handleCancelPress}
                 disabled={isCancelling}
                 accessibilityRole="button"
                 accessibilityLabel={TDM_WAITING_CANCEL}

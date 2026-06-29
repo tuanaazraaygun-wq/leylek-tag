@@ -130,6 +130,18 @@ export type TrustedDirectCurrentInviteResponse = {
 export const TDM_DRIVER_INVITE_HYDRATE_ERROR =
   'Davet bilgisi alınamadı. Yeniden dene.';
 
+export type TdmCancelSource =
+  | 'waiting_manual_button'
+  | 'orphan_manual_button'
+  | 'unknown';
+
+function maskTdmRequestIdForLog(value: string): string {
+  const id = String(value || '').trim();
+  if (!id) return '-';
+  if (id.length <= 8) return id;
+  return `${id.slice(0, 8)}…`;
+}
+
 export type TrustedDirectAcceptResponse = {
   success: true;
   tag: { id: string; status?: string; match_channel?: string };
@@ -652,8 +664,14 @@ export async function createTrustedDirectRequest(
 
 export async function cancelTrustedDirectRequest(
   requestId: string,
+  source: TdmCancelSource = 'unknown',
 ): Promise<TrustedDirectApiResult<TrustedDirectRequestRow | null>> {
-  const id = encodeURIComponent(String(requestId || '').trim());
+  const rawId = String(requestId || '').trim();
+  perfLog('TDM_PASSENGER_CANCEL_REQUEST', {
+    source,
+    request_id: maskTdmRequestIdForLog(rawId),
+  });
+  const id = encodeURIComponent(rawId);
   if (!id) return fail('NOT_FOUND', 'İstek bulunamadı');
   const res = await tdmPost<TrustedDirectCancelResponse>(`/trusted-direct/request/${id}/cancel`);
   if (res.ok === false) return res;

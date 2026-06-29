@@ -10,6 +10,7 @@ import {
   TDM_MATCHING_TIMEOUT_MS,
   TDM_POLL_INTERVAL_MS,
   type CreateTrustedDirectRequestPayload,
+  type TdmCancelSource,
   type TrustedDirectApiErrorCode,
   type TrustedDirectApiResult,
   type TrustedDirectRequestRow,
@@ -717,7 +718,7 @@ export function useTrustedDirectPassengerSession(
     [resetLocal, stopPolling],
   );
 
-  const cancel = useCallback(async (): Promise<boolean> => {
+  const cancel = useCallback(async (source: TdmCancelSource = 'unknown'): Promise<boolean> => {
     if (cancelInFlightRef.current) {
       return false;
     }
@@ -742,7 +743,7 @@ export function useTrustedDirectPassengerSession(
     setIsCancelling(true);
     setErrorMessage(null);
 
-    const result = await cancelTrustedDirectRequest(rid);
+    const result = await cancelTrustedDirectRequest(rid, source);
 
     cancelInFlightRef.current = false;
     if (!mountedRef.current || generation !== generationRef.current) {

@@ -230,6 +230,9 @@ export const TDM_WAITING_MATCHING_HINT =
   'Doğrulama tamamlanınca otomatik devam edeceksiniz.';
 export const TDM_WAITING_CREATING_HINT = 'İstek hazırlanıyor…';
 export const TDM_WAITING_CANCEL = 'İsteği iptal et';
+export const TDM_CANCEL_CONFIRM_TITLE = 'İsteği iptal edilsin mi?';
+export const TDM_CANCEL_CONFIRM_BODY =
+  'Sürücü yanıtı bekleniyor. İptal ederseniz bu doğrudan eşleşme isteği kapanır.';
 export const TDM_MATCHING_TIMEOUT =
   'Bu istek için eşleşme doğrulanamadı. Sürücü reddetmiş veya süre dolmuş olabilir.';
 export const TDM_TERMINAL_DECLINED = 'Karşı tarafın isteği sonlandı.';
