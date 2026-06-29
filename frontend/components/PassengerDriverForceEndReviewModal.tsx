@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { useTheme } from '../hooks/useTheme';
+import { playForceEndAlertSound } from '../utils/sound';
 import { lightThemeEnabled } from '../lib/featureFlags';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -22,6 +23,8 @@ export type PassengerDriverForceEndReviewModalProps = {
   visible: boolean;
   onConfirm: () => void | Promise<void>;
   onReject: () => void | Promise<void>;
+  /** Force-end sonic dedupe — tag id */
+  tagId?: string | null;
   /** Varsayılan: sürücü zorla bitirdi metni */
   title?: string;
   /** Biniş öncesi bilgilendirme — onay/red yok, yalnızca Tamam */
@@ -36,6 +39,7 @@ export default function PassengerDriverForceEndReviewModal({
   visible,
   onConfirm,
   onReject,
+  tagId,
   title,
   informationalOnly = false,
   infoMessage,
@@ -105,6 +109,14 @@ export default function PassengerDriverForceEndReviewModal({
       opacityAnim.setValue(0);
     }
   }, [visible, scaleAnim, opacityAnim]);
+
+  /** P0-D — counterparty force-end uyarısı (foreground socket / active-tag recovery). */
+  useEffect(() => {
+    if (!visible) return;
+    const tid = tagId?.trim();
+    if (!tid) return;
+    void playForceEndAlertSound({ tagId: tid });
+  }, [visible, tagId]);
 
   const eventLine = title?.trim()
     ? title.trim()

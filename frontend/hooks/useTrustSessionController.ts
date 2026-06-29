@@ -12,6 +12,7 @@ import {
   type TrustActiveSessionRow,
 } from '../lib/trustApi';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
+import { playVideoTrustCallSound } from '../utils/sound';
 
 /** tag_id / activeTag yarışı için kısa retry; socket tek sefer kaçsa bile activeTag yetişince modal / video açılır */
 const MAX_TRUST_TAG_RETRY_ATTEMPTS = 14;
@@ -160,6 +161,13 @@ export function useTrustSessionController({
   useEffect(() => {
     trustRequestModalRef.current = trustRequestModal;
   }, [trustRequestModal]);
+
+  /** P0-D — Güven Al isteği modalı görünür olunca premium video-trust tonu (foreground). */
+  useEffect(() => {
+    const trustId = trustRequestModal?.trustId?.trim();
+    if (!trustId) return;
+    void playVideoTrustCallSound({ trustId });
+  }, [trustRequestModal?.trustId]);
 
   const trustTagRetryTimerIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 

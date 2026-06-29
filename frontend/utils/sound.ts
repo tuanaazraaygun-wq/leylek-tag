@@ -21,8 +21,12 @@ import {
   quickMatchOpsCooldownGate,
   quickMatchOpsSessionGate,
   chatInboundCooldownGate,
+  forceEndAlertCooldownGate,
+  forceEndAlertSessionGate,
   SONIC_DEDUPE_MS,
   uiTapCooldownGate,
+  videoTrustCallCooldownGate,
+  videoTrustCallSessionGate,
 } from '../lib/lsx/sonicDedupe';
 import { registerSonicProductionHandlers } from '../lib/lsx/sonicController';
 import { getPersistedUserRaw } from '../lib/sessionToken';
@@ -896,6 +900,111 @@ export async function playChatInboundSound(options?: PlayChatInboundSoundOptions
   } catch (e) {
     if (__DEV__) console.warn('playChatInboundSound', e);
   }
+}
+
+// ── Video Trust (Güven Al) invite — soft premium 2-stage (P0-D) ──
+
+const VIDEO_TRUST_CALL_VOLUME = 0.44;
+const VIDEO_TRUST_CALL_SOURCE = require('../assets/sounds/video-trust-call.wav');
+
+export type PlayVideoTrustCallSoundOptions = {
+  trustId?: string | null;
+  /** Background notification open — bypasses AppState active guard. */
+  fromNotificationOpen?: boolean;
+};
+
+/** Karşı taraf Güven Al isteği görünür olduğunda — match/QM/TDM/error ailesinden ayrı. */
+export async function playVideoTrustCallSound(options?: PlayVideoTrustCallSoundOptions): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const trustId = String(options?.trustId || '').trim();
+  if (!trustId) return;
+  if (!options?.fromNotificationOpen && AppState.currentState !== 'active') return;
+  if (!videoTrustCallSessionGate.tryMarkChimed(trustId)) return;
+  if (!videoTrustCallCooldownGate.tryPass()) return;
+
+  try {
+    await loadSounds();
+    const { sound } = await Audio.Sound.createAsync(VIDEO_TRUST_CALL_SOURCE, {
+      shouldPlay: false,
+      volume: VIDEO_TRUST_CALL_VOLUME,
+      isLooping: false,
+    });
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+      }
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('playVideoTrustCallSound', e);
+  }
+}
+
+export function resetVideoTrustCallSoundGate(): void {
+  videoTrustCallSessionGate.reset();
+}
+
+// ── Force-end counterparty alert — short amber warning (P0-D) ──
+
+const FORCE_END_ALERT_VOLUME = 0.4;
+const FORCE_END_ALERT_SOURCE = require('../assets/sounds/force-end-alert.wav');
+
+export type PlayForceEndAlertSoundOptions = {
+  tagId?: string | null;
+  /** Background notification open — bypasses AppState active guard. */
+  fromNotificationOpen?: boolean;
+};
+
+export function parseForceEndTagFromPushData(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const d = data as Record<string, unknown>;
+  const tagId = String(d.tag_id ?? '').trim();
+  if (!tagId) return null;
+  const t = String(d.type ?? '')
+    .trim()
+    .toLowerCase();
+  if (t === 'force_ended' || t === 'force_end_counterparty') return tagId;
+  return null;
+}
+
+/** Karşı taraf force-end uyarısı — error değil, kısa trip-event tonu. */
+export async function playForceEndAlertSound(options?: PlayForceEndAlertSoundOptions): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const tagId = String(options?.tagId || '').trim();
+  if (!tagId) return;
+  if (!options?.fromNotificationOpen && AppState.currentState !== 'active') return;
+  if (!forceEndAlertSessionGate.tryMarkChimed(tagId)) return;
+  if (!forceEndAlertCooldownGate.tryPass()) return;
+
+  try {
+    await loadSounds();
+    const { sound } = await Audio.Sound.createAsync(FORCE_END_ALERT_SOURCE, {
+      shouldPlay: false,
+      volume: FORCE_END_ALERT_VOLUME,
+      isLooping: false,
+    });
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+      }
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('playForceEndAlertSound', e);
+  }
+}
+
+/** Bildirime tıklanınca (arka plan) — modal açılmadan önce force-end tonu. */
+export async function tryPlayForceEndAlertFromPushOpen(data: unknown): Promise<void> {
+  const tagId = parseForceEndTagFromPushData(data);
+  if (!tagId) return;
+  await playForceEndAlertSound({ tagId, fromNotificationOpen: true });
+}
+
+export function resetForceEndAlertSoundGate(): void {
+  forceEndAlertSessionGate.reset();
 }
 
 /** B4-2 — LSX registry sonic dispatch (flags OFF → no-op). */

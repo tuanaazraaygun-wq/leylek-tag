@@ -32,6 +32,10 @@ export const SONIC_DEDUPE_MS = {
   journeyForceEnd: 1500,
   journeyQrErrorKind: 800,
   journeyCrossChannel: 300,
+  /** Video Trust (Güven Al) invite — per-trust session + cooldown (P0-D). */
+  videoTrustCall: 3200,
+  /** Force-end counterparty alert — per-tag session + cooldown (P0-D). */
+  forceEndAlert: 2000,
 } as const;
 
 export type CooldownGate = {
@@ -281,6 +285,47 @@ export const driverOfferSessionGate = {
     return true;
   },
 };
+
+/** Video Trust invite — per-trust_id session dedupe (socket / recovery). */
+export const videoTrustCallSessionGate = {
+  chimedTrustIds: new Set<string>(),
+
+  reset() {
+    this.chimedTrustIds.clear();
+    videoTrustCallCooldownGate.reset();
+  },
+
+  tryMarkChimed(trustId: string): boolean {
+    const id = String(trustId || '').trim();
+    if (!id || this.chimedTrustIds.has(id)) {
+      return false;
+    }
+    this.chimedTrustIds.add(id);
+    return true;
+  },
+};
+
+/** Force-end counterparty alert — per-tag session dedupe (socket / poll / push open). */
+export const forceEndAlertSessionGate = {
+  chimedTagIds: new Set<string>(),
+
+  reset() {
+    this.chimedTagIds.clear();
+    forceEndAlertCooldownGate.reset();
+  },
+
+  tryMarkChimed(tagId: string): boolean {
+    const id = String(tagId || '').trim();
+    if (!id || this.chimedTagIds.has(id)) {
+      return false;
+    }
+    this.chimedTagIds.add(id);
+    return true;
+  },
+};
+
+export const videoTrustCallCooldownGate = createCooldownGate(SONIC_DEDUPE_MS.videoTrustCall);
+export const forceEndAlertCooldownGate = createCooldownGate(SONIC_DEDUPE_MS.forceEndAlert);
 
 /** Quick Match — per-invite session dedupe. */
 export const quickMatchOpsSessionGate = {

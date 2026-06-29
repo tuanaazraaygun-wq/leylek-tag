@@ -13806,6 +13806,7 @@ function PassengerDashboard({
 
                 <PassengerDriverForceEndReviewModal
                   visible={!!passengerDriverForceReview}
+                  tagId={passengerDriverForceReview?.tagId}
                   submitting={passengerForceEndReviewSubmitting}
                   informationalOnly={!!passengerDriverForceReview?.informationalOnly}
                   infoMessage={passengerDriverForceReview?.message}
@@ -21883,6 +21884,7 @@ function DriverDashboard({
 
       <PassengerDriverForceEndReviewModal
         visible={!!driverPassengerForceEndReview}
+        tagId={driverPassengerForceEndReview?.tagId}
         submitting={driverForceEndReviewSubmitting}
         informationalOnly={!!driverPassengerForceEndReview?.informationalOnly}
         infoMessage={driverPassengerForceEndReview?.message}

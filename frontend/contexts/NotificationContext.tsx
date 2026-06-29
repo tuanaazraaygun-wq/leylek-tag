@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { router, type Href } from 'expo-router';
 import { MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
 import { upsertMuhabbetMessageFromPushData } from '../lib/muhabbetMessagesStorage';
-import { tryPlayDriverOfferSoundFromPushData } from '../utils/sound';
+import { tryPlayDriverOfferSoundFromPushData, tryPlayForceEndAlertFromPushOpen } from '../utils/sound';
 import { refreshSessionFromServerForPush } from '../lib/muhabbetTripPushSessionPrefetch';
 
 /** Bildirim → AsyncStorage (await) → global UI event; navigate öncesi tamamlanmalı */
@@ -176,6 +176,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       lastRoutingTapDedupeRef.current = dedupeKey;
     }
     await persistMuhabbetMessageFromNotificationData(normalized);
+    void tryPlayForceEndAlertFromPushOpen(normalized);
     setTappedData(normalized, setLastTappedNotificationData);
   }, []);
 
