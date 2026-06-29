@@ -359,6 +359,11 @@ export async function revokeTrustedConnection(
   return trustedNetworkPost<TrustedRevokeMutationResponse>(`/trusted/connections/${id}/revoke`);
 }
 
+/** Trusted Direct hedefi — yolcu tarafında trip sürücüsü + araç sinyali. */
+export function isTrustedDirectRequestEligible(item: TrustedConnectionItem): boolean {
+  return item.role === 'driver' && item.counterparty.vehicle_kind != null;
+}
+
 export type TdmDriverUiState = 'online' | 'busy' | 'offline';
 
 export type TdmDriverAvailability = {

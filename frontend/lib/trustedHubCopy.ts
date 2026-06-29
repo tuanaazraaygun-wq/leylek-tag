@@ -214,6 +214,8 @@ export const TDM_PENDING_BANNER = 'Doğrudan eşleşme isteğiniz sürücüye il
 export const TDM_UNAVAILABLE_HINT = 'Doğrudan eşleşme şu an kullanılamıyor.';
 export const TDM_NO_ROUTE_HINT = 'Önce rota seçerek Sürücülerim üzerinden istek gönderebilirsiniz.';
 export const TDM_VEHICLE_MISMATCH = 'Araç tercihiniz bu sürücüyle uyumlu değil.';
+export const TDM_DIRECT_TARGET_INELIGIBLE =
+  'Bu kullanıcı sürücü eşleşmesi için uygun değil.';
 export const TDM_ACTIVE_TAG_BLOCK = 'Aktif yolculuğunuz varken yeni istek gönderilemez.';
 export const TDM_CONTRIBUTION_TITLE = 'Katkı payı';
 export const TDM_CONTRIBUTION_CONFIRM = 'İsteği gönder';

@@ -38,6 +38,7 @@ import {
 } from '../../lib/trustedDirectApi';
 import type { useTrustedDirectPassengerSession } from '../../hooks/useTrustedDirectPassengerSession';
 import {
+  isTrustedDirectRequestEligible,
   resolveTdmDriverAvailability,
   type TrustedConnectionItem,
   type TdmDriverAvailability,
@@ -57,6 +58,7 @@ import {
   TDM_CONTRIBUTION_CANCEL,
   TDM_CONTRIBUTION_CONFIRM,
   TDM_CONTRIBUTION_TITLE,
+  TDM_DIRECT_TARGET_INELIGIBLE,
   TDM_NO_ROUTE_HINT,
   TDM_PENDING_BANNER,
   TDM_ROUTE_BANNER_TITLE,
@@ -306,6 +308,15 @@ function TrustedNetworkHub({
           availability: null,
         };
       }
+      if (!isTrustedDirectRequestEligible(item)) {
+        return {
+          disabled: true,
+          eligible: false,
+          helperMessage: TDM_DIRECT_TARGET_INELIGIBLE,
+          statusLabel: null,
+          availability: null,
+        };
+      }
       const vehiclePref = routeContext?.vehicle_preference ?? 'car';
       const driverKind = item.counterparty.vehicle_kind;
       if (!isDriverVehicleCompatibleWithPreference(driverKind, vehiclePref)) {
@@ -360,6 +371,10 @@ function TrustedNetworkHub({
   const handleRequestDirectPress = useCallback(
     (item: TrustedConnectionItem) => {
       if (tdmPendingBlocked || !routeContext || !tdmSession) return;
+      if (!isTrustedDirectRequestEligible(item)) {
+        appAlert(TDM_REQUEST_BLOCKED_TITLE, TDM_DIRECT_TARGET_INELIGIBLE);
+        return;
+      }
       const gate = resolveTdmRowDisabled(item);
       if (gate.disabled || !gate.eligible) {
         if (gate.helperMessage) {
@@ -421,6 +436,10 @@ function TrustedNetworkHub({
     const freshTarget =
       connections.find((c) => c.connection_id === contributionTarget.connection_id) ??
       contributionTarget;
+    if (!isTrustedDirectRequestEligible(freshTarget)) {
+      appAlert(TDM_REQUEST_BLOCKED_TITLE, TDM_DIRECT_TARGET_INELIGIBLE);
+      return;
+    }
     const gate = resolveTdmRowDisabled(freshTarget);
     if (gate.disabled || !gate.eligible) {
       if (gate.helperMessage) {

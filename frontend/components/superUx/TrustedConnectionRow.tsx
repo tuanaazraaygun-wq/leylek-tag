@@ -24,11 +24,12 @@ import {
   TDM_REQUEST_BUSY,
   TDM_NOTIFY_CTA,
 } from '../../lib/trustedHubCopy';
-import type {
-  TrustedConnectionItem,
-  TrustedConnectionRadarState,
-  TdmDriverAvailability,
-  TdmDriverUiState,
+import {
+  isTrustedDirectRequestEligible,
+  type TrustedConnectionItem,
+  type TrustedConnectionRadarState,
+  type TdmDriverAvailability,
+  type TdmDriverUiState,
 } from '../../lib/trustedNetworkApi';
 import type { TrustedHubRole } from '../../lib/trustedHubCopy';
 
@@ -174,11 +175,13 @@ function TrustedConnectionRow({
     ]);
   }, [disabled, isBusy, item.connection_id, onRevoke]);
 
+  const tdmTargetEligible = isTrustedDirectRequestEligible(item);
   const showTdmCta =
     tdmRequestVisible &&
     hubRole === 'passenger' &&
-    item.role === 'driver' &&
+    tdmTargetEligible &&
     typeof onRequestDirect === 'function';
+  const showDriverBadge = item.role === 'driver';
   const tdmDisabled = disabled || tdmRequestDisabled || tdmRequestBusy;
   const tdmButtonLabel = tdmRequestBusy
     ? TDM_REQUEST_BUSY
@@ -216,6 +219,11 @@ function TrustedConnectionRow({
           <Text style={styles.name} numberOfLines={1}>
             {displayName}
           </Text>
+          {showDriverBadge ? (
+            <View style={styles.driverBadge}>
+              <Text style={styles.driverBadgeText}>Sürücü</Text>
+            </View>
+          ) : null}
           {showVehicle ? (
             <Ionicons name={vehicleIcon} size={14} color={PREMIUM_AUTH_CYAN} style={styles.vehicleIcon} />
           ) : null}
@@ -435,6 +443,20 @@ const styles = StyleSheet.create({
   },
   vehicleIcon: {
     opacity: 0.9,
+  },
+  driverBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(8, 47, 73, 0.45)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.28)',
+  },
+  driverBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: PREMIUM_AUTH_CYAN,
+    letterSpacing: 0.2,
   },
   metaRow: {
     flexDirection: 'row',
