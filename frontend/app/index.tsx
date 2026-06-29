@@ -12625,6 +12625,30 @@ function PassengerDashboard({
   };
 
   const handleDestinationPickerInteractiveMapReady = () => {
+    try {
+      perfLog('ROUTE_PICKER_MAP_READY', {
+        platform: Platform.OS,
+        routePickerStep,
+        phase: destinationPickerPhase,
+      });
+    } catch {
+      /* noop */
+    }
+    if (!destinationPickerPendingInteractiveBootAnimateRef.current) return;
+    destinationPickerPendingInteractiveBootAnimateRef.current = false;
+    runDestinationPickerInteractiveBootRegionOnce();
+  };
+
+  const handleDestinationPickerInteractiveMapLoaded = () => {
+    try {
+      perfLog('ROUTE_PICKER_MAP_LOADED', {
+        platform: Platform.OS,
+        routePickerStep,
+        phase: destinationPickerPhase,
+      });
+    } catch {
+      /* noop */
+    }
     if (!destinationPickerPendingInteractiveBootAnimateRef.current) return;
     destinationPickerPendingInteractiveBootAnimateRef.current = false;
     runDestinationPickerInteractiveBootRegionOnce();
@@ -14816,11 +14840,22 @@ function PassengerDashboard({
           {destinationPickerPhase === 'map' ? (
             <>
               {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
-                <View style={styles.destinationPickerMapSlotInteractive}>
+                <View
+                  style={
+                    Platform.OS === 'android'
+                      ? styles.destinationPickerMapSlot
+                      : styles.destinationPickerMapSlotInteractive
+                  }
+                  collapsable={Platform.OS === 'android' ? false : undefined}
+                >
                   <DestinationPickerMapView
                     key="dest-map-interactive"
                     ref={destinationPickerMapRef}
-                    style={styles.destinationPickerMapFillInteractive}
+                    style={
+                      Platform.OS === 'android'
+                        ? styles.destinationPickerMapFill
+                        : styles.destinationPickerMapFillInteractive
+                    }
                     provider={DestinationPickerMapProvider}
                     mapType="standard"
                     showsUserLocation={!!userLocation}
@@ -14829,6 +14864,7 @@ function PassengerDashboard({
                     zoomEnabled={true}
                     pitchEnabled={true}
                     rotateEnabled={true}
+                    loadingBackgroundColor="transparent"
                     initialRegion={
                       destinationPickerMapBootRegionRef.current ?? {
                         latitude: destinationPickerMapLatResolved,
@@ -14840,7 +14876,7 @@ function PassengerDashboard({
                     onMapReady={handleDestinationPickerInteractiveMapReady}
                     onMapLoaded={
                       Platform.OS === 'android'
-                        ? handleDestinationPickerInteractiveMapReady
+                        ? handleDestinationPickerInteractiveMapLoaded
                         : undefined
                     }
                     onRegionChangeComplete={handleDestinationPickerRegionComplete}
