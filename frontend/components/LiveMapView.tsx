@@ -62,6 +62,8 @@ import { DARK_MAP_STYLE } from '../lib/theme/mapStyles';
 import { useLiveMapChromeTheme } from '../lib/theme/useJourneyTheme';
 import {
   TRUST_GUVEN_BLOCK_MESSAGES,
+  markTrustCallTap,
+  trustCallPerf,
   type TrustGuvenBlockReason,
 } from '../hooks/useTrustSessionController';
 
@@ -5058,6 +5060,14 @@ export default function LiveMapView({
       });
       return;
     }
+    const tapTagId = String(tagId || '').trim();
+    if (tapTagId) {
+      markTrustCallTap(tapTagId);
+      trustCallPerf('TRUST_CALL_TAP', {
+        role: isDriver ? 'driver' : 'passenger',
+        tag_id: tapTagId,
+      });
+    }
     trustRequestAction?.();
   }, [
     boardingConfirmed,
@@ -5065,6 +5075,8 @@ export default function LiveMapView({
     trustRequestBlockReason,
     trustRequestDisabled,
     trustRequestPending,
+    tagId,
+    isDriver,
   ]);
 
   useEffect(() => {

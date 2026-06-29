@@ -12,11 +12,16 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { trustCallPerf } from '../../hooks/useTrustSessionController';
 
 export type TrustRequestModalProps = {
   visible: boolean;
   /** İsteği gönderen taraf */
   requesterRole: 'driver' | 'passenger';
+  /** P0-E4 perf — alıcı rolü (log only) */
+  diagRole?: 'passenger' | 'driver';
+  /** P0-E4 perf — masked request id kaynağı (log only) */
+  trustRequestId?: string;
   loading?: boolean;
   onAccept: () => void;
   onReject: () => void;
@@ -25,6 +30,8 @@ export type TrustRequestModalProps = {
 const TrustRequestModal = memo(function TrustRequestModal({
   visible,
   requesterRole,
+  diagRole,
+  trustRequestId,
   loading = false,
   onAccept,
   onReject,
@@ -69,6 +76,14 @@ const TrustRequestModal = memo(function TrustRequestModal({
     loop.start();
     return () => loop.stop();
   }, [visible, pulse, glow]);
+
+  useEffect(() => {
+    if (!visible) return;
+    trustCallPerf('TRUST_CALL_MODAL_VISIBLE', {
+      role: diagRole ?? null,
+      request_id: trustRequestId ?? null,
+    });
+  }, [visible, diagRole, trustRequestId]);
 
   const title =
     requesterRole === 'driver'

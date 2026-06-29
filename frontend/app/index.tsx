@@ -15683,6 +15683,8 @@ function PassengerDashboard({
       <TrustRequestModal
         visible={!!trustRequestModal}
         requesterRole={trustRequestModal?.requesterRole ?? 'driver'}
+        diagRole="passenger"
+        trustRequestId={trustRequestModal?.trustId}
         loading={trustModalLoading}
         onAccept={() => void respondPassengerTrust(true)}
         onReject={() => void respondPassengerTrust(false)}
@@ -15697,6 +15699,7 @@ function PassengerDashboard({
           peerUserId={trustVideoSession.peerUserId}
           sessionHardDeadlineAt={trustVideoSession.sessionHardDeadlineAt}
           peerDisplayName={trustVideoSession.peerDisplayName}
+          diagRole="passenger"
           onClose={() => clearPassengerTrustState()}
         />
       ) : null}
@@ -21896,6 +21899,8 @@ function DriverDashboard({
       <TrustRequestModal
         visible={!!trustRequestModal}
         requesterRole={trustRequestModal?.requesterRole ?? 'passenger'}
+        diagRole="driver"
+        trustRequestId={trustRequestModal?.trustId}
         loading={trustModalLoading}
         onAccept={() => void respondDriverTrust(true)}
         onReject={() => void respondDriverTrust(false)}
@@ -21910,6 +21915,7 @@ function DriverDashboard({
           peerUserId={trustVideoSession.peerUserId}
           sessionHardDeadlineAt={trustVideoSession.sessionHardDeadlineAt}
           peerDisplayName={trustVideoSession.peerDisplayName}
+          diagRole="driver"
           onClose={() => clearDriverTrustState()}
         />
       ) : null}

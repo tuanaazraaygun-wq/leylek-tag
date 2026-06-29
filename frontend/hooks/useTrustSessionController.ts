@@ -2,7 +2,7 @@
  * Güven AL — state, API, socket ve yeniden bağlanma (index.tsx ile aynı davranış, taşınmış kod).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
 import { displayFirstName } from '../lib/displayName';
 import {
@@ -14,6 +14,80 @@ import {
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
 import { playVideoTrustCallSound } from '../utils/sound';
 import { perfLog } from '../utils/perfDiagLog';
+
+/** P0-E4 — Güven Al call setup latency marks (tag_id / request_id keyed). */
+const trustCallPerfMarks = new Map<string, number>();
+
+function maskTrustIdForPerf(v: unknown): string | null {
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  if (s.length <= 8) return `***${s.slice(-2)}`;
+  return `${s.slice(0, 4)}***${s.slice(-4)}`;
+}
+
+function trustCallPerfKey(tagId?: string | null, requestId?: string | null): string {
+  const r = String(requestId ?? '').trim();
+  if (r) return `req:${r.toLowerCase()}`;
+  const t = String(tagId ?? '').trim();
+  if (t) return `tag:${t.toLowerCase()}`;
+  return '';
+}
+
+function linkTrustCallPerfMark(tagId: string, requestId: string): void {
+  const tagKey = trustCallPerfKey(tagId, null);
+  const reqKey = trustCallPerfKey(null, requestId);
+  const t0 = tagKey ? trustCallPerfMarks.get(tagKey) : undefined;
+  if (t0 != null && reqKey) {
+    trustCallPerfMarks.set(reqKey, t0);
+  }
+}
+
+export function markTrustCallTap(tagId: string): void {
+  const tid = String(tagId ?? '').trim();
+  if (!tid) return;
+  const key = trustCallPerfKey(tid, null);
+  if (key) trustCallPerfMarks.set(key, Date.now());
+}
+
+type TrustCallPerfPayload = {
+  role?: 'passenger' | 'driver' | null;
+  tag_id?: string | null;
+  request_id?: string | null;
+  source?: string;
+  reason?: string;
+  platform?: string;
+  elapsed_ms?: number;
+};
+
+export function trustCallPerf(step: string, payload: TrustCallPerfPayload = {}): void {
+  try {
+    const tagIdMasked = payload.tag_id != null ? maskTrustIdForPerf(payload.tag_id) : null;
+    const requestIdMasked = payload.request_id != null ? maskTrustIdForPerf(payload.request_id) : null;
+    const key = trustCallPerfKey(payload.tag_id, payload.request_id);
+    const t0 = key ? trustCallPerfMarks.get(key) : undefined;
+    const elapsed_ms =
+      payload.elapsed_ms != null
+        ? payload.elapsed_ms
+        : t0 != null
+          ? Date.now() - t0
+          : undefined;
+    perfLog(
+      step,
+      JSON.stringify({
+        step,
+        platform: payload.platform ?? Platform.OS,
+        role: payload.role ?? null,
+        tag_id: tagIdMasked,
+        request_id: requestIdMasked,
+        ...(payload.source != null ? { source: payload.source } : {}),
+        ...(payload.reason != null ? { reason: payload.reason } : {}),
+        ...(elapsed_ms != null ? { elapsed_ms } : {}),
+      }),
+    );
+  } catch {
+    /* noop */
+  }
+}
 
 export type TrustGuvenBlockReason =
   | 'boarding_confirmed'
@@ -148,6 +222,9 @@ export function useTrustSessionController({
   openChatForMatchedTrip,
   boardingCommsClosed = false,
 }: Options) {
+  const roleRef = useRef(role);
+  roleRef.current = role;
+
   const [trustRequestModal, setTrustRequestModal] = useState<TrustRequestModalState>(null);
   const [trustModalLoading, setTrustModalLoading] = useState(false);
   const [trustOutgoingPending, setTrustOutgoingPending] = useState(false);
@@ -309,12 +386,25 @@ export function useTrustSessionController({
         return false;
       }
 
+      trustCallPerf('TRUST_CALL_TOKEN_BEGIN', {
+        role: roleRef.current,
+        tag_id: activeTagIdRef.current,
+        request_id: trustId,
+        source,
+      });
+
       lastAppliedTrustVideoKeyRef.current = key;
       setTrustVideoSession((prev) => {
         if (prev && isDuplicateTrustVideoSession(prev, trustId, ch)) {
           return prev;
         }
         return payload;
+      });
+      trustCallPerf('TRUST_CALL_TOKEN_READY', {
+        role: roleRef.current,
+        tag_id: activeTagIdRef.current,
+        request_id: trustId,
+        source,
       });
       return true;
     },
@@ -424,6 +514,12 @@ export function useTrustSessionController({
       setTrustOutgoingPending(false);
       setTrustRequestModal(null);
       setTrustModalLoading(false);
+      trustCallPerf('TRUST_CALL_ACCEPT_SEEN', {
+        role: roleRef.current,
+        tag_id: String(s.tag_id ?? activeTagIdRef.current ?? ''),
+        request_id: trustId,
+        source,
+      });
       return openTrustVideoSession(
         {
           trustId,
@@ -701,6 +797,12 @@ export function useTrustSessionController({
         } catch {
           /* noop */
         }
+        trustCallPerf('TRUST_CALL_SOCKET_RECEIVED', {
+          role: roleRef.current,
+          tag_id: modalTag,
+          request_id: trustId,
+          source: opts.source,
+        });
         setTrustRequestModal({
           trustId,
           tagId: modalTag,
@@ -1071,6 +1173,12 @@ export function useTrustSessionController({
       'TRUST_REQUEST_SHOWN_FROM_DEFERRED',
       JSON.stringify({ trust_id: d.trustId, tag_id: d.tagId }),
     );
+    trustCallPerf('TRUST_CALL_SOCKET_RECEIVED', {
+      role: roleRef.current,
+      tag_id: d.tagId,
+      request_id: d.trustId,
+      source: 'deferred_ui',
+    });
     setTrustRequestModal({
       trustId: d.trustId,
       tagId: d.tagId,
@@ -1117,6 +1225,10 @@ export function useTrustSessionController({
     sendInFlightRef.current = true;
     setTrustOutgoingPending(true);
     outgoingTrustTagIdRef.current = tagId;
+    trustCallPerf('TRUST_CALL_REQUEST_START', {
+      role: roleRef.current,
+      tag_id: tagId,
+    });
     try {
       const res = await postTrustRequest(tagId);
       if (!res?.success) {
@@ -1159,7 +1271,18 @@ export function useTrustSessionController({
       }
       if (res.trust_id) {
         outboundTrustIdRef.current = String(res.trust_id);
+        linkTrustCallPerfMark(tagId, String(res.trust_id));
       }
+      trustCallPerf('TRUST_CALL_REQUEST_SENT', {
+        role: roleRef.current,
+        tag_id: tagId,
+        request_id: res.trust_id ?? null,
+      });
+      trustCallPerf('TRUST_CALL_REQUEST_ACK', {
+        role: roleRef.current,
+        tag_id: tagId,
+        request_id: res.trust_id ?? null,
+      });
       appAlert('Gönderildi', 'Karşı tarafın yanıtı bekleniyor.', [{ text: 'Tamam' }], { variant: 'info' });
     } finally {
       sendInFlightRef.current = false;
@@ -1181,6 +1304,13 @@ export function useTrustSessionController({
       const tagIdForRecovery = String(
         trustRequestModal.tagId ?? activeTagIdRef.current ?? '',
       ).trim();
+      if (accept) {
+        trustCallPerf('TRUST_CALL_ACCEPT_PRESS', {
+          role: roleRef.current,
+          tag_id: tagIdForRecovery,
+          request_id: trustRequestModal.trustId,
+        });
+      }
       setTrustModalLoading(true);
       const res = await postTrustRespond(trustRequestModal.trustId, accept);
       setTrustModalLoading(false);
@@ -1284,6 +1414,13 @@ export function useTrustSessionController({
         }
         return;
       }
+
+      trustCallPerf('TRUST_CALL_SOCKET_RECEIVED', {
+        role,
+        tag_id: tid,
+        request_id: String(data?.trust_id ?? ''),
+        source: 'socket',
+      });
 
       if (activeTagRef.current?.boarding_confirmed_at) {
         try {
@@ -1452,6 +1589,12 @@ export function useTrustSessionController({
         setTrustOutgoingPending(false);
         setTrustRequestModal(null);
         setTrustModalLoading(false);
+        trustCallPerf('TRUST_CALL_ACCEPT_SEEN', {
+          role,
+          tag_id: tid,
+          request_id: incomingTrustId,
+          source: 'trust_session_ready_socket',
+        });
         openTrustVideoSession(
           {
             trustId: incomingTrustId,
@@ -1497,6 +1640,12 @@ export function useTrustSessionController({
           setTrustOutgoingPending(false);
           setTrustRequestModal(null);
           setTrustModalLoading(false);
+          trustCallPerf('TRUST_CALL_ACCEPT_SEEN', {
+            role,
+            tag_id: tid || cur,
+            request_id: incomingTrustId,
+            source: 'trust_ready_socket_requester_outgoing',
+          });
           openTrustVideoSession(
             {
               trustId: incomingTrustId,

@@ -18,6 +18,7 @@ import { agoraUidFromUserId } from '../../lib/agoraUid';
 import { agoraVoiceService } from '../../services/agoraVoiceService';
 import { trustVideoJoin, trustVideoLeave } from '../../services/trustAgoraVideoService';
 import { postTrustEnd } from '../../lib/trustApi';
+import { trustCallPerf } from '../../hooks/useTrustSessionController';
 
 export type TrustVideoSessionScreenProps = {
   visible: boolean;
@@ -29,6 +30,8 @@ export type TrustVideoSessionScreenProps = {
   /** Sunucunun session_hard_deadline_at (ISO) */
   sessionHardDeadlineAt: string;
   peerDisplayName: string;
+  /** P0-E4 perf — log only */
+  diagRole?: 'passenger' | 'driver';
   onClose: () => void;
 };
 
@@ -72,6 +75,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   peerUserId,
   sessionHardDeadlineAt,
   peerDisplayName,
+  diagRole,
   onClose,
 }: TrustVideoSessionScreenProps) {
   const insets = useSafeAreaInsets();
@@ -86,6 +90,14 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   const activeJoinSessionKeyRef = useRef<string | null>(null);
   /** Yeni güven oturumu (trustId+kanal+token) — ana effect’te setJoining ile yanlış “bağlanıyor” resetini önlemek için */
   const trustSessionUiKeyRef = useRef<string>('');
+  const permissionBeginMsRef = useRef<number | null>(null);
+  const joinBeginMsRef = useRef<number | null>(null);
+  const firstLocalVideoLoggedRef = useRef(false);
+  const firstRemoteVideoLoggedRef = useRef(false);
+  const diagRoleRef = useRef(diagRole);
+  diagRoleRef.current = diagRole;
+  const trustIdRef = useRef(trustId);
+  trustIdRef.current = trustId;
 
   const userIdRef = useRef(userId);
   const peerUserIdRef = useRef(peerUserId);
@@ -153,41 +165,92 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
     };
 
     const run = async () => {
+      const perfTrustId = String(trustIdRef.current ?? '').trim();
+      const perfRole = diagRoleRef.current ?? null;
+      permissionBeginMsRef.current = Date.now();
+      trustCallPerf('TRUST_CALL_PERMISSION_BEGIN', {
+        role: perfRole,
+        request_id: perfTrustId,
+      });
+
       if (Platform.OS === 'android') {
         const cam = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
         const mic = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
         if (!mountedRef.current || !effectActive) return;
-        if (cam !== PermissionsAndroid.RESULTS.GRANTED || mic !== PermissionsAndroid.RESULTS.GRANTED) {
+        const permOk =
+          cam === PermissionsAndroid.RESULTS.GRANTED &&
+          mic === PermissionsAndroid.RESULTS.GRANTED;
+        trustCallPerf('TRUST_CALL_PERMISSION_READY', {
+          role: perfRole,
+          request_id: perfTrustId,
+          reason: permOk ? 'granted' : 'denied',
+          elapsed_ms:
+            permissionBeginMsRef.current != null
+              ? Date.now() - permissionBeginMsRef.current
+              : undefined,
+        });
+        if (!permOk) {
           joinStartedRef.current = false;
           activeJoinSessionKeyRef.current = null;
           safeSetError('Kamera ve mikrofon izni gerekli.');
           safeSetJoining(false);
           return;
         }
+      } else {
+        trustCallPerf('TRUST_CALL_PERMISSION_READY', {
+          role: perfRole,
+          request_id: perfTrustId,
+          reason: 'ios_system_inline',
+          elapsed_ms:
+            permissionBeginMsRef.current != null
+              ? Date.now() - permissionBeginMsRef.current
+              : undefined,
+        });
       }
+
+      joinBeginMsRef.current = Date.now();
+      trustCallPerf('TRUST_CALL_JOIN_BEGIN', {
+        role: perfRole,
+        request_id: perfTrustId,
+      });
+
       const curUserId = String(userIdRef.current ?? '');
       const myUid = agoraUidFromUserId(curUserId);
       agoraVoiceService.resetJoinGate();
       agoraVoiceService.setCallbacks({
         onJoinChannelSuccess: (_c, elapsed) => {
+          trustCallPerf('TRUST_CALL_JOIN_OK', {
+            role: diagRoleRef.current ?? null,
+            request_id: trustIdRef.current,
+            elapsed_ms:
+              joinBeginMsRef.current != null
+                ? Date.now() - joinBeginMsRef.current
+                : typeof elapsed === 'number'
+                  ? elapsed
+                  : undefined,
+          });
           console.log(
             '[TRUST]',
             JSON.stringify({
               evt: 'TRUST_JOIN_SUCCESS',
-              current_user_id: curUserId,
               channel_name: ch,
-              uid_used_for_join: myUid,
               elapsed_ms: elapsed,
             }),
           );
         },
         onUserJoined: (_c, uid) => {
           if (uid && uid !== myUid) {
+            if (!firstRemoteVideoLoggedRef.current) {
+              firstRemoteVideoLoggedRef.current = true;
+              trustCallPerf('TRUST_CALL_FIRST_REMOTE_VIDEO', {
+                role: diagRoleRef.current ?? null,
+                request_id: trustIdRef.current,
+              });
+            }
             console.log(
               '[TRUST]',
               JSON.stringify({
                 evt: 'TRUST_REMOTE_USER_JOINED',
-                current_user_id: curUserId,
                 remote_uid: uid,
               }),
             );
@@ -196,7 +259,6 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
               '[TRUST]',
               JSON.stringify({
                 evt: 'TRUST_REMOTE_VIDEO_ATTACHED',
-                current_user_id: curUserId,
                 remote_uid: uid,
               }),
             );
@@ -210,7 +272,6 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
             '[TRUST]',
             JSON.stringify({
               evt: 'TRUST_JOIN_ERROR',
-              current_user_id: curUserId,
               err,
               msg,
             }),
@@ -223,11 +284,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
           '[TRUST]',
           JSON.stringify({
             evt: 'TRUST_JOIN_START',
-            current_user_id: curUserId,
             channel_name: ch,
-            uid_used_for_join: myUid,
-            peer_user_id: String(peerUserIdRef.current ?? ''),
-            token_prefix: tok.length ? `${tok.slice(0, 8)}…` : '',
           }),
         );
         await trustVideoJoin(ch, tok, myUid);
@@ -240,9 +297,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
           '[TRUST]',
           JSON.stringify({
             evt: 'TRUST_JOIN_ERROR',
-            current_user_id: curUserId,
             channel_name: ch,
-            uid_used_for_join: myUid,
             message: e instanceof Error ? e.message : String(e),
           }),
         );
@@ -267,11 +322,25 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   }, [channelName, agoraToken, trustId]);
 
   useEffect(() => {
+    if (joining || error) return;
+    if (firstLocalVideoLoggedRef.current) return;
+    firstLocalVideoLoggedRef.current = true;
+    trustCallPerf('TRUST_CALL_FIRST_LOCAL_VIDEO', {
+      role: diagRoleRef.current ?? null,
+      request_id: trustIdRef.current,
+    });
+  }, [joining, error]);
+
+  useEffect(() => {
     if (!visible) {
       trustSessionUiKeyRef.current = '';
       endedRef.current = false;
       setError(null);
       setRemoteUid(0);
+      firstLocalVideoLoggedRef.current = false;
+      firstRemoteVideoLoggedRef.current = false;
+      permissionBeginMsRef.current = null;
+      joinBeginMsRef.current = null;
       return;
     }
     if (Platform.OS === 'web') {
