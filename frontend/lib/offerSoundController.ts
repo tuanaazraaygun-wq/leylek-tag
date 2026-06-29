@@ -13,7 +13,7 @@ import {
 export type OfferSoundKind = 'normal' | 'quick_match' | 'trusted_direct';
 
 const PLAY_MS = 2000;
-const PAUSE_MS = 6000;
+const PAUSE_MS = 2000;
 
 /** trusted_direct > quick_match > normal (effect order still favors QM UI when both visible). */
 const KIND_PRIORITY: Record<OfferSoundKind, number> = {

@@ -12,7 +12,11 @@ import {
   type TrustActiveSessionRow,
 } from '../lib/trustApi';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
-import { playVideoTrustCallSound } from '../utils/sound';
+import { playVideoTrustCallSoundRepeatTick } from '../utils/sound';
+import {
+  startRepeatingAlertSound,
+  stopRepeatingAlertSound,
+} from '../lib/repeatingAlertSoundController';
 import { perfLog } from '../utils/perfDiagLog';
 
 /** P0-E4 — Güven Al call setup latency marks (tag_id / request_id keyed). */
@@ -263,7 +267,11 @@ export function useTrustSessionController({
   useEffect(() => {
     const trustId = trustRequestModal?.trustId?.trim();
     if (!trustId) return;
-    void playVideoTrustCallSound({ trustId });
+    const key = `video_trust:${trustId}`;
+    startRepeatingAlertSound(key, () => playVideoTrustCallSoundRepeatTick(), { intervalMs: 2000 });
+    return () => {
+      stopRepeatingAlertSound(key, 'trust_modal_cleanup');
+    };
   }, [trustRequestModal?.trustId]);
 
   const trustTagRetryTimerIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -332,6 +340,10 @@ export function useTrustSessionController({
   }, [activeTag?.id, activeTag, role]);
 
   const clearAllTrustState = useCallback(() => {
+    const tid = trustRequestModalRef.current?.trustId?.trim();
+    if (tid) {
+      stopRepeatingAlertSound(`video_trust:${tid}`, 'trust_clear_all');
+    }
     clearTrustTagRetryTimers();
     outboundTrustIdRef.current = null;
     outgoingTrustTagIdRef.current = null;

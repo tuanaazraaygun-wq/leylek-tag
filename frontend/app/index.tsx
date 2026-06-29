@@ -248,6 +248,7 @@ import {
 import { playJourneyBoardingRemoteAck, playJourneyFinishSonic, playJourneyForceEndAccepted, playJourneyForceEndRejected, playJourneyPaymentError } from '../lib/journeySonicController';
 import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playChatInboundSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, resetQuickMatchDriverOpsSoundGate, resetDriverOfferSoundGate, preloadTrustedDirectOpsSound } from '../utils/sound';
 import { offerSoundController } from '../lib/offerSoundController';
+import { stopAllRepeatingAlertSounds } from '../lib/repeatingAlertSoundController';
 import {
   cleanupCallSonic,
   playCallBusyStinger,
@@ -2777,6 +2778,7 @@ export default function App() {
 
   const logout = async () => {
     offerSoundController.stopAllOfferLoops('logout');
+    stopAllRepeatingAlertSounds('logout');
     resetQuickMatchDriverOpsSoundGate();
     resetDriverOfferSoundGate();
     // Logout sırasında push token'ı sil

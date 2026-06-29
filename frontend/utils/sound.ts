@@ -913,15 +913,7 @@ export type PlayVideoTrustCallSoundOptions = {
   fromNotificationOpen?: boolean;
 };
 
-/** Karşı taraf Güven Al isteği görünür olduğunda — match/QM/TDM/error ailesinden ayrı. */
-export async function playVideoTrustCallSound(options?: PlayVideoTrustCallSoundOptions): Promise<void> {
-  if (Platform.OS === 'web') return;
-  const trustId = String(options?.trustId || '').trim();
-  if (!trustId) return;
-  if (!options?.fromNotificationOpen && AppState.currentState !== 'active') return;
-  if (!videoTrustCallSessionGate.tryMarkChimed(trustId)) return;
-  if (!videoTrustCallCooldownGate.tryPass()) return;
-
+async function playVideoTrustCallToneCore(): Promise<void> {
   try {
     await loadSounds();
     const { sound } = await Audio.Sound.createAsync(VIDEO_TRUST_CALL_SOURCE, {
@@ -937,8 +929,26 @@ export async function playVideoTrustCallSound(options?: PlayVideoTrustCallSoundO
       }
     });
   } catch (e) {
-    if (__DEV__) console.warn('playVideoTrustCallSound', e);
+    if (__DEV__) console.warn('playVideoTrustCallToneCore', e);
   }
+}
+
+/** Karşı taraf Güven Al isteği görünür olduğunda — match/QM/TDM/error ailesinden ayrı. */
+export async function playVideoTrustCallSound(options?: PlayVideoTrustCallSoundOptions): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const trustId = String(options?.trustId || '').trim();
+  if (!trustId) return;
+  if (!options?.fromNotificationOpen && AppState.currentState !== 'active') return;
+  if (!videoTrustCallSessionGate.tryMarkChimed(trustId)) return;
+  if (!videoTrustCallCooldownGate.tryPass()) return;
+  await playVideoTrustCallToneCore();
+}
+
+/** Repeat engine tick — session/cooldown bypass while modal open. */
+export async function playVideoTrustCallSoundRepeatTick(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+  await playVideoTrustCallToneCore();
 }
 
 export function resetVideoTrustCallSoundGate(): void {
@@ -968,15 +978,7 @@ export function parseForceEndTagFromPushData(data: unknown): string | null {
   return null;
 }
 
-/** Karşı taraf force-end uyarısı — error değil, kısa trip-event tonu. */
-export async function playForceEndAlertSound(options?: PlayForceEndAlertSoundOptions): Promise<void> {
-  if (Platform.OS === 'web') return;
-  const tagId = String(options?.tagId || '').trim();
-  if (!tagId) return;
-  if (!options?.fromNotificationOpen && AppState.currentState !== 'active') return;
-  if (!forceEndAlertSessionGate.tryMarkChimed(tagId)) return;
-  if (!forceEndAlertCooldownGate.tryPass()) return;
-
+async function playForceEndAlertToneCore(): Promise<void> {
   try {
     await loadSounds();
     const { sound } = await Audio.Sound.createAsync(FORCE_END_ALERT_SOURCE, {
@@ -992,8 +994,26 @@ export async function playForceEndAlertSound(options?: PlayForceEndAlertSoundOpt
       }
     });
   } catch (e) {
-    if (__DEV__) console.warn('playForceEndAlertSound', e);
+    if (__DEV__) console.warn('playForceEndAlertToneCore', e);
   }
+}
+
+/** Karşı taraf force-end uyarısı — error değil, kısa trip-event tonu. */
+export async function playForceEndAlertSound(options?: PlayForceEndAlertSoundOptions): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const tagId = String(options?.tagId || '').trim();
+  if (!tagId) return;
+  if (!options?.fromNotificationOpen && AppState.currentState !== 'active') return;
+  if (!forceEndAlertSessionGate.tryMarkChimed(tagId)) return;
+  if (!forceEndAlertCooldownGate.tryPass()) return;
+  await playForceEndAlertToneCore();
+}
+
+/** Repeat engine tick — session/cooldown bypass while modal open. */
+export async function playForceEndAlertSoundRepeatTick(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+  await playForceEndAlertToneCore();
 }
 
 /** Bildirime tıklanınca (arka plan) — modal açılmadan önce force-end tonu. */

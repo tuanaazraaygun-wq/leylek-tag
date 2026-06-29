@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -10,7 +10,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { useTheme } from '../hooks/useTheme';
-import { playForceEndAlertSound } from '../utils/sound';
+import { playForceEndAlertSoundRepeatTick } from '../utils/sound';
+import {
+  startRepeatingAlertSound,
+  stopRepeatingAlertSound,
+} from '../lib/repeatingAlertSoundController';
 import { lightThemeEnabled } from '../lib/featureFlags';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -110,13 +114,32 @@ export default function PassengerDriverForceEndReviewModal({
     }
   }, [visible, scaleAnim, opacityAnim]);
 
+  const stopForceEndRepeat = useCallback(() => {
+    const tid = tagId?.trim();
+    if (tid) stopRepeatingAlertSound(`force_end:${tid}`, 'force_end_modal_action');
+  }, [tagId]);
+
   /** P0-D — counterparty force-end uyarısı (foreground socket / active-tag recovery). */
   useEffect(() => {
     if (!visible) return;
     const tid = tagId?.trim();
     if (!tid) return;
-    void playForceEndAlertSound({ tagId: tid });
+    const key = `force_end:${tid}`;
+    startRepeatingAlertSound(key, () => playForceEndAlertSoundRepeatTick(), { intervalMs: 2000 });
+    return () => {
+      stopRepeatingAlertSound(key, 'force_end_modal_cleanup');
+    };
   }, [visible, tagId]);
+
+  const handleConfirm = useCallback(() => {
+    stopForceEndRepeat();
+    void onConfirm();
+  }, [onConfirm, stopForceEndRepeat]);
+
+  const handleReject = useCallback(() => {
+    stopForceEndRepeat();
+    void onReject();
+  }, [onReject, stopForceEndRepeat]);
 
   const eventLine = title?.trim()
     ? title.trim()
@@ -139,7 +162,7 @@ export default function PassengerDriverForceEndReviewModal({
       animationType="none"
       statusBarTranslucent
       onRequestClose={() => {
-        if (informationalOnly) void onConfirm();
+        if (informationalOnly) void handleConfirm();
       }}
     >
       <View style={styles.overlay} pointerEvents="box-none">
@@ -211,7 +234,7 @@ export default function PassengerDriverForceEndReviewModal({
             <View style={styles.buttonColumn}>
               <TouchableOpacity
                 style={[styles.primaryBtn, lightStyles?.primaryBtn, submitting && styles.btnDisabled]}
-                onPress={() => void onConfirm()}
+                onPress={() => void handleConfirm()}
                 activeOpacity={0.88}
                 disabled={submitting}
               >
@@ -222,7 +245,7 @@ export default function PassengerDriverForceEndReviewModal({
               {!informationalOnly ? (
                 <TouchableOpacity
                   style={[styles.secondaryBtn, lightStyles?.secondaryBtn, submitting && styles.btnDisabled]}
-                  onPress={() => void onReject()}
+                  onPress={() => void handleReject()}
                   activeOpacity={0.88}
                   disabled={submitting}
                 >
