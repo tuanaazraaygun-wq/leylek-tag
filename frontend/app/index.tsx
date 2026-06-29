@@ -1199,6 +1199,103 @@ function legacyTripEndBlockMeta(
 }
 
 /** active-tag yanıtı ince geldiğinde harita alanlarını koru (flicker azaltır) */
+function coordLocEqual(
+  a: { latitude: number; longitude: number } | undefined,
+  b: { latitude: number; longitude: number } | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return !a && !b;
+  return a.latitude === b.latitude && a.longitude === b.longitude;
+}
+
+function endRequestEqual(a: Tag['end_request'], b: Tag['end_request']): boolean {
+  if (a === b) return true;
+  if (!a || !b) return !a && !b;
+  return (
+    a.kind === b.kind &&
+    a.status === b.status &&
+    a.initiator_id === b.initiator_id &&
+    a.initiator_type === b.initiator_type &&
+    a.driver_id === b.driver_id &&
+    a.passenger_id === b.passenger_id &&
+    a.requested_at === b.requested_at
+  );
+}
+
+/** route_info — shallow + one nested level; arrays compared by value (poll stability). */
+function routeInfoValueEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  const ta = typeof a;
+  const tb = typeof b;
+  if (ta !== tb) return false;
+  if (ta !== 'object') return false;
+  if (Array.isArray(a)) {
+    return Array.isArray(b) && JSON.stringify(a) === JSON.stringify(b);
+  }
+  if (Array.isArray(b)) return false;
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const keys = new Set([...Object.keys(ao), ...Object.keys(bo)]);
+  for (const k of keys) {
+    const av = ao[k];
+    const bv = bo[k];
+    if (av === bv) continue;
+    if (k === 'driver_to_pickup_route_info') {
+      if (!routeInfoValueEqual(av, bv)) return false;
+      continue;
+    }
+    if (typeof av === 'object' && av !== null && typeof bv === 'object' && bv !== null) {
+      if (Array.isArray(av) || Array.isArray(bv)) {
+        if (!routeInfoValueEqual(av, bv)) return false;
+        continue;
+      }
+      const nestedKeys = new Set([...Object.keys(av), ...Object.keys(bv)]);
+      for (const nk of nestedKeys) {
+        if ((av as Record<string, unknown>)[nk] !== (bv as Record<string, unknown>)[nk]) {
+          return false;
+        }
+      }
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Poll tick render guard — return prev reference when merge output is observably unchanged.
+ * Conservative: unknown extra keys or nested drift → not equal.
+ */
+function shallowEqualTripTagForRender(prev: Tag, merged: Tag): boolean {
+  if (prev === merged) return true;
+  const prevRec = prev as Record<string, unknown>;
+  const mergedRec = merged as Record<string, unknown>;
+  const keys = new Set([...Object.keys(prevRec), ...Object.keys(mergedRec)]);
+  for (const k of keys) {
+    const pk = prevRec[k];
+    const mk = mergedRec[k];
+    if (k === 'driver_location' || k === 'passenger_location') {
+      if (!coordLocEqual(pk as Tag['driver_location'], mk as Tag['driver_location'])) {
+        return false;
+      }
+      continue;
+    }
+    if (k === 'end_request') {
+      if (!endRequestEqual(pk as Tag['end_request'], mk as Tag['end_request'])) {
+        return false;
+      }
+      continue;
+    }
+    if (k === 'route_info') {
+      if (!routeInfoValueEqual(pk, mk)) return false;
+      continue;
+    }
+    if (pk !== mk) return false;
+  }
+  return true;
+}
+
 function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
   if (!prev || String(prev.id) !== String(incoming.id)) return incoming;
   const incSt = String(incoming.status || '').toLowerCase();
@@ -1260,6 +1357,9 @@ function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
   }
   if (!('matched_bank_account_id' in incoming)) {
     base.matched_bank_account_id = prev.matched_bank_account_id;
+  }
+  if (shallowEqualTripTagForRender(prev, base)) {
+    return prev;
   }
   return base;
 }
