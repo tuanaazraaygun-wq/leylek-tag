@@ -8549,6 +8549,21 @@ def _trusted_connection_sort_key(row: dict) -> float:
     return 0.0
 
 
+def _counterparty_is_registered_driver(user_row: dict) -> bool:
+    """Onaylı sürücü kaydı — connection.role'dan bağımsız; trusted list badge için."""
+    dd = _driver_details_as_dict(user_row)
+    if not dd:
+        return False
+    if _kyc_approved_vehicle_kinds_from_details(dd):
+        return True
+    kyc_status = str(dd.get("kyc_status") or "").strip().lower()
+    if kyc_status != "approved" or dd.get("is_verified") is not True:
+        return False
+    if _canonical_vehicle_kind(dd.get("kyc_vehicle_kind")):
+        return True
+    return _canonical_vehicle_kind(dd.get("vehicle_kind")) is not None
+
+
 def _trusted_counterparty_projection(
     user_row: dict, counterparty_role: Optional[str]
 ) -> dict:
@@ -8578,6 +8593,7 @@ def _trusted_counterparty_projection(
         "rating": rating,
         "total_trips": total_trips,
         "vehicle_kind": vehicle_kind,
+        "is_registered_driver": _counterparty_is_registered_driver(user_row),
     }
 
 

@@ -181,7 +181,11 @@ function TrustedConnectionRow({
     hubRole === 'passenger' &&
     tdmTargetEligible &&
     typeof onRequestDirect === 'function';
-  const showDriverBadge = item.role === 'driver';
+  const showDriverRoleBadge = item.role === 'driver';
+  const showRegisteredDriverBadge =
+    item.role === 'passenger' && item.counterparty.is_registered_driver === true;
+  const showDriverBadge = showDriverRoleBadge || showRegisteredDriverBadge;
+  const driverBadgeLabel = showDriverRoleBadge ? 'Sürücü' : 'Bu kullanıcı sürücü';
   const tdmDisabled = disabled || tdmRequestDisabled || tdmRequestBusy;
   const tdmButtonLabel = tdmRequestBusy
     ? TDM_REQUEST_BUSY
@@ -221,7 +225,7 @@ function TrustedConnectionRow({
           </Text>
           {showDriverBadge ? (
             <View style={styles.driverBadge}>
-              <Text style={styles.driverBadgeText}>Sürücü</Text>
+              <Text style={styles.driverBadgeText}>{driverBadgeLabel}</Text>
             </View>
           ) : null}
           {showVehicle ? (

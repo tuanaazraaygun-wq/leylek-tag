@@ -22,6 +22,8 @@ export type TrustedCounterparty = {
   rating: number | null;
   total_trips: number | null;
   vehicle_kind: TrustedVehicleKind | null;
+  /** Onaylı sürücü kaydı — connection.role'dan bağımsız (GET /trusted/connections). */
+  is_registered_driver?: boolean;
 };
 
 export type TrustedSummaryResponse = {
