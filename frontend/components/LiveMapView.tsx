@@ -6780,7 +6780,7 @@ export default function LiveMapView({
             <Ionicons
               name="map-outline"
               size={17}
-              color={isScopeLight ? 'rgba(243,248,255,0.94)' : ui.matchedCommIcon}
+              color={ui.matchedCommIcon}
             />
           </TouchableOpacity>
         ) : null}
@@ -8252,6 +8252,7 @@ export default function LiveMapView({
                   style={[
                     styles.driverRideStatusPillText,
                     boardingConfirmed ? styles.driverRideStatusPillTextStarted : null,
+                    jLt?.driverRideStatusPillText,
                   ]}
                 >
                   {tagRidePhaseLabel(boardingConfirmed, tagStatus)}
@@ -8259,12 +8260,16 @@ export default function LiveMapView({
               </GlassSurface>
               <View style={styles.driverRideTopHeaderRight}>
                 <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={[styles.driverRideLiveTagShell, jLt?.topLiveChipShell]}>
-                  <PremiumText variant="caption" style={styles.driverRideLiveTag}>
+                  <PremiumText variant="caption" style={[styles.driverRideLiveTag, jLt?.driverRideLiveTag]}>
                     Canlı
                   </PremiumText>
                 </GlassSurface>
                 <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={[styles.driverRideVehicleChip, jLt?.matchedTopNearChip]}>
-                  <PremiumText variant="caption" muted style={styles.driverRideVehicleChipText}>
+                  <PremiumText
+                    variant="caption"
+                    muted={!jLt}
+                    style={[styles.driverRideVehicleChipText, jLt?.driverRideVehicleChipText]}
+                  >
                     {passMotor ? 'Motor' : 'Araba'}
                   </PremiumText>
                 </GlassSurface>
@@ -8276,12 +8281,16 @@ export default function LiveMapView({
                 <Ionicons name="navigate-circle" size={20} color={ui.activity} />
               </View>
               <View style={styles.driverRideLocTextCol}>
-                <PremiumText variant="caption" muted style={styles.driverRideSectionLabel}>
+                <PremiumText
+                  variant="caption"
+                  muted={!jLt}
+                  style={[styles.driverRideSectionLabel, jLt?.driverRideSectionLabel]}
+                >
                   Buluşma noktası
                 </PremiumText>
                 <PremiumText
                   variant="body"
-                  style={styles.driverRideAddr}
+                  style={[styles.driverRideAddr, jLt?.driverRideAddr]}
                   numberOfLines={2}
                   adjustsFontSizeToFit
                   minimumFontScale={0.88}
@@ -8296,12 +8305,16 @@ export default function LiveMapView({
                 <Ionicons name="flag" size={18} color={ui.accent} />
               </View>
               <View style={styles.driverRideLocTextCol}>
-                <PremiumText variant="caption" muted style={styles.driverRideSectionLabel}>
+                <PremiumText
+                  variant="caption"
+                  muted={!jLt}
+                  style={[styles.driverRideSectionLabel, jLt?.driverRideSectionLabel]}
+                >
                   Hedef
                 </PremiumText>
                 <PremiumText
                   variant="body"
-                  style={styles.driverRideAddr}
+                  style={[styles.driverRideAddr, jLt?.driverRideAddr]}
                   numberOfLines={2}
                   adjustsFontSizeToFit
                   minimumFontScale={0.88}
@@ -8618,12 +8631,17 @@ export default function LiveMapView({
             {matrixStatus ? (
               <GlassSurface
                 variant="plain"
-                style={[styles.drvTopStatusChip, styles.drvOpsStatusChipInRow]}
+                style={[styles.drvTopStatusChip, styles.drvOpsStatusChipInRow, jLt?.drvTopStatusChip]}
                 borderRadius={LDS_RADIUS.md}
               >
                 <View style={styles.drvOpsStatusChipInner}>
-                  <View style={styles.drvOpsStatusChipDot} />
-                  <PremiumText variant="caption" muted style={styles.drvTopMatrixText} numberOfLines={2}>
+                  <View style={[styles.drvOpsStatusChipDot, jLt?.drvOpsStatusChipDot]} />
+                  <PremiumText
+                    variant="caption"
+                    muted={!jLt}
+                    style={[styles.drvTopMatrixText, jLt?.drvTopMatrixText]}
+                    numberOfLines={2}
+                  >
                     {formatDriverMatrixDisplay(matrixStatus)}
                   </PremiumText>
                 </View>
@@ -8710,7 +8728,7 @@ export default function LiveMapView({
                       borderRadius={LDS_RADIUS.full}
                     >
                       <View style={[styles.paxTopLiveChipDot, jLt?.topLiveChipDot]} />
-                      <PremiumText variant="caption" style={[styles.paxTopLiveChipText, jLt?.paxLiveChipText]}>
+                      <PremiumText variant="caption" muted={!jLt} style={[styles.paxTopLiveChipText, jLt?.paxLiveChipText]}>
                         Canlı
                       </PremiumText>
                     </GlassSurface>

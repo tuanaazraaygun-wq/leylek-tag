@@ -108,6 +108,14 @@ export type JourneyChromeLightSurfaces = {
   navImmersiveAraText: TextStyle;
   navImmersiveGuvenText: TextStyle;
   navImmersiveTrustHint: TextStyle;
+  /** Driver matrix status row ("Yolcuya gidiliyor" vb.) */
+  drvTopMatrixText: TextStyle;
+  /** Modern driver ride card */
+  driverRideLiveTag: TextStyle;
+  driverRideAddr: TextStyle;
+  driverRideSectionLabel: TextStyle;
+  driverRideVehicleChipText: TextStyle;
+  driverRideStatusPillText: TextStyle;
 };
 
 const JOURNEY_UI_DARK: JourneyUiColors = {
@@ -350,7 +358,8 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
     matchedPriceChipText: { color: tokens.accent.primary, fontWeight: '700' },
     matchedNearChipText: { color: topInkPrimary, fontWeight: '700' },
     paxLiveChipText: { color: topInkPrimary, fontWeight: '700', letterSpacing: 0.35 },
-    driverNavChipLabelText: { color: tokens.text.primary },
+    /** Yolcuya Git — inverse on accent gradient */
+    driverNavChipLabelText: { color: tokens.text.inverse, fontWeight: '800' },
     trustedAddChipText: { color: tokens.accent.primary },
     trustedAddChipMutedText: { color: tokens.text.muted },
     dangerBtnText: { color: tokens.status.error },
@@ -369,6 +378,33 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
     navImmersiveAraText: { color: tokens.text.primary },
     navImmersiveGuvenText: { color: tokens.text.primary },
     navImmersiveTrustHint: { color: tokens.text.muted },
+    drvTopMatrixText: {
+      color: topInkPrimary,
+      fontWeight: '600',
+    },
+    driverRideLiveTag: {
+      color: tokens.accent.primary,
+      fontWeight: '700',
+      letterSpacing: 0.4,
+    },
+    driverRideAddr: {
+      color: topInkPrimary,
+      fontWeight: '700',
+      lineHeight: 21,
+    },
+    driverRideSectionLabel: {
+      color: topInkMuted,
+      fontWeight: '700',
+    },
+    driverRideVehicleChipText: {
+      color: topInkPrimary,
+      fontWeight: '700',
+    },
+    driverRideStatusPillText: {
+      color: topInkPrimary,
+      fontWeight: '700',
+      letterSpacing: 0.1,
+    },
   };
 }
 
@@ -384,7 +420,7 @@ function buildJourneyUi(tokens: LhThemeTokens): JourneyUiColors {
     ctaIconLight: tokens.text.primary,
     ctaIconFill: tokens.text.inverse,
     matchedCommIcon: tokens.text.primary,
-    matchedNavIcon: 'rgba(15, 118, 110, 0.98)',
+    matchedNavIcon: tokens.text.inverse,
     matchedQrIcon: '#FFFFFF',
     closeIcon: tokens.text.primary,
     chevron: tokens.text.muted,
@@ -393,7 +429,7 @@ function buildJourneyUi(tokens: LhThemeTokens): JourneyUiColors {
     loadingText: tokens.text.muted,
     loadingDots: tokens.accent.primary,
     webFallbackGradient: [tokens.bg.canvas, tokens.bg.elevated, tokens.accent.primary],
-    ctaGradient: [tokens.bg.canvas, tokens.bg.elevated, tokens.bg.glassMuted, tokens.accent.primary],
+    ctaGradient: [tokens.accent.primary, tokens.accent.primaryHover, tokens.accent.secondary],
     ctaGradientSoft: [tokens.bg.canvas, tokens.bg.elevated, tokens.accent.primary],
     qrGradientBoarding: [
       tokens.bg.canvas,
