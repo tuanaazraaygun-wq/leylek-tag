@@ -4430,7 +4430,15 @@ export default function App() {
           if (kycData.kyc_status === 'none' || kycData.kyc_status === 'rejected') {
             if (user) await saveUser(mergeVehicleIntoUser(user));
             setDriverKycScreenVehicleKind(null);
-            setScreen('driver-kyc');
+            if (kycData.kyc_status === 'rejected') {
+              const rejectionReason =
+                String(kycData.rejection_reason || '').trim() || 'Belgeler uygun bulunmadı.';
+              appAlert('Sürücü başvurunuz reddedildi', rejectionReason, [
+                { text: 'Tamam', onPress: () => setScreen('driver-kyc') },
+              ]);
+            } else {
+              setScreen('driver-kyc');
+            }
             return;
           } else if (kycData.kyc_status === 'pending') {
             // KYC beklemede - Dashboard'a git ama pending ekranı göster

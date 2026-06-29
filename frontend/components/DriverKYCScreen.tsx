@@ -150,6 +150,60 @@ const KYC_P = {
   textMd: 'rgba(186, 201, 222, 0.82)',
 } as const;
 
+const KYC_REJECTED_FALLBACK_REASON = 'Belgeler uygun bulunmadı.';
+
+function KycRejectedBanner({ reason }: { reason: string }) {
+  return (
+    <View style={kycRejectedBannerStyles.wrap}>
+      <Ionicons name="close-circle" size={22} color="#FCA5A5" style={kycRejectedBannerStyles.icon} />
+      <View style={kycRejectedBannerStyles.textCol}>
+        <Text style={kycRejectedBannerStyles.title}>Başvurunuz reddedildi</Text>
+        <Text style={kycRejectedBannerStyles.reason}>Sebep: {reason}</Text>
+        <Text style={kycRejectedBannerStyles.hint}>Lütfen bilgileri düzeltip tekrar gönderin.</Text>
+      </View>
+    </View>
+  );
+}
+
+const kycRejectedBannerStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(127, 29, 37, 0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.38)',
+  },
+  icon: {
+    marginTop: 2,
+  },
+  textCol: {
+    flex: 1,
+    gap: 6,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: 'rgba(254, 226, 226, 0.96)',
+    letterSpacing: -0.2,
+  },
+  reason: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(253, 213, 213, 0.92)',
+    lineHeight: 20,
+  },
+  hint: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(252, 165, 165, 0.88)',
+    lineHeight: 18,
+  },
+});
+
 interface DriverKYCScreenProps {
   userId: string;
   userName: string;
@@ -1130,6 +1184,35 @@ export default function DriverKYCScreen({
   const [licenseAi, setLicenseAi] = useState<AiMockResult | null>(null);
   const [analyzingVehicle, setAnalyzingVehicle] = useState(false);
   const [analyzingLicense, setAnalyzingLicense] = useState(false);
+  const [kycRejectionReason, setKycRejectionReason] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `${apiUrl}/driver/kyc/status?user_id=${encodeURIComponent(userId)}`,
+        );
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          kyc_status?: string;
+          rejection_reason?: string | null;
+        };
+        if (cancelled) return;
+        if (String(data.kyc_status || '').trim().toLowerCase() === 'rejected') {
+          const reason = String(data.rejection_reason || '').trim();
+          setKycRejectionReason(reason || KYC_REJECTED_FALLBACK_REASON);
+        } else {
+          setKycRejectionReason(null);
+        }
+      } catch {
+        /* status fetch best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiUrl, userId]);
 
   const stepTitles = isMotorKyc ? MOTOR_STEP_TITLES : CAR_STEP_TITLES;
   const carBrandIsOther = !isMotorKyc && vehicleBrand === CAR_BRAND_OTHER;
@@ -1599,6 +1682,7 @@ export default function DriverKYCScreen({
 
       if (response.ok && data.success === true) {
         setSubmitStatus('Başvuru başarılı!');
+        setKycRejectionReason(null);
         console.log('========== KYC SUBMIT BAŞARILI ==========');
         
         // Başarı mesajı göster
@@ -1668,6 +1752,7 @@ export default function DriverKYCScreen({
           contentContainerStyle={{ paddingBottom: 100 }}
         >
           <KycIntroCard userName={userName} />
+          {kycRejectionReason ? <KycRejectedBanner reason={kycRejectionReason} /> : null}
           <KycRoadmapPanel
             step={step}
             isMotorKyc={isMotorKyc}

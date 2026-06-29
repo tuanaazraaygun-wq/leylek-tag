@@ -13038,7 +13038,9 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
             driver_details["selfie_url"] = selfie_url
         if data.kyc_terms_accepted_at is not None and str(data.kyc_terms_accepted_at).strip():
             driver_details["kyc_terms_accepted_at"] = str(data.kyc_terms_accepted_at).strip()[:64]
-        
+        driver_details.pop("kyc_rejection_reason", None)
+        driver_details.pop("kyc_rejected_at", None)
+
         supabase.table("users").update({
             "driver_details": driver_details,
             "updated_at": datetime.utcnow().isoformat()
@@ -13331,7 +13333,7 @@ async def reject_driver_kyc(admin_phone: str, user_id: str, reason: str = "Belge
         raise HTTPException(status_code=403, detail="Yetkisiz erişim")
     
     try:
-        result = supabase.table("users").select("driver_details, name, push_token").eq("id", user_id).execute()
+        result = supabase.table("users").select("driver_details, name").eq("id", user_id).execute()
         if not result.data:
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
@@ -13361,22 +13363,19 @@ async def reject_driver_kyc(admin_phone: str, user_id: str, reason: str = "Belge
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
         
-        # Push bildirim gönder
-        push_token = user.get("push_token")
-        if push_token:
-            try:
-                await send_push_notification(
-                    user_id,
-                    "Ek sürücü başvurunuz reddedildi" if approved_remain else "Sürücü başvurunuz reddedildi",
-                    (
-                        f"Sebep: {str(reason)[:32]}… • Yeniden başvur"
-                        if len(str(reason)) > 33
-                        else f"Sebep: {reason}. Yeniden başvur"
-                    ),
-                    {"type": "kyc_rejected"}
-                )
-            except:
-                pass
+        try:
+            await send_push_notification(
+                user_id,
+                "Ek sürücü başvurunuz reddedildi" if approved_remain else "Sürücü başvurunuz reddedildi",
+                (
+                    f"Sebep: {str(reason)[:32]}… • Yeniden başvur"
+                    if len(str(reason)) > 33
+                    else f"Sebep: {reason}. Yeniden başvur"
+                ),
+                {"type": "kyc_rejected", "rejection_reason": str(reason)},
+            )
+        except Exception:
+            pass
         
         logger.info(f"❌ KYC reddedildi: {user_id} - Sebep: {reason}")
         return {"success": True, "message": "Sürücü kaydı reddedildi"}

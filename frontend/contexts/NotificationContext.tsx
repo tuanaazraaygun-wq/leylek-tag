@@ -6,6 +6,17 @@ import { MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
 import { upsertMuhabbetMessageFromPushData } from '../lib/muhabbetMessagesStorage';
 import { tryPlayDriverOfferSoundFromPushData, tryPlayForceEndAlertFromPushOpen } from '../utils/sound';
 import { refreshSessionFromServerForPush } from '../lib/muhabbetTripPushSessionPrefetch';
+import { appAlert } from './AppAlertContext';
+
+const KYC_REJECTED_FALLBACK_REASON = 'Belgeler uygun bulunmadı.';
+
+function tryShowKycRejectedAlertFromPushData(data: unknown): void {
+  if (!data || typeof data !== 'object') return;
+  const d = data as Record<string, unknown>;
+  if (String(d.type || '').trim().toLowerCase() !== 'kyc_rejected') return;
+  const reason = String(d.rejection_reason || '').trim() || KYC_REJECTED_FALLBACK_REASON;
+  appAlert('Sürücü başvurunuz reddedildi', reason);
+}
 
 /** Bildirim → AsyncStorage (await) → global UI event; navigate öncesi tamamlanmalı */
 export async function persistMuhabbetMessageFromNotificationData(data: unknown): Promise<void> {
@@ -177,6 +188,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
     await persistMuhabbetMessageFromNotificationData(normalized);
     void tryPlayForceEndAlertFromPushOpen(normalized);
+    tryShowKycRejectedAlertFromPushData(normalized);
     setTappedData(normalized, setLastTappedNotificationData);
   }, []);
 
@@ -191,6 +203,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       const pushData = notification?.request?.content?.data;
       void persistMuhabbetMessageFromNotificationData(pushData);
       void tryPlayDriverOfferSoundFromPushData(pushData);
+      tryShowKycRejectedAlertFromPushData(pushData);
       setNotification(notification);
     });
 
@@ -220,6 +233,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         });
         fcmForegroundOfferUnsubRef.current = messaging().onMessage((remoteMessage) => {
           void tryPlayDriverOfferSoundFromPushData(remoteMessage?.data);
+          tryShowKycRejectedAlertFromPushData(remoteMessage?.data);
         });
       } catch {
         /* RN Firebase messaging yok (Expo Go vb.) */
