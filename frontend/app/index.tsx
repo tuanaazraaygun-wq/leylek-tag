@@ -78,6 +78,7 @@ import {
   probeTrustedDirectDriverAvailable,
   registerTrustedDirectBootstrapHandler,
   setTrustedDirectRouteContext,
+  TDM_DRIVER_IDLE_REFRESH_MS,
   type TrustedDirectRouteContext,
 } from '../lib/trustedDirectApi';
 import DriverQuickMatchInviteCard from '../components/superUx/DriverQuickMatchInviteCard';
@@ -19370,27 +19371,19 @@ function DriverDashboard({
     if (!trustedDirectDriverEnabled) return;
     if (trustedDirectDriverSession.status !== 'idle') return;
 
-    const driverRealtimeHealth: RealtimeHealthSnapshot = {
-      isConnected: driverSocketConnected,
-      isRegistered: driverSocketRegistered,
-    };
-    const intervalMs = resolveQmTdmIdleRefreshMs(driverRealtimeHealth);
     perfLog('TDM_IDLE_REFRESH_INTERVAL_MS', {
-      interval_ms: intervalMs,
-      socket_healthy: isRealtimeHealthy(driverRealtimeHealth),
+      interval_ms: TDM_DRIVER_IDLE_REFRESH_MS,
     });
 
     const timer = setInterval(() => {
       void trustedDirectDriverSession.refresh();
-    }, intervalMs);
+    }, TDM_DRIVER_IDLE_REFRESH_MS);
 
     return () => clearInterval(timer);
   }, [
     trustedDirectDriverEnabled,
     trustedDirectDriverSession.status,
     trustedDirectDriverSession.refresh,
-    driverSocketConnected,
-    driverSocketRegistered,
   ]);
 
   const quickMatchDriverOverlayVisible =

@@ -351,9 +351,11 @@ export function useTrustedDirectPassengerSession(
         return;
       }
 
-      finishTerminalDeclined(generation);
+      // Active endpoint returns null once status leaves pending_responder (incl. accepted).
+      // Enter matching phase and poll active-tag instead of treating as driver decline.
+      enterMatchingPhase(generation);
     },
-    [applyPendingRequest, finishTerminalDeclined, handleMatchedTag, stopPolling],
+    [applyPendingRequest, enterMatchingPhase, handleMatchedTag, stopPolling],
   );
 
   const pollPendingOnce = useCallback(
