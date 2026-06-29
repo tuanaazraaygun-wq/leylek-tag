@@ -1103,6 +1103,7 @@ function forceEndCounterpartyRequestKey(
 }
 
 type ForceEndImmediateFlags = {
+  success?: boolean;
   immediate?: boolean;
   pre_boarding?: boolean;
   should_rate?: boolean;
@@ -1114,6 +1115,29 @@ type ForceEndImmediateFlags = {
 
 function isPreBoardingForceEndImmediate(data?: ForceEndImmediateFlags | null): boolean {
   return !!(data?.immediate || data?.pre_boarding);
+}
+
+const FORCE_END_PRE_BOARDING_END_TYPE = 'force_pre_boarding';
+
+/** Biniş QR öncesi — HTTP bayrakları gelmese bile yerel tag ile anında çıkış */
+function isLocalPreBoardingForceEndTag(tag: { boarding_confirmed_at?: string | null } | null | undefined): boolean {
+  return !tag?.boarding_confirmed_at;
+}
+
+/** Poll / active-tag: biniş öncesi zorla bitir terminal — journey recovery ertelemesini atla */
+function isPreBoardingForceEndTerminalTag(tag: {
+  status?: string;
+  boarding_confirmed_at?: string | null;
+  end_type?: string | null;
+  end_request?: { pre_boarding?: boolean; immediate?: boolean } | null;
+}): boolean {
+  if (String(tag.status || '').trim().toLowerCase() !== 'cancelled') return false;
+  if (tag.boarding_confirmed_at) return false;
+  const endType = String(tag.end_type || '').trim();
+  if (endType === FORCE_END_PRE_BOARDING_END_TYPE) return true;
+  const er = tag.end_request;
+  if (er && typeof er === 'object' && (er.pre_boarding || er.immediate)) return true;
+  return true;
 }
 
 /** Biniş QR öncesi iptal — sürücü cockpit’e dönmeli, rol/araç seçimine değil */
@@ -9299,9 +9323,13 @@ function PassengerDashboard({
       tagId: string,
       userId: string,
       apiResult: ForceEndImmediateFlags,
+      localPreBoarding: boolean,
       onPending: () => void,
     ) => {
-      if (isPreBoardingForceEndImmediate(apiResult)) {
+      const exitPreBoardingImmediate =
+        isPreBoardingForceEndImmediate(apiResult) ||
+        (localPreBoarding && apiResult.success !== false);
+      if (exitPreBoardingImmediate) {
         finalizePassengerForceEnd({
           tag_id: tagId,
           ender_id: userId,
@@ -10121,12 +10149,37 @@ function PassengerDashboard({
         passengerActiveTagNullStreakRef.current = 0;
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
+          const _t = data.tag as Tag & {
+            cancel_reason?: string;
+            cancelled_at?: string;
+            ended_by?: string;
+            end_type?: string;
+          };
+          if (
+            data.tag.status === 'cancelled' &&
+            isPreBoardingForceEndTerminalTag(_t) &&
+            !forceEndLockRef.current
+          ) {
+            const endedBy = String(_t.ended_by ?? '').trim();
+            perfLog('PASSENGER_PRE_BOARDING_FORCE_END_POLL_TERMINAL', {
+              tagId: _t.id,
+              endedBy: endedBy || null,
+              end_type: _t.end_type ?? null,
+            });
+            finalizePassengerForceEnd({
+              tag_id: String(_t.id),
+              ...(endedBy ? { ender_id: endedBy, ended_by: endedBy } : {}),
+              pre_boarding: true,
+              immediate: true,
+              should_rate: false,
+            });
+            return;
+          }
           if (forceEndLockRef.current) {
             logPollingSkippedForceEndLock('passenger', 'loadActiveTag_terminal_cancelled_gate');
             return;
           }
           perfLog('🛑 loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
-          const _t = data.tag as Tag & { cancel_reason?: string; cancelled_at?: string };
           perfLog('PASSENGER_EXIT_REASON', {
             source: 'loadActiveTag',
             reason: _t.status === 'cancelled' ? 'tag_status_cancelled' : 'tag_status_completed',
@@ -10251,18 +10304,50 @@ function PassengerDashboard({
         const journeyRecoveryEligible =
           !!prevSnap && isActiveJourneyMatchedOrInProgress(prevSt);
         const inRecoveryWindow = Date.now() < passengerJourneyRecoveryWindowUntilRef.current;
+        const prevPreBoardingForceEndExit =
+          !!prevSnap &&
+          !prevSnap.boarding_confirmed_at &&
+          isActiveJourneyMatchedOrInProgress(prevSt);
+        const receivedPreBoardingForceEndPrompt =
+          !!prevSnap?.id &&
+          passengerForceEndModalHandledTagIdsRef.current.has(String(prevSnap.id));
+
+        if (
+          data.success === true &&
+          !data.tag &&
+          prevPreBoardingForceEndExit &&
+          receivedPreBoardingForceEndPrompt
+        ) {
+          perfLog('PASSENGER_PRE_BOARDING_FORCE_END_EMPTY_ACTIVE_TAG', {
+            priorTagId: prevSnap?.id ?? null,
+            userId: user?.id ?? null,
+          });
+          passengerActiveTagNullStreakRef.current = 0;
+          passengerJourneyRecoveryWindowUntilRef.current = 0;
+          finalizePassengerForceEnd({
+            tag_id: String(prevSnap!.id),
+            pre_boarding: true,
+            immediate: true,
+            should_rate: false,
+          });
+          return;
+        }
+
+        const emptyStreakMax = prevPreBoardingForceEndExit
+          ? 1
+          : ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK;
 
         const shouldDeferEmpty =
           journeyRecoveryEligible || (inRecoveryWindow && !!prevSnap);
 
         if (data.success === true && !data.tag && shouldDeferEmpty) {
           passengerActiveTagNullStreakRef.current += 1;
-          if (passengerActiveTagNullStreakRef.current < ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK) {
+          if (passengerActiveTagNullStreakRef.current < emptyStreakMax) {
             perfLog('PASSENGER_ACTIVE_TAG_EMPTY_DEFERRED', {
               priorTagId: prevSnap?.id ?? null,
               priorStatus: prevSnap?.status ?? null,
               streak: passengerActiveTagNullStreakRef.current,
-              maxStreak: ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK,
+              maxStreak: emptyStreakMax,
               inRecoveryWindow,
               userId: user?.id ?? null,
             });
@@ -13479,7 +13564,12 @@ function PassengerDashboard({
                           perfLog('Socket force end hatası:', socketErr);
                         }
                       }
-                      applyPassengerForceEndHttpResult(activeTag.id, user.id, result, () => {
+                      applyPassengerForceEndHttpResult(
+                        activeTag.id,
+                        user.id,
+                        result,
+                        isLocalPreBoardingForceEndTag(activeTag),
+                        () => {
                         const nowIso = new Date().toISOString();
                         const initiatorType =
                           enderType ?? inferTagRoleForUser(activeTag, user.id) ?? 'passenger';
@@ -13673,7 +13763,12 @@ function PassengerDashboard({
                           perfLog('Socket force end hatası:', socketErr);
                         }
                       }
-                      applyPassengerForceEndHttpResult(activeTag.id, user.id, result, () => {
+                      applyPassengerForceEndHttpResult(
+                        activeTag.id,
+                        user.id,
+                        result,
+                        isLocalPreBoardingForceEndTag(activeTag),
+                        () => {
                         const nowIso = new Date().toISOString();
                         const initiatorType =
                           enderType ?? inferTagRoleForUser(activeTag, user.id) ?? 'passenger';
@@ -13727,9 +13822,19 @@ function PassengerDashboard({
                     if (!passengerDriverForceReview || !user?.id || passengerForceEndReviewSubmitting) return;
                     const tid = passengerDriverForceReview.tagId;
                     if (passengerDriverForceReview.informationalOnly) {
+                      const ini = passengerDriverForceReview.initiatorId;
                       passengerForceEndModalHandledTagIdsRef.current.delete(tid);
                       passengerForceEndLastRequestKeyRef.current = null;
                       setPassengerDriverForceReview(null);
+                      finalizePassengerForceEnd({
+                        tag_id: tid,
+                        ender_id: ini,
+                        ended_by: ini,
+                        pre_boarding: true,
+                        immediate: true,
+                        should_rate: false,
+                        message: passengerDriverForceReview.message,
+                      });
                       return;
                     }
                     perfLog('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'passenger' });
@@ -14023,7 +14128,12 @@ function PassengerDashboard({
                           perfLog('Socket force end hatası:', socketErr);
                         }
                       }
-                      applyPassengerForceEndHttpResult(activeTag.id, user.id, result, () => {
+                      applyPassengerForceEndHttpResult(
+                        activeTag.id,
+                        user.id,
+                        result,
+                        isLocalPreBoardingForceEndTag(activeTag),
+                        () => {
                         const nowIso = new Date().toISOString();
                         const initiatorType =
                           enderType ?? inferTagRoleForUser(activeTag, user.id) ?? 'passenger';
@@ -17001,9 +17111,13 @@ function DriverDashboard({
       tagId: string,
       userId: string,
       apiResult: ForceEndImmediateFlags,
+      localPreBoarding: boolean,
       onPending: () => void,
     ) => {
-      if (isPreBoardingForceEndImmediate(apiResult)) {
+      const exitPreBoardingImmediate =
+        isPreBoardingForceEndImmediate(apiResult) ||
+        (localPreBoarding && apiResult.success !== false);
+      if (exitPreBoardingImmediate) {
         finalizeDriverForceEnd({
           tag_id: tagId,
           ender_id: userId,
@@ -18906,15 +19020,42 @@ function DriverDashboard({
         const journeyRecoveryEligible =
           !!prevSnap && isActiveJourneyMatchedOrInProgress(prevSt);
         const inRecoveryWindow = Date.now() < driverJourneyRecoveryWindowUntilRef.current;
+        const prevPreBoardingForceEndExit =
+          !!prevSnap &&
+          !prevSnap.boarding_confirmed_at &&
+          isActiveJourneyMatchedOrInProgress(prevSt);
+        const receivedPreBoardingForceEndPrompt =
+          !!prevSnap?.id &&
+          driverForceEndModalHandledTagIdsRef.current.has(String(prevSnap.id));
+
+        if (prevPreBoardingForceEndExit && receivedPreBoardingForceEndPrompt) {
+          driverActiveTagNullStreakRef.current = 0;
+          driverJourneyRecoveryWindowUntilRef.current = 0;
+          perfLog('DRIVER_PRE_BOARDING_FORCE_END_EMPTY_ACTIVE_TAG', {
+            priorTagId: prevSnap?.id ?? null,
+            userId: user?.id ?? null,
+          });
+          finalizeDriverForceEnd({
+            tag_id: String(prevSnap!.id),
+            pre_boarding: true,
+            immediate: true,
+            should_rate: false,
+          });
+          return null;
+        }
+
+        const emptyStreakMax = prevPreBoardingForceEndExit
+          ? 1
+          : ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK;
 
         if (journeyRecoveryEligible || (inRecoveryWindow && !!prevSnap)) {
           driverActiveTagNullStreakRef.current += 1;
-          if (driverActiveTagNullStreakRef.current < ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK) {
+          if (driverActiveTagNullStreakRef.current < emptyStreakMax) {
             perfLog('DRIVER_ACTIVE_TAG_EMPTY_DEFERRED', {
               priorTagId: prevSnap?.id ?? null,
               priorStatus: prevSnap?.status ?? null,
               streak: driverActiveTagNullStreakRef.current,
-              maxStreak: ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK,
+              maxStreak: emptyStreakMax,
               inRecoveryWindow,
               userId: user?.id ?? null,
             });
@@ -18973,12 +19114,37 @@ function DriverDashboard({
         driverActiveTagNullStreakRef.current = 0;
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
+          const _dt = data.tag as Tag & {
+            cancel_reason?: string;
+            cancelled_at?: string;
+            ended_by?: string;
+            end_type?: string;
+          };
+          if (
+            data.tag.status === 'cancelled' &&
+            isPreBoardingForceEndTerminalTag(_dt) &&
+            !forceEndLockRef.current
+          ) {
+            const endedBy = String(_dt.ended_by ?? '').trim();
+            perfLog('DRIVER_PRE_BOARDING_FORCE_END_POLL_TERMINAL', {
+              tagId: _dt.id,
+              endedBy: endedBy || null,
+              end_type: _dt.end_type ?? null,
+            });
+            finalizeDriverForceEnd({
+              tag_id: String(_dt.id),
+              ...(endedBy ? { ender_id: endedBy, ended_by: endedBy } : {}),
+              pre_boarding: true,
+              immediate: true,
+              should_rate: false,
+            });
+            return null;
+          }
           if (forceEndLockRef.current) {
             logPollingSkippedForceEndLock('driver', 'loadActiveTag_terminal_cancelled_gate');
             return null;
           }
           perfLog('🛑 ŞOFÖR loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
-          const _dt = data.tag as Tag & { cancel_reason?: string; cancelled_at?: string };
           perfLog('DRIVER_EXIT_REASON', {
             source: 'loadActiveTag',
             reason: _dt.status === 'cancelled' ? 'tag_status_cancelled' : 'tag_status_completed',
@@ -21033,7 +21199,12 @@ function DriverDashboard({
                     perfLog('Socket force end hatası:', socketErr);
                   }
                 }
-                applyDriverForceEndHttpResult(activeTag.id, user.id, result, () => {
+                applyDriverForceEndHttpResult(
+                  activeTag.id,
+                  user.id,
+                  result,
+                  isLocalPreBoardingForceEndTag(activeTag),
+                  () => {
                   const nowIso = new Date().toISOString();
                   const initiatorType =
                     enderType ?? inferTagRoleForUser(activeTag, user.id) ?? 'driver';
@@ -21109,7 +21280,12 @@ function DriverDashboard({
                     perfLog('Socket force end hatası:', socketErr);
                   }
                 }
-                applyDriverForceEndHttpResult(activeTag.id, user.id, result, () => {
+                applyDriverForceEndHttpResult(
+                  activeTag.id,
+                  user.id,
+                  result,
+                  isLocalPreBoardingForceEndTag(activeTag),
+                  () => {
                   const nowIso = new Date().toISOString();
                   const initiatorType =
                     enderType ?? inferTagRoleForUser(activeTag, user.id) ?? 'driver';
@@ -21411,7 +21587,12 @@ function DriverDashboard({
                     perfLog('Socket force end hatası:', socketErr);
                   }
                 }
-                applyDriverForceEndHttpResult(activeTag.id, user.id, result, () => {
+                applyDriverForceEndHttpResult(
+                  activeTag.id,
+                  user.id,
+                  result,
+                  isLocalPreBoardingForceEndTag(activeTag),
+                  () => {
                   const nowIso = new Date().toISOString();
                   const initiatorType =
                     enderType ?? inferTagRoleForUser(activeTag, user.id) ?? 'driver';
@@ -21718,9 +21899,19 @@ function DriverDashboard({
           if (!driverPassengerForceEndReview || !user?.id || driverForceEndReviewSubmitting) return;
           const tid = driverPassengerForceEndReview.tagId;
           if (driverPassengerForceEndReview.informationalOnly) {
+            const ini = driverPassengerForceEndReview.initiatorId;
             driverForceEndModalHandledTagIdsRef.current.delete(tid);
             driverForceEndLastRequestKeyRef.current = null;
             setDriverPassengerForceEndReview(null);
+            finalizeDriverForceEnd({
+              tag_id: tid,
+              ender_id: ini,
+              ended_by: ini,
+              pre_boarding: true,
+              immediate: true,
+              should_rate: false,
+              message: driverPassengerForceEndReview.message,
+            });
             return;
           }
           perfLog('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'driver' });
