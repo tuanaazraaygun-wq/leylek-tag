@@ -223,6 +223,7 @@ import {
   apiErrMsg,
   buildForceEndTripUrl,
   inferTagRoleForUser,
+  isCurrentUserForceEndInitiator,
   normalizeTrMobile10,
   parseApiJson,
   resolveForceEndEnderType,
@@ -1070,17 +1071,24 @@ const FORCE_END_AWAITING_COUNTERPARTY_BODY = 'Onay gelince yolculuk kapanacak.';
 function isForceEndAwaitingCounterpartyAsInitiator(
   endRequest: Tag['end_request'] | null | undefined,
   userId: string | null | undefined,
+  tag?: Tag | null,
 ): boolean {
   if (!isPendingForceEndCounterparty(endRequest)) return false;
-  const ini = String(
-    (endRequest as { initiator_id?: string } | null | undefined)?.initiator_id ?? '',
-  )
-    .trim()
-    .toLowerCase();
-  const uid = String(userId ?? '')
-    .trim()
-    .toLowerCase();
-  return !!(ini && uid && ini === uid);
+  return isCurrentUserForceEndInitiator(endRequest, userId, tag ?? null);
+}
+
+function logForceEndIgnoredInitiator(
+  tagId: string,
+  initiatorType: string | undefined,
+  source: string,
+  screen: 'PassengerDashboard' | 'DriverDashboard',
+): void {
+  perfLog('FORCE_END_UI_IGNORED_INITIATOR', {
+    tag_id: String(tagId).slice(0, 8),
+    initiator_type: initiatorType ?? null,
+    source,
+    screen,
+  });
 }
 
 function isPendingForceEndCounterparty(endReq: Tag['end_request'] | null | undefined): boolean {
@@ -9939,6 +9947,17 @@ function PassengerDashboard({
       if (!data?.tag_id || !data?.initiator_id) return;
       const tid = String(data.tag_id);
       const ini = String(data.initiator_id);
+      const initiatorType = data.initiator_type === 'passenger' ? 'passenger' : 'driver';
+      if (
+        isCurrentUserForceEndInitiator(
+          { initiator_id: ini, initiator_type: initiatorType },
+          user?.id,
+          activeTag?.id && String(activeTag.id) === tid ? activeTag : null,
+        )
+      ) {
+        logForceEndIgnoredInitiator(tid, initiatorType, 'socket', 'PassengerDashboard');
+        return;
+      }
       const informationalOnly = isForceEndInformationalPrompt(data);
       const requestKey = forceEndCounterpartyRequestKey(tid, ini, null);
       perfLog('FORCE_END_REQUEST_RECEIVED', {
@@ -10991,10 +11010,11 @@ function PassengerDashboard({
     if (!user?.id || !activeTag?.id) return;
     const er = activeTag.end_request;
     if (!isPendingForceEndCounterparty(er)) return;
+    if (isCurrentUserForceEndInitiator(er, user.id, activeTag)) {
+      logForceEndIgnoredInitiator(String(activeTag.id), er?.initiator_type, 'activeTag', 'PassengerDashboard');
+      return;
+    }
     const iniRaw = String(er?.initiator_id || '').trim();
-    const ini = iniRaw.toLowerCase();
-    const uid = String(user.id).trim().toLowerCase();
-    if (!ini || ini === uid) return;
     const tid = String(activeTag.id);
     const requestKey = forceEndCounterpartyRequestKey(tid, iniRaw, er?.requested_at);
     perfLog('FORCE_END_REQUEST_RECEIVED', {
@@ -13450,7 +13470,7 @@ function PassengerDashboard({
             {/* CANLI HARİTA - Tam Ekran (Yolcu) - SADECE MATCHED/IN_PROGRESS'DE */}
             {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
               <View style={styles.fullScreenMapContainer}>
-                {isForceEndAwaitingCounterpartyAsInitiator(activeTag?.end_request, user?.id) ? (
+                {isForceEndAwaitingCounterpartyAsInitiator(activeTag?.end_request, user?.id, activeTag) ? (
                   <View style={styles.passengerTripBannerWrap} pointerEvents="box-none">
                     <GlassSurface
                       variant="plain"
@@ -17857,6 +17877,17 @@ function DriverDashboard({
       if (!data?.tag_id || !data?.initiator_id) return;
       const tid = String(data.tag_id);
       const ini = String(data.initiator_id);
+      const initiatorType = data.initiator_type === 'passenger' ? 'passenger' : 'driver';
+      if (
+        isCurrentUserForceEndInitiator(
+          { initiator_id: ini, initiator_type: initiatorType },
+          user?.id,
+          activeTag?.id && String(activeTag.id) === tid ? activeTag : null,
+        )
+      ) {
+        logForceEndIgnoredInitiator(tid, initiatorType, 'socket', 'DriverDashboard');
+        return;
+      }
       const informationalOnly = isForceEndInformationalPrompt(data);
       const requestKey = forceEndCounterpartyRequestKey(tid, ini, null);
       perfLog('FORCE_END_REQUEST_RECEIVED', {
@@ -19863,10 +19894,11 @@ function DriverDashboard({
     if (!user?.id || !activeTag?.id) return;
     const er = activeTag.end_request;
     if (!isPendingForceEndCounterparty(er)) return;
+    if (isCurrentUserForceEndInitiator(er, user.id, activeTag)) {
+      logForceEndIgnoredInitiator(String(activeTag.id), er?.initiator_type, 'activeTag', 'DriverDashboard');
+      return;
+    }
     const iniRaw = String(er?.initiator_id || '').trim();
-    const ini = iniRaw.toLowerCase();
-    const uid = String(user.id).trim().toLowerCase();
-    if (!ini || ini === uid) return;
     const tid = String(activeTag.id);
     const requestKey = forceEndCounterpartyRequestKey(tid, iniRaw, er?.requested_at);
     perfLog('FORCE_END_REQUEST_RECEIVED', {
@@ -21142,7 +21174,7 @@ function DriverDashboard({
               </PremiumText>
             </View>
           </GlassSurface>
-          {isForceEndAwaitingCounterpartyAsInitiator(activeTag?.end_request, user?.id) ? (
+          {isForceEndAwaitingCounterpartyAsInitiator(activeTag?.end_request, user?.id, activeTag) ? (
             <View style={styles.driverTripBannerWrap} pointerEvents="box-none">
               <GlassSurface
                 variant="plain"

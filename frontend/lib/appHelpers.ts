@@ -36,6 +36,11 @@ export type TagMembershipSlice = {
   driver_id?: string;
 };
 
+export type ForceEndInitiatorSlice = {
+  initiator_id?: string;
+  initiator_type?: string;
+};
+
 function normTripUserId(id: unknown): string {
   return String(id ?? '').trim().toLowerCase();
 }
@@ -52,6 +57,35 @@ export function inferTagRoleForUser(
   if (pid && uid === pid) return 'passenger';
   if (did && uid === did) return 'driver';
   return null;
+}
+
+/** Force-end initiator mı — canonical id, tag rolü ve tag üye id eşlemesi. */
+export function isCurrentUserForceEndInitiator(
+  endRequest: ForceEndInitiatorSlice | null | undefined,
+  userId: string | null | undefined,
+  tag: TagMembershipSlice | null | undefined,
+): boolean {
+  if (!endRequest || typeof endRequest !== 'object') return false;
+  const iniRaw = String(endRequest.initiator_id ?? '').trim();
+  if (!iniRaw || !userId) return false;
+
+  const ini = normTripUserId(iniRaw);
+  const uid = normTripUserId(userId);
+  if (ini && uid && ini === uid) return true;
+
+  const initiatorType = String(endRequest.initiator_type ?? '').trim().toLowerCase();
+  if (initiatorType !== 'driver' && initiatorType !== 'passenger') return false;
+
+  const role = inferTagRoleForUser(tag, userId);
+  if (role && role === initiatorType) return true;
+
+  const tagMemberId =
+    initiatorType === 'driver'
+      ? normTripUserId(tag?.driver_id)
+      : normTripUserId(tag?.passenger_id);
+  if (tagMemberId && ini === tagMemberId && role === initiatorType) return true;
+
+  return false;
 }
 
 /**
