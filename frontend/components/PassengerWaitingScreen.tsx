@@ -263,7 +263,7 @@ export default function PassengerWaitingScreen({
     };
     
     checkDispatch();
-    const interval = setInterval(checkDispatch, 2000);
+    const interval = setInterval(checkDispatch, 5000);
     return () => clearInterval(interval);
   }, [tagId]);
   

@@ -113,7 +113,7 @@ const MAX_TRUST_TAG_RETRY_ATTEMPTS = 14;
 const TRUST_TAG_RETRY_BASE_MS = 260;
 
 /** İstek sahibi (outgoing): trust_session_ready socket kaçınca GET /trust/active ile accepted yakalama */
-const REQUESTER_TRUST_POLL_INTERVAL_MS = 850;
+const REQUESTER_TRUST_POLL_INTERVAL_MS = 3000;
 const REQUESTER_TRUST_POLL_MAX_MS = 48000;
 
 /** Güven görüşmesi UI açıkken trust_session_ended kaçsa bile GET /trust/active ile düşük frekanslı doğrulama */
