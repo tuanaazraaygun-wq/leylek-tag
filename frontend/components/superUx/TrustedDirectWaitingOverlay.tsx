@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -77,16 +77,27 @@ function TrustedDirectWaitingOverlay({
   const { tdmModalSurfaces: tdmLt, ui } = useQrPaymentTrustTheme('trust');
   const copy = resolveCopy(phase, responderLabel);
   const showCancel = canCancelPhase(phase);
+  /** Android back — hide overlay only; server request stays pending until explicit cancel. */
+  const [dismissedByBack, setDismissedByBack] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setDismissedByBack(false);
+    }
+  }, [visible]);
+
+  const modalVisible = visible && !dismissedByBack;
 
   return (
     <Modal
-      visible={visible}
+      visible={modalVisible}
       animationType="fade"
       transparent
       onRequestClose={() => {
-        if (!isCancelling && showCancel) {
-          onCancel();
+        if (isCancelling) {
+          return;
         }
+        setDismissedByBack(true);
       }}
     >
       <View style={styles.backdrop}>
