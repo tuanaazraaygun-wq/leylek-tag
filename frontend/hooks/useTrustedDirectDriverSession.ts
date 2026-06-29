@@ -6,6 +6,7 @@ import {
   getCurrentTrustedDirectInvite,
   mapTdmUserFacingError,
   TDM_POLL_INTERVAL_MS,
+  type TrustedDirectAcceptResponse,
   type TrustedDirectApiErrorCode,
   type TrustedDirectApiResult,
   type TrustedDirectDriverInvitePublic,
@@ -26,7 +27,11 @@ export type UseTrustedDirectDriverSessionOptions = {
   enabled: boolean;
   hasActiveTag: boolean;
   pollIntervalMs?: number;
-  onMatched: (matchedTagId: string) => void;
+  onMatched: (
+    matchedTagId: string,
+    acceptPayload: TrustedDirectAcceptResponse,
+    inviteSnapshot: TrustedDirectDriverInvitePublic | null,
+  ) => void;
 };
 
 function isPendingResponderInvite(
@@ -386,7 +391,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
     setStatus('matched');
     stopPolling();
     if (tagId) {
-      onMatchedRef.current(tagId);
+      onMatchedRef.current(tagId, result.data, inviteRef.current);
     }
     return Boolean(tagId);
   }, [applyInvite, stopPolling]);

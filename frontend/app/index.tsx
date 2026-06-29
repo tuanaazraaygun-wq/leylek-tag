@@ -79,6 +79,8 @@ import {
   registerTrustedDirectBootstrapHandler,
   setTrustedDirectRouteContext,
   TDM_DRIVER_IDLE_REFRESH_MS,
+  type TrustedDirectAcceptResponse,
+  type TrustedDirectDriverInvitePublic,
   type TrustedDirectRouteContext,
 } from '../lib/trustedDirectApi';
 import DriverQuickMatchInviteCard from '../components/superUx/DriverQuickMatchInviteCard';
@@ -1018,6 +1020,40 @@ function buildOptimisticQuickMatchDriverTag(
     distance_km: req?.distance_km,
     passenger_vehicle_kind: req?.vehicle_preference ?? 'car',
     matched_at: req?.matched_at ?? new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    driver_id: driverUser?.id,
+    driver_name: driverUser?.name ?? undefined,
+  };
+}
+
+/** TDM accept — loadActiveTag beklerken LiveMap'e geçiş için minimal tag (hydrate sonra tamamlar). */
+function buildOptimisticTrustedDirectDriverTag(
+  tagId: string,
+  acceptPayload: TrustedDirectAcceptResponse | undefined,
+  invite: TrustedDirectDriverInvitePublic | null | undefined,
+  driverUser: { id: string; name?: string | null } | null | undefined,
+): Tag {
+  const req = invite?.request;
+  const reqPayload = acceptPayload?.request as
+    | { matched_at?: string | null }
+    | undefined;
+  const tagSummary = acceptPayload?.tag;
+  const vehicleRaw = String(req?.vehicle_preference || '').trim().toLowerCase();
+  const passengerVehicleKind: 'car' | 'motorcycle' =
+    vehicleRaw === 'motorcycle' ? 'motorcycle' : 'car';
+  return {
+    id: tagId,
+    tag_id: tagId,
+    passenger_id: '',
+    passenger_name: '',
+    pickup_location: req?.pickup_label ?? '',
+    dropoff_location: req?.dropoff_label ?? '',
+    status: 'matched',
+    match_channel: tagSummary?.match_channel ?? 'trusted',
+    offered_price: req?.offered_contribution_tl,
+    distance_km: req?.distance_km,
+    passenger_vehicle_kind: passengerVehicleKind,
+    matched_at: reqPayload?.matched_at ?? new Date().toISOString(),
     created_at: new Date().toISOString(),
     driver_id: driverUser?.id,
     driver_name: driverUser?.name ?? undefined,
@@ -19154,14 +19190,38 @@ function DriverDashboard({
     [loadActiveTag, user],
   );
 
-  const handleTrustedDirectDriverMatched = useCallback(async (_tagId?: string) => {
-    void playMatchChimeSound();
-    try {
-      await loadActiveTag();
-    } catch (error) {
-      console.warn('[TrustedDirectDriver] loadActiveTag after match failed', error);
-    }
-  }, [loadActiveTag]);
+  const handleTrustedDirectDriverMatched = useCallback(
+    async (
+      tagId?: string,
+      acceptPayload?: TrustedDirectAcceptResponse,
+      inviteSnapshot?: TrustedDirectDriverInvitePublic | null,
+    ) => {
+      void playMatchChimeSound();
+      const tid = String(tagId || acceptPayload?.tag?.id || '').trim();
+      if (tid) {
+        driverMatchTransitionFromAcceptRef.current = true;
+        setActiveTag(
+          buildOptimisticTrustedDirectDriverTag(tid, acceptPayload, inviteSnapshot, user),
+        );
+        setScreen('dashboard');
+        driverJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+        perfLog('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+          role: 'driver',
+          source: 'trusted_direct_accept',
+          phase: 'optimistic',
+          tag_id: tid,
+        });
+      }
+      try {
+        await loadActiveTag();
+      } catch (error) {
+        console.warn('[TrustedDirectDriver] loadActiveTag after match failed', error);
+      } finally {
+        driverMatchTransitionFromAcceptRef.current = false;
+      }
+    },
+    [loadActiveTag, user],
+  );
 
   const quickMatchDriverSession = useQuickMatchDriverSession({
     enabled: quickMatchDriverEnabled,
