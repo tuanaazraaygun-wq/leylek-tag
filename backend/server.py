@@ -154,6 +154,7 @@ from services.relationship_match_engine import (
     decline_invite as decline_trusted_direct_invite,
     get_active_request as get_trusted_direct_active_request,
     get_current_invite as get_trusted_direct_current_invite,
+    get_latest_request as get_trusted_direct_latest_request,
     is_trusted_direct_match_enabled,
 )
 from services.rme_trusted_connection import RmeConnectionNotActiveError
@@ -15147,6 +15148,46 @@ async def get_trusted_direct_request_active_http(
         raise HTTPException(
             status_code=500,
             detail="Trusted Direct Match aktif istek alınamadı",
+        ) from e
+
+
+@api_router.get("/trusted-direct/request/latest")
+async def get_trusted_direct_request_latest_http(
+    request_id: Optional[str] = Query(None),
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Direct Match — yolcunun son isteği (terminal durumlar dahil, read-only)."""
+    _require_trusted_direct_match_http()
+    await require_eligible_user(actor_id, action="trusted_direct_request_latest")
+    try:
+        request = get_trusted_direct_latest_request(
+            supabase,
+            actor_id,
+            request_id=request_id,
+        )
+        return {"success": True, "request": request}
+    except (
+        RmeFeatureDisabledError,
+        BlockedPairError,
+        ActiveMatchIntentError,
+        RmeNotFoundError,
+        RmeExpiredError,
+        RmeInvalidStateError,
+        RmeValidationError,
+    ) as exc:
+        _raise_trusted_direct_match_http(exc)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_direct_request_latest actor=%s request_id=%s err=%s",
+            _mask_log_id(actor_id),
+            str(request_id or "")[:36],
+            e,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Trusted Direct Match son istek alınamadı",
         ) from e
 
 

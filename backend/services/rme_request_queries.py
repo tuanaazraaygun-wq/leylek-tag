@@ -42,6 +42,11 @@ _PENDING_REQUEST_SELECT = (
     "relationship_connection_id, status, expires_at, created_at, updated_at"
 )
 
+_REQUEST_LATEST_PASSENGER_SELECT = (
+    "id, match_module, requester_id, responder_id, status, expires_at, "
+    "matched_tag_id, matched_at, responded_at, cancelled_at, created_at, updated_at"
+)
+
 _REQUEST_PUBLIC_SELECT = (
     "id, status, pickup_label, dropoff_label, distance_km, distance_band, "
     "offered_contribution_tl, vehicle_preference, created_at"
@@ -161,6 +166,33 @@ def has_pending_relationship_match_request(
         requester_id,
         match_module=match_module,
     ) is not None
+
+
+def get_latest_relationship_match_request_for_requester(
+    supabase,
+    requester_id: str,
+    match_module: str = MATCH_MODULE_TRUSTED_DIRECT,
+) -> Optional[Dict[str, Any]]:
+    """Most recent relationship_match_requests row for requester + module (any status)."""
+    requester_norm = _norm_user_id(requester_id)
+    module_norm = _norm_module(match_module)
+    if not requester_norm:
+        return None
+
+    result = (
+        supabase.table(TABLE_RELATIONSHIP_MATCH_REQUESTS)
+        .select(_REQUEST_LATEST_PASSENGER_SELECT)
+        .eq("requester_id", requester_norm)
+        .eq("match_module", module_norm)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    return row if isinstance(row, dict) else None
 
 
 def load_request_by_id(supabase, request_id: str) -> Optional[Dict[str, Any]]:

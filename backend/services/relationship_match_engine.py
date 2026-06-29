@@ -44,6 +44,7 @@ from services.rme_request_queries import (
     expire_stale_pending_invites_for_responder,
     find_orphan_matched_tag_for_accept,
     get_latest_invite_for_request,
+    get_latest_relationship_match_request_for_requester,
     get_pending_invite_for_responder,
     get_pending_relationship_match_request,
     get_tdm_invite_ttl_seconds,
@@ -1226,6 +1227,63 @@ def accept_invite(
         "matched_at": now_iso,
     }
     return _accept_response(invite_row, final_request, tag_created)
+
+
+def _public_passenger_latest_request_payload(row: dict) -> Dict[str, Any]:
+    return {
+        "id": str(row.get("id") or ""),
+        "status": str(row.get("status") or ""),
+        "matched_tag_id": row.get("matched_tag_id"),
+        "matched_at": row.get("matched_at"),
+        "expires_at": row.get("expires_at"),
+        "responder_id": row.get("responder_id"),
+    }
+
+
+def get_latest_request(
+    supabase,
+    requester_id: str,
+    *,
+    match_module: str = MATCH_MODULE_TRUSTED_DIRECT,
+    request_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Passenger read — latest TDM request (any status) for terminal polling."""
+    _require_rme_tdm_enabled()
+
+    requester_norm = _norm_user_id(requester_id)
+    if not requester_norm:
+        return None
+
+    module_norm = str(match_module or MATCH_MODULE_TRUSTED_DIRECT).strip().lower()
+
+    for expired_id in expire_stale_pending_for_requester(
+        supabase, requester_norm, match_module=module_norm
+    ):
+        expired_row = load_request_by_id(supabase, expired_id)
+        if expired_row:
+            _audit_request_expired(supabase, expired_row)
+
+    rid = _norm_id(request_id) if request_id else ""
+    if rid:
+        request_row = load_request_by_id(supabase, rid)
+        if not request_row:
+            return None
+        if _norm_user_id(request_row.get("requester_id")) != requester_norm:
+            return None
+        if str(request_row.get("match_module") or "").strip().lower() != module_norm:
+            return None
+    else:
+        request_row = get_latest_relationship_match_request_for_requester(
+            supabase,
+            requester_norm,
+            match_module=module_norm,
+        )
+
+    if not request_row:
+        return None
+
+    request_row = _lazy_expire_request_row(supabase, request_row)
+    return _public_passenger_latest_request_payload(request_row)
 
 
 def get_active_request(

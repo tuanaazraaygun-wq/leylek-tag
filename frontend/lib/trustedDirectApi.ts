@@ -78,6 +78,11 @@ export type TrustedDirectActiveResponse = {
   request: TrustedDirectRequestRow | null;
 };
 
+export type TrustedDirectLatestResponse = {
+  success: true;
+  request: TrustedDirectRequestRow | null;
+};
+
 export type TrustedDirectCreateResponse = {
   success: true;
   request: TrustedDirectRequestRow;
@@ -557,6 +562,16 @@ export async function getActiveTrustedDirectRequest(): Promise<
   TrustedDirectApiResult<TrustedDirectRequestRow | null>
 > {
   const res = await tdmGet<TrustedDirectActiveResponse>('/trusted-direct/request/active');
+  if (res.ok === false) return res;
+  return ok(normalizeRequestRow(res.data.request as Record<string, unknown>));
+}
+
+export async function getLatestTrustedDirectRequest(
+  requestId?: string,
+): Promise<TrustedDirectApiResult<TrustedDirectRequestRow | null>> {
+  const rid = String(requestId || '').trim();
+  const qs = rid ? `?request_id=${encodeURIComponent(rid)}` : '';
+  const res = await tdmGet<TrustedDirectLatestResponse>(`/trusted-direct/request/latest${qs}`);
   if (res.ok === false) return res;
   return ok(normalizeRequestRow(res.data.request as Record<string, unknown>));
 }

@@ -232,6 +232,8 @@ export const TDM_MATCHING_TIMEOUT =
   'Bu istek için eşleşme doğrulanamadı. Sürücü reddetmiş veya süre dolmuş olabilir.';
 export const TDM_TERMINAL_DECLINED = 'Karşı tarafın isteği sonlandı.';
 export const TDM_TERMINAL_NO_RESPONSE = 'Sürücü yanıt vermedi.';
+export const TDM_TERMINAL_EXPIRED =
+  'Sürücü yanıt vermedi. İstek süresi doldu; başka bir sürücüye istek gönderebilirsiniz.';
 export const TDM_TERMINAL_CANCELLED = 'İstek iptal edildi.';
 export const TDM_DRIVER_STATUS_ONLINE = 'Çevrimiçi';
 export const TDM_DRIVER_STATUS_BUSY = 'Meşgul';
