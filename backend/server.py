@@ -27233,6 +27233,23 @@ def _admin_latency_percentile_ms(values: list[int], percentile: float) -> Option
     return int(round(ordered[lo] + (ordered[hi] - ordered[lo]) * frac))
 
 
+def _admin_dashboard_mobile_quality_stub() -> dict:
+    """Aggregate mobile perf telemetry contract — stub until app beacons ship."""
+    return {
+        "telemetry_connected": False,
+        "health": "unknown",
+        "crash_free_sessions_pct": None,
+        "freeze_reports_today": None,
+        "match_screen_freeze_reports_today": None,
+        "call_ring_delivery_rate": None,
+        "call_setup_latency_p95_ms": None,
+        "unreadable_alert_reports_today": None,
+        "theme_regression_reports_today": None,
+        "ios_session_share_pct": None,
+        "android_session_share_pct": None,
+    }
+
+
 @api_router.get("/admin/dashboard/full")
 async def admin_full_dashboard(admin_phone: str):
     """Admin - Tam dashboard istatistikleri"""
@@ -27576,6 +27593,7 @@ async def admin_full_dashboard(admin_phone: str):
                     "sent_to_seen_p50_ms": offer_sent_to_seen_p50_ms,
                     "sent_to_seen_p95_ms": offer_sent_to_seen_p95_ms,
                 },
+                "mobile_quality": _admin_dashboard_mobile_quality_stub(),
             }
         }
     except HTTPException:
