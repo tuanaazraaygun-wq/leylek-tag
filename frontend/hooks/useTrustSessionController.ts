@@ -13,6 +13,26 @@ import {
 } from '../lib/trustApi';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
 import { playVideoTrustCallSound } from '../utils/sound';
+import { perfLog } from '../utils/perfDiagLog';
+
+export type TrustGuvenBlockReason =
+  | 'boarding_confirmed'
+  | 'trust_pending'
+  | 'incoming_modal_open'
+  | 'trust_video_active'
+  | 'trust_modal_loading'
+  | 'call_screen_active'
+  | 'no_active_tag';
+
+export const TRUST_GUVEN_BLOCK_MESSAGES: Record<TrustGuvenBlockReason, string> = {
+  boarding_confirmed: 'Yolculuk doğrulandıktan sonra Güven Al kullanılamaz.',
+  trust_pending: 'Güven Al isteği zaten beklemede.',
+  incoming_modal_open: 'Gelen Güven Al isteğini önce yanıtla.',
+  trust_video_active: 'Görüntülü güven görüşmesi zaten açık.',
+  trust_modal_loading: 'Gelen Güven Al isteği yanıtlanıyor.',
+  call_screen_active: 'Önce devam eden aramayı sonlandırın.',
+  no_active_tag: 'Aktif eşleşme bulunamadı.',
+};
 
 /** tag_id / activeTag yarışı için kısa retry; socket tek sefer kaçsa bile activeTag yetişince modal / video açılır */
 const MAX_TRUST_TAG_RETRY_ATTEMPTS = 14;
@@ -336,6 +356,29 @@ export function useTrustSessionController({
 
   const trustGuvenButtonDisabled =
     trustOutgoingPending || trustModalLoading || !!trustVideoSession || !!trustRequestModal;
+
+  const trustGuvenBlockReason = useMemo((): TrustGuvenBlockReason | null => {
+    if (boardingCommsClosed) return 'boarding_confirmed';
+    if (trustVideoSession) return 'trust_video_active';
+    if (trustRequestModal) return 'incoming_modal_open';
+    if (trustModalLoading) return 'trust_modal_loading';
+    if (trustOutgoingPending) return 'trust_pending';
+    if (showCallScreen || incomingCallBlocked) return 'call_screen_active';
+    const uid = userId?.trim();
+    const tagId = activeTag?.id ? String(activeTag.id) : '';
+    if (!uid || !tagId) return 'no_active_tag';
+    return null;
+  }, [
+    boardingCommsClosed,
+    trustVideoSession,
+    trustRequestModal,
+    trustModalLoading,
+    trustOutgoingPending,
+    showCallScreen,
+    incomingCallBlocked,
+    userId,
+    activeTag?.id,
+  ]);
 
   /**
    * Sesli arama yalnızca Agora güven görüşmesi kanalına gerçekten katılımda engellenir.
@@ -1043,6 +1086,16 @@ export function useTrustSessionController({
       return;
     }
     if (sendInFlightRef.current || trustOutgoingPending) {
+      try {
+        perfLog(
+          'TRUST_GUVEN_SEND_SKIP',
+          JSON.stringify({
+            reason: sendInFlightRef.current ? 'send_in_flight' : 'trust_pending',
+          }),
+        );
+      } catch {
+        /* noop */
+      }
       return;
     }
     if (boardingCommsClosed) {
@@ -1626,6 +1679,7 @@ export function useTrustSessionController({
     clearAllTrustState,
     trustSocketHandlers,
     trustGuvenButtonDisabled,
+    trustGuvenBlockReason,
     isTrustBlockingCalls,
   };
 }

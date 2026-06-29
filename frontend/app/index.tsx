@@ -9059,6 +9059,7 @@ function PassengerDashboard({
     clearAllTrustState: clearPassengerTrustState,
     trustSocketHandlers: passengerTrustSocketHandlers,
     trustGuvenButtonDisabled: passengerTrustGuvenButtonDisabled,
+    trustGuvenBlockReason: passengerTrustGuvenBlockReason,
     isTrustBlockingCalls: passengerTrustBlocksCalls,
   } = useTrustSessionController({
     role: 'passenger',
@@ -13570,6 +13571,7 @@ function PassengerDashboard({
                   }}
                   trustRequestPending={trustOutgoingPending}
                   trustRequestDisabled={passengerTrustGuvenButtonDisabled}
+                  trustRequestBlockReason={passengerTrustGuvenBlockReason}
                   trustRequestLabel="Sürücüden Güven Al"
                   onOpenTrustedHub={() => {
                     playTapSound();
@@ -16749,6 +16751,7 @@ function DriverDashboard({
     clearAllTrustState: clearDriverTrustState,
     trustSocketHandlers: driverTrustSocketHandlers,
     trustGuvenButtonDisabled: driverTrustGuvenButtonDisabled,
+    trustGuvenBlockReason: driverTrustGuvenBlockReason,
     isTrustBlockingCalls: driverTrustBlocksCalls,
   } = useTrustSessionController({
     role: 'driver',
@@ -21207,6 +21210,7 @@ function DriverDashboard({
             }}
             trustRequestPending={trustOutgoingPending}
             trustRequestDisabled={driverTrustGuvenButtonDisabled}
+            trustRequestBlockReason={driverTrustGuvenBlockReason}
             trustRequestLabel="Yolcudan Güven Al"
             onOpenTrustedHub={() => {
               void playTapSound();

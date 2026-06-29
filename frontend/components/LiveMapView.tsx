@@ -60,6 +60,10 @@ import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { DARK_MAP_STYLE } from '../lib/theme/mapStyles';
 import { useLiveMapChromeTheme } from '../lib/theme/useJourneyTheme';
+import {
+  TRUST_GUVEN_BLOCK_MESSAGES,
+  type TrustGuvenBlockReason,
+} from '../hooks/useTrustSessionController';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -455,6 +459,8 @@ interface LiveMapViewProps {
   trustRequestDisabled?: boolean;
   /** Güven isteği gönderim bekliyor — yalnız UI feedback (spinner + metin) */
   trustRequestPending?: boolean;
+  /** Güven AL basılamama nedeni — kullanıcı mesajı + görsel disabled */
+  trustRequestBlockReason?: TrustGuvenBlockReason | null;
   trustRequestLabel?: string;
   /** Harita ekranından Leylek Zeka sohbeti (global widget ayrı kalır) */
   onOpenLeylekZekaSupport?: () => void;
@@ -2794,6 +2800,7 @@ export default function LiveMapView({
   onTrustRequest,
   trustRequestDisabled = false,
   trustRequestPending = false,
+  trustRequestBlockReason = null,
   trustRequestLabel,
   onOpenLeylekZekaSupport,
   peerMapPinScale = 1,
@@ -2811,6 +2818,7 @@ export default function LiveMapView({
   const mapMarkerChrome: MapMarkerChromeTone = isScopeLight ? 'light' : 'dark';
   const journeyTrustUiEnabled = !EMERGENCY_TRUST_JOURNEY_UI_DISABLED;
   const trustRequestAction = journeyTrustUiEnabled ? onTrustRequest : undefined;
+  const trustGuvenUiBlocked = !!trustRequestBlockReason || !!trustRequestPending;
 
   const chatBadgePulse = useRef(new Animated.Value(1)).current;
   const prevChatUnreadRef = useRef(0);
@@ -5019,23 +5027,42 @@ export default function LiveMapView({
   }, [boardingConfirmed, onChat]);
 
   const handleMatchedTrustPress = useCallback(() => {
-    if (boardingConfirmed) {
-      appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-        variant: 'warning',
-        tone: 'warning',
+    const blockReason: TrustGuvenBlockReason | null =
+      trustRequestBlockReason ??
+      (boardingConfirmed ? 'boarding_confirmed' : null) ??
+      (trustRequestPending ? 'trust_pending' : null);
+
+    if (blockReason) {
+      try {
+        perfLog('TRUST_GUVEN_PRESS_BLOCKED', JSON.stringify({ reason: blockReason }));
+      } catch {
+        /* noop */
+      }
+      appAlert('Bilgi', TRUST_GUVEN_BLOCK_MESSAGES[blockReason], [{ text: 'Tamam' }], {
+        variant: 'info',
         autoDismissMs: 3200,
         cancelable: true,
       });
       return;
     }
-    if (trustRequestDisabled || trustRequestPending) {
-      void tapButtonHaptic();
+    if (trustRequestDisabled) {
+      try {
+        perfLog('TRUST_GUVEN_PRESS_BLOCKED', JSON.stringify({ reason: 'trust_disabled' }));
+      } catch {
+        /* noop */
+      }
+      appAlert('Bilgi', 'Güven Al şu an kullanılamıyor.', [{ text: 'Tamam' }], {
+        variant: 'info',
+        autoDismissMs: 3200,
+        cancelable: true,
+      });
       return;
     }
     trustRequestAction?.();
   }, [
     boardingConfirmed,
     trustRequestAction,
+    trustRequestBlockReason,
     trustRequestDisabled,
     trustRequestPending,
   ]);
@@ -7873,7 +7900,7 @@ export default function LiveMapView({
                           style={[
                             styles.paxBottomGuvenBtn,
                             jLt?.paxBottomGuvenBtn,
-                            trustRequestPending ? styles.mapCallFabCircleDisabled : null,
+                            trustGuvenUiBlocked ? styles.mapCallFabCircleDisabled : null,
                           ]}
                           disabled={!!trustRequestPending}
                           onPress={() => {
@@ -8085,7 +8112,7 @@ export default function LiveMapView({
                           style={[
                             styles.drvBottomGuvenBtn,
                             jLt?.drvBottomGuvenBtn,
-                            trustRequestPending ? styles.mapCallFabCircleDisabled : null,
+                            trustGuvenUiBlocked ? styles.mapCallFabCircleDisabled : null,
                           ]}
                           disabled={!!trustRequestPending}
                           onPress={() => {
@@ -8588,7 +8615,7 @@ export default function LiveMapView({
                   <LiveMapCommHit
                     style={[
                       styles.navImmersiveGuvenBtn,
-                      trustRequestPending ? styles.mapCallFabCircleDisabled : null,
+                      trustGuvenUiBlocked ? styles.mapCallFabCircleDisabled : null,
                     ]}
                     disabled={!!trustRequestPending}
                     onPress={() => {

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -75,7 +76,12 @@ const TrustRequestModal = memo(function TrustRequestModal({
       : 'Yolcu sizden güven almak istiyor';
 
   return (
-    <Modal visible={visible} animationType="fade" transparent>
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent
+      {...(Platform.OS === 'ios' ? { presentationStyle: 'overFullScreen' as const } : {})}
+    >
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
