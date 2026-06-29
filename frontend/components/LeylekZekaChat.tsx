@@ -14,11 +14,9 @@ import {
   ActivityIndicator,
   Animated,
   AppState,
-  Dimensions,
   Easing,
   FlatList,
   type GestureResponderEvent,
-  Image,
   InteractionManager,
   Keyboard,
   KeyboardAvoidingView,
@@ -29,6 +27,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -45,7 +44,10 @@ import { getLeylekZekaContextCopy } from '../lib/leylekZekaUxCopy';
 import LeylekEye, { LEYLEK_EYE_CHAT_HEADER_SIZE } from '../design-system/leylek-eye/LeylekEye';
 
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
-const LOGO = require('../assets/images/leylek-logo-premium.png');
+
+/** Küçük ekran — tam ekran / near full-screen sohbet kabuğu */
+const COMPACT_SHELL_MAX_HEIGHT = 740;
+const COMPACT_SHELL_MAX_WIDTH = 390;
 
 /** Giriş / CTA ile aynı marka gradient’i (app/index — Teklif Gönder vb.) */
 const BRAND_GRADIENT = ['#3FA9F5', '#2563EB', '#1D4ED8'] as const;
@@ -258,6 +260,7 @@ const EmptyWelcome = memo(function EmptyWelcome({
   disabled,
   onPromptPress,
   isLightShell = false,
+  reduceMotion = false,
 }: {
   title: string;
   body: string;
@@ -268,14 +271,22 @@ const EmptyWelcome = memo(function EmptyWelcome({
   disabled: boolean;
   onPromptPress: (prompt: string) => void;
   isLightShell?: boolean;
+  reduceMotion?: boolean;
 }) {
   return (
     <View style={styles.emptyState}>
       <View style={[styles.emptyIconWrap, isLightShell && styles.emptyIconWrapLight]}>
-        <Image source={LOGO} style={styles.emptyLogo} resizeMode="contain" accessibilityIgnoresInvertColors />
+        <LeylekEye
+          size={56}
+          chromeTone="subtle"
+          themeVariant={isLightShell ? 'light' : 'dark'}
+          motionProfile="guardian"
+          reduceMotion={reduceMotion}
+          accessibilityLabel="Leylek Zeka"
+        />
       </View>
       <Text style={[styles.emptyTitle, isLightShell && styles.emptyTitleLight]}>{title}</Text>
-      <Text style={[styles.emptyBody, isLightShell && styles.emptyBodyLight]} numberOfLines={2}>
+      <Text style={[styles.emptyBody, isLightShell && styles.emptyBodyLight]}>
         {body}
       </Text>
       <View style={[styles.operationGuideCard, isLightShell && styles.operationGuideCardLight]}>
@@ -353,6 +364,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   lastReplySource,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const isCompactShell =
+    windowHeight < COMPACT_SHELL_MAX_HEIGHT || windowWidth < COMPACT_SHELL_MAX_WIDTH;
   const { homeFlowScreen, flowHint } = useLeylekZekaChrome();
   const { resolvedTheme, tokens } = useTheme();
   const isLightShell = resolvedTheme === 'light';
@@ -405,8 +419,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const composerBottomPad = useMemo(() => Math.max(insets.bottom, Spacing.md), [insets.bottom]);
 
   const panelMaxHeight = useMemo(
-    () => Math.round(Dimensions.get('window').height * 0.74),
-    [],
+    () => Math.round(windowHeight * (isCompactShell ? 0.92 : 0.82)),
+    [isCompactShell, windowHeight],
   );
 
   /** Uzun tek mesajda da içerik imzası değişsin; scroll + FlatList extraData */
@@ -1248,7 +1262,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
         >
           <View
             style={[
-              styles.kavCenterFill,
+              isCompactShell ? styles.kavFillCompact : styles.kavCenterFill,
               Platform.OS === 'android' && keyboardHeight > 0
                 ? { paddingBottom: keyboardHeight }
                 : null,
@@ -1257,8 +1271,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           <View
             style={[
               styles.sheet,
+              isCompactShell && styles.sheetCompact,
               isLightShell && styles.sheetLight,
-              { height: panelMaxHeight, maxHeight: panelMaxHeight, borderColor: sheetBorderColor },
+              isCompactShell
+                ? { flex: 1, borderColor: sheetBorderColor }
+                : {
+                    height: panelMaxHeight,
+                    maxHeight: panelMaxHeight,
+                    borderColor: sheetBorderColor,
+                  },
             ]}
           >
             <LinearGradient
@@ -1303,7 +1324,16 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               pointerEvents="none"
             />
 
-            <View style={[styles.sheetInner, { paddingTop: Math.max(insets.top, 10) + 6 }]}>
+            <View
+              style={[
+                styles.sheetInner,
+                {
+                  paddingTop: isCompactShell
+                    ? Math.max(insets.top, 8) + 4
+                    : Math.max(insets.top, 10) + 6,
+                },
+              ]}
+            >
           <LinearGradient
             colors={[...headerBarColors]}
             locations={[0, 0.5, 1]}
@@ -1511,6 +1541,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                   disabled={isTyping}
                   onPromptPress={onStarterPromptPress}
                   isLightShell={isLightShell}
+                  reduceMotion={reduceMotion}
                 />
               }
               ListFooterComponent={
@@ -1760,6 +1791,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
   },
+  kavFillCompact: {
+    flex: 1,
+    width: '100%',
+    paddingHorizontal: 0,
+  },
   sheet: {
     position: 'relative',
     width: '100%',
@@ -1791,6 +1827,21 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.18,
       },
       android: { elevation: 16 },
+    }),
+  },
+  sheetCompact: {
+    flex: 1,
+    width: '100%',
+    maxWidth: '100%',
+    minHeight: 0,
+    borderRadius: 0,
+    borderWidth: 0,
+    alignSelf: 'stretch',
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0,
+      },
+      android: { elevation: 0 },
     }),
   },
   sheetSkyBase: {
@@ -2183,42 +2234,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.lg,
     alignItems: 'center',
-    maxWidth: 320,
+    maxWidth: 360,
+    width: '100%',
     alignSelf: 'center',
   },
   emptyIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: 'rgba(12, 24, 42, 0.9)',
+    width: 76,
+    height: 76,
+    borderRadius: 24,
+    backgroundColor: 'rgba(8, 18, 32, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.32)',
+    borderColor: 'rgba(34, 211, 238, 0.28)',
+    overflow: 'visible',
     ...Platform.select({
       ios: {
         shadowColor: COCKPIT_CYAN,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.35,
+        shadowRadius: 14,
       },
       android: { elevation: 4 },
     }),
   },
   emptyIconWrapLight: {
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    borderColor: 'rgba(0,212,170,0.24)',
+    backgroundColor: 'rgba(0,212,170,0.08)',
+    borderColor: 'rgba(0,212,170,0.22)',
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(15,23,42,0.08)',
+        shadowColor: 'rgba(0,212,170,0.45)',
+        shadowOpacity: 0.22,
+        shadowRadius: 12,
       },
       android: { elevation: 2 },
     }),
-  },
-  emptyLogo: {
-    width: 40,
-    height: 40,
   },
   emptyTitle: {
     fontSize: 17,
@@ -2233,9 +2284,9 @@ const styles = StyleSheet.create({
   emptyBody: {
     marginTop: Spacing.sm,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 20,
     color: 'rgba(186, 230, 253, 0.78)',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '500',
   },
   emptyBodyLight: {
@@ -2371,8 +2422,8 @@ const styles = StyleSheet.create({
   },
   bubbleText: {
     fontFamily: DIGITAL_MONO,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 21,
     letterSpacing: 0.04,
   },
   bubbleTextUser: { color: '#fff', fontWeight: '600' },
@@ -2576,7 +2627,7 @@ const styles = StyleSheet.create({
     }),
   },
   voiceHoldZone: {
-    minHeight: 88,
+    minHeight: 76,
     borderRadius: 18,
     borderWidth: 1.5,
     borderColor: 'rgba(34, 211, 238, 0.38)',
