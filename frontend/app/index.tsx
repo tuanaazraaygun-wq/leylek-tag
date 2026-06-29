@@ -1364,6 +1364,23 @@ function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
   return base;
 }
 
+/** LiveMap routeInfo prop — stable shape from active tag metrics (Tier A render guard). */
+function buildLiveMapRouteInfoFromTag(tag: Tag | null | undefined) {
+  const baseRouteInfo =
+    tag?.route_info && typeof tag.route_info === 'object' && !Array.isArray(tag.route_info)
+      ? tag.route_info
+      : {};
+  return {
+    ...baseRouteInfo,
+    pickup_distance_km: tag?.pickup_distance_km ?? tag?.distance_to_passenger_km ?? null,
+    pickup_eta_min: tag?.pickup_eta_min ?? tag?.time_to_passenger_min ?? null,
+    meeting_distance_km: tag?.pickup_distance_km ?? tag?.distance_to_passenger_km ?? null,
+    meeting_duration_min: tag?.pickup_eta_min ?? tag?.time_to_passenger_min ?? null,
+    trip_distance_km: tag?.trip_distance_km ?? tag?.distance_km ?? null,
+    trip_duration_min: tag?.trip_duration_min ?? tag?.estimated_minutes ?? null,
+  };
+}
+
 function normalizeCoordValue(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -9697,7 +9714,7 @@ function PassengerDashboard({
           const nk = _mergePassengerMatchSocketDriverVehicleKind(prev, d);
           const next = { ...matchedTag, driver_vehicle_kind: nk } as Tag;
           perfLog('🔥 YOLCU - ActiveTag ANINDA güncelleniyor:', next);
-          return next;
+          return mergeTripTagState(prev, next);
         });
       }
       
@@ -9766,10 +9783,11 @@ function PassengerDashboard({
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
         };
-        setActiveTag((prev) => ({
-          ...matchedTag,
-          driver_vehicle_kind: _mergePassengerMatchSocketDriverVehicleKind(prev, d),
-        }) as Tag);
+        setActiveTag((prev) => {
+          const nk = _mergePassengerMatchSocketDriverVehicleKind(prev, d);
+          const next = { ...matchedTag, driver_vehicle_kind: nk } as Tag;
+          return mergeTripTagState(prev, next);
+        });
       }
       setScreen('dashboard');
       passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
@@ -9835,10 +9853,11 @@ function PassengerDashboard({
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
         };
-        setActiveTag((prev) => ({
-          ...matchedTag,
-          driver_vehicle_kind: _mergePassengerMatchSocketDriverVehicleKind(prev, d),
-        }) as Tag);
+        setActiveTag((prev) => {
+          const nk = _mergePassengerMatchSocketDriverVehicleKind(prev, d);
+          const next = { ...matchedTag, driver_vehicle_kind: nk } as Tag;
+          return mergeTripTagState(prev, next);
+        });
       }
       setScreen('dashboard');
       passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
@@ -10141,9 +10160,8 @@ function PassengerDashboard({
 
   const getPassengerPollIntervalMs = useCallback(() => {
     const statusRaw = String(activeTag?.status ?? '').trim().toLowerCase();
-    const hasBoardingSignals = Boolean(activeTag?.boarding_confirmed_at || activeTag?.started_at);
     let baseMs = 2000;
-    if (statusRaw === 'matched' || statusRaw === 'in_progress' || hasBoardingSignals) {
+    if (statusRaw === 'matched' || statusRaw === 'in_progress') {
       baseMs = 2000;
     } else if (
       statusRaw === 'waiting' ||
@@ -10154,17 +10172,9 @@ function PassengerDashboard({
     ) {
       baseMs = 3500;
     }
-    const inActiveTrip =
-      statusRaw === 'matched' ||
-      statusRaw === 'in_progress' ||
-      hasBoardingSignals;
+    const inActiveTrip = statusRaw === 'matched' || statusRaw === 'in_progress';
     return resolvePassengerActiveTagPollMs(baseMs, passengerRealtimeHealth, { inActiveTrip });
-  }, [
-    activeTag?.status,
-    activeTag?.boarding_confirmed_at,
-    activeTag?.started_at,
-    passengerRealtimeHealth,
-  ]);
+  }, [activeTag?.status, passengerRealtimeHealth]);
 
   const shouldSkipPassengerPollingTick = useCallback(() => {
     const statusRaw = String(activeTag?.status ?? '').trim().toLowerCase();
@@ -10223,8 +10233,6 @@ function PassengerDashboard({
   }, [
     user?.id,
     activeTag?.status,
-    activeTag?.boarding_confirmed_at,
-    activeTag?.started_at,
     getPassengerPollIntervalMs,
     shouldSkipPassengerPollingTick,
     passengerRealtimeHealth,
@@ -13218,6 +13226,21 @@ function PassengerDashboard({
       String((activeTag as { destination_location?: unknown }).destination_location).trim()) ||
     '';
 
+  const passengerLiveMapRouteInfo = useMemo(
+    () => buildLiveMapRouteInfoFromTag(activeTag),
+    [
+      activeTag?.route_info,
+      activeTag?.pickup_distance_km,
+      activeTag?.distance_to_passenger_km,
+      activeTag?.pickup_eta_min,
+      activeTag?.time_to_passenger_min,
+      activeTag?.trip_distance_km,
+      activeTag?.distance_km,
+      activeTag?.trip_duration_min,
+      activeTag?.estimated_minutes,
+    ],
+  );
+
   // ═══════════════════════════════════════════════════════════════════════════
   // 🆕 SEARCHING PHASE - HARİTA + TEKLİF LİSTESİ (YENİ UI)
   // Üstte harita (tüm sürücüler) + Altta scrollable teklif listesi
@@ -13563,23 +13586,7 @@ function PassengerDashboard({
                   tagStartedAt={activeTag?.started_at ?? null}
                   price={activeTag?.final_price}
                   offeredPrice={activeTag?.offered_price}
-                  routeInfo={{
-                    ...(activeTag?.route_info || {}),
-                    pickup_distance_km:
-                      activeTag?.pickup_distance_km ??
-                      activeTag?.distance_to_passenger_km ??
-                      null,
-                    pickup_eta_min:
-                      activeTag?.pickup_eta_min ?? activeTag?.time_to_passenger_min ?? null,
-                    meeting_distance_km:
-                      activeTag?.pickup_distance_km ??
-                      activeTag?.distance_to_passenger_km ??
-                      null,
-                    meeting_duration_min:
-                      activeTag?.pickup_eta_min ?? activeTag?.time_to_passenger_min ?? null,
-                    trip_distance_km: activeTag?.trip_distance_km ?? activeTag?.distance_km ?? null,
-                    trip_duration_min: activeTag?.trip_duration_min ?? activeTag?.estimated_minutes ?? null,
-                  }}
+                  routeInfo={passengerLiveMapRouteInfo}
                   onCall={async (type) => {
                     await startTripCallAsPassenger(type);
                   }}
@@ -20672,6 +20679,21 @@ function DriverDashboard({
     }
   }, [requests.length, requestsIdsKey, activeTag?.id, activeTag?.status]);
 
+  const driverLiveMapRouteInfo = useMemo(
+    () => buildLiveMapRouteInfoFromTag(activeTag),
+    [
+      activeTag?.route_info,
+      activeTag?.pickup_distance_km,
+      activeTag?.distance_to_passenger_km,
+      activeTag?.pickup_eta_min,
+      activeTag?.time_to_passenger_min,
+      activeTag?.trip_distance_km,
+      activeTag?.distance_km,
+      activeTag?.trip_duration_min,
+      activeTag?.estimated_minutes,
+    ],
+  );
+
   // 📋 KYC PENDING EKRANI - Başvuru inceleniyor
   if (kycStatus?.status === 'pending') {
     // Kalan süreyi hesapla (30 dakika)
@@ -21217,23 +21239,7 @@ function DriverDashboard({
             }}
             price={activeTag?.final_price}
             offeredPrice={activeTag?.offered_price}
-            routeInfo={{
-              ...(activeTag?.route_info || {}),
-              pickup_distance_km:
-                activeTag?.pickup_distance_km ??
-                activeTag?.distance_to_passenger_km ??
-                null,
-              pickup_eta_min:
-                activeTag?.pickup_eta_min ?? activeTag?.time_to_passenger_min ?? null,
-              meeting_distance_km:
-                activeTag?.pickup_distance_km ??
-                activeTag?.distance_to_passenger_km ??
-                null,
-              meeting_duration_min:
-                activeTag?.pickup_eta_min ?? activeTag?.time_to_passenger_min ?? null,
-              trip_distance_km: activeTag?.trip_distance_km ?? activeTag?.distance_km ?? null,
-              trip_duration_min: activeTag?.trip_duration_min ?? activeTag?.estimated_minutes ?? null,
-            }}
+            routeInfo={driverLiveMapRouteInfo}
             onNavigationModeChange={setDriverLiveMapNavigationMode}
             otherUserDetails={otherUserDetails || undefined}
             onShowQRModal={() => setShowQRModal(true)}
