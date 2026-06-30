@@ -12,9 +12,10 @@ import {
   type TrustActiveSessionRow,
 } from '../lib/trustApi';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
-import { playVideoTrustCallSoundRepeatTick } from '../utils/sound';
+import { playVideoTrustCallSoundRepeatTick, stopVideoTrustCachedPlayback } from '../utils/sound';
 import {
   startRepeatingAlertSound,
+  stopAllRepeatingAlertSounds,
   stopRepeatingAlertSound,
 } from '../lib/repeatingAlertSoundController';
 import { offerSoundController } from '../lib/offerSoundController';
@@ -126,6 +127,8 @@ const TRUST_VIDEO_ACTIVE_POLL_MS = 2600;
 
 /** Gelen pending güven isteği: socket kaçsa / tag geç hydrate olsa bile GET /trust/active ile toparla */
 const INCOMING_PENDING_TRUST_RECOVERY_INTERVAL_MS = 5200;
+const TRUST_TERMINAL_COOLDOWN_MS = Platform.OS === 'ios' ? 220 : 120;
+const TRUST_GUVEN_PRESS_DEBOUNCE_MS = 3000;
 
 const ACTIVE_TAG_INCOMING_RECOVERY_DELAY_MS = 420;
 
@@ -233,6 +236,9 @@ export function useTrustSessionController({
   const [trustRequestModal, setTrustRequestModal] = useState<TrustRequestModalState>(null);
   const [trustModalLoading, setTrustModalLoading] = useState(false);
   const [trustOutgoingPending, setTrustOutgoingPending] = useState(false);
+  const [trustGuvenCooldownUntil, setTrustGuvenCooldownUntil] = useState(0);
+  const [trustGuvenPressLockUntil, setTrustGuvenPressLockUntil] = useState(0);
+  const lastTrustAlertKeyRef = useRef<string | null>(null);
   const [trustVideoSession, setTrustVideoSession] = useState<TrustVideoSessionState>(null);
 
   const trustOutgoingPendingRef = useRef(false);
@@ -270,9 +276,16 @@ export function useTrustSessionController({
     if (!trustId) return;
     offerSoundController.stopAllOfferLoops('trust_modal');
     const key = `video_trust:${trustId}`;
+    if (lastTrustAlertKeyRef.current && lastTrustAlertKeyRef.current !== key) {
+      stopRepeatingAlertSound(lastTrustAlertKeyRef.current, 'trust_modal_key_change');
+    }
+    lastTrustAlertKeyRef.current = key;
     startRepeatingAlertSound(key, () => playVideoTrustCallSoundRepeatTick(), { intervalMs: 2000 });
     return () => {
       stopRepeatingAlertSound(key, 'trust_modal_cleanup');
+      if (lastTrustAlertKeyRef.current === key) {
+        lastTrustAlertKeyRef.current = null;
+      }
     };
   }, [trustRequestModal?.trustId]);
 
@@ -282,6 +295,82 @@ export function useTrustSessionController({
     trustTagRetryTimerIdsRef.current.forEach((timerId) => clearTimeout(timerId));
     trustTagRetryTimerIdsRef.current = [];
   }, []);
+
+  const stopTrustRepeatAlerts = useCallback((trustId?: string | null, reason?: string) => {
+    const tid =
+      normTrustId(trustId) ||
+      normTrustId(trustRequestModalRef.current?.trustId) ||
+      normTrustId(outboundTrustIdRef.current);
+    if (tid) {
+      const key = `video_trust:${tid}`;
+      stopRepeatingAlertSound(key, reason ?? 'trust_repeat_stop');
+      if (lastTrustAlertKeyRef.current === key) {
+        lastTrustAlertKeyRef.current = null;
+      }
+      try {
+        perfLog('TRUST_REPEAT_STOP', JSON.stringify({ key, reason: reason ?? null }));
+      } catch {
+        /* noop */
+      }
+    }
+    stopAllRepeatingAlertSounds('trust_terminal');
+    void stopVideoTrustCachedPlayback();
+  }, []);
+
+  const startTrustTerminalCooldown = useCallback(() => {
+    const until = Date.now() + TRUST_TERMINAL_COOLDOWN_MS;
+    setTrustGuvenCooldownUntil(until);
+    const timerId = setTimeout(() => {
+      setTrustGuvenCooldownUntil((prev) => (prev === until ? 0 : prev));
+    }, TRUST_TERMINAL_COOLDOWN_MS + 32);
+    trustTagRetryTimerIdsRef.current.push(timerId);
+  }, []);
+
+  const finalizeTrustTerminal = useCallback(
+    (source: string, opts?: { trustId?: string | null; skipCooldown?: boolean }) => {
+      stopTrustRepeatAlerts(opts?.trustId ?? null, source);
+      clearTrustTagRetryTimers();
+      outboundTrustIdRef.current = null;
+      outgoingTrustTagIdRef.current = null;
+      sendInFlightRef.current = false;
+      deferredTrustRequestRef.current = null;
+      lastAppliedTrustVideoKeyRef.current = '';
+      setTrustOutgoingPending(false);
+      setTrustRequestModal(null);
+      setTrustModalLoading(false);
+      if (!opts?.skipCooldown) {
+        startTrustTerminalCooldown();
+      }
+      try {
+        perfLog(
+          'TRUST_FREEZE_GUARD_CLEAR',
+          JSON.stringify({
+            source,
+            trust_id: normTrustId(opts?.trustId) || null,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+    },
+    [clearTrustTagRetryTimers, startTrustTerminalCooldown, stopTrustRepeatAlerts],
+  );
+
+  const prepTrustNewRequest = useCallback(() => {
+    stopTrustRepeatAlerts(null, 'before_new_request');
+    clearTrustTagRetryTimers();
+    outboundTrustIdRef.current = null;
+    sendInFlightRef.current = false;
+    deferredTrustRequestRef.current = null;
+    setTrustRequestModal(null);
+    setTrustModalLoading(false);
+    setTrustOutgoingPending(false);
+    try {
+      perfLog('TRUST_SECOND_REQUEST_GUARD', JSON.stringify({ action: 'prep_clear' }));
+    } catch {
+      /* noop */
+    }
+  }, [clearTrustTagRetryTimers, stopTrustRepeatAlerts]);
 
   const scheduleTrustTagRetry = useCallback((fn: () => void, attempt: number) => {
     const delay = TRUST_TAG_RETRY_BASE_MS + Math.min(attempt * 45, 420);
@@ -342,21 +431,9 @@ export function useTrustSessionController({
   }, [activeTag?.id, activeTag, role]);
 
   const clearAllTrustState = useCallback(() => {
-    const tid = trustRequestModalRef.current?.trustId?.trim();
-    if (tid) {
-      stopRepeatingAlertSound(`video_trust:${tid}`, 'trust_clear_all');
-    }
-    clearTrustTagRetryTimers();
-    outboundTrustIdRef.current = null;
-    outgoingTrustTagIdRef.current = null;
-    sendInFlightRef.current = false;
-    deferredTrustRequestRef.current = null;
-    lastAppliedTrustVideoKeyRef.current = '';
-    setTrustOutgoingPending(false);
-    setTrustRequestModal(null);
-    setTrustModalLoading(false);
+    finalizeTrustTerminal('clear_all_trust_state', { skipCooldown: true });
     setTrustVideoSession(null);
-  }, [clearTrustTagRetryTimers]);
+  }, [finalizeTrustTerminal]);
 
   const openTrustVideoSession = useCallback(
     (payload: NonNullable<TrustVideoSessionState>, source: string): boolean => {
@@ -458,8 +535,16 @@ export function useTrustSessionController({
     }
   }, [boardingCommsClosed]);
 
+  const trustGuvenCooldownActive = trustGuvenCooldownUntil > Date.now();
+  const trustGuvenPressLocked = trustGuvenPressLockUntil > Date.now();
+
   const trustGuvenButtonDisabled =
-    trustOutgoingPending || trustModalLoading || !!trustVideoSession || !!trustRequestModal;
+    trustOutgoingPending ||
+    trustModalLoading ||
+    !!trustVideoSession ||
+    !!trustRequestModal ||
+    trustGuvenCooldownActive ||
+    trustGuvenPressLocked;
 
   const trustGuvenBlockReason = useMemo((): TrustGuvenBlockReason | null => {
     if (boardingCommsClosed) return 'boarding_confirmed';
@@ -467,6 +552,7 @@ export function useTrustSessionController({
     if (trustRequestModal) return 'incoming_modal_open';
     if (trustModalLoading) return 'trust_modal_loading';
     if (trustOutgoingPending) return 'trust_pending';
+    if (trustGuvenCooldownActive || trustGuvenPressLocked) return 'trust_pending';
     if (showCallScreen || incomingCallBlocked) return 'call_screen_active';
     const uid = userId?.trim();
     const tagId = activeTag?.id ? String(activeTag.id) : '';
@@ -478,6 +564,8 @@ export function useTrustSessionController({
     trustRequestModal,
     trustModalLoading,
     trustOutgoingPending,
+    trustGuvenCooldownActive,
+    trustGuvenPressLocked,
     showCallScreen,
     incomingCallBlocked,
     userId,
@@ -1046,8 +1134,7 @@ export function useTrustSessionController({
         }
         if (st === 'pending') return;
 
-        outboundTrustIdRef.current = null;
-        setTrustOutgoingPending(false);
+        const terminalTrustId = String(s.id ?? outboundTrustIdRef.current ?? '').trim();
         console.log(
           '[TRUST]',
           JSON.stringify({
@@ -1070,6 +1157,9 @@ export function useTrustSessionController({
             }, 150);
           }
         }
+        finalizeTrustTerminal('requester_outgoing_poll_terminal', {
+          trustId: terminalTrustId || null,
+        });
       } catch {
         /* noop — sonraki tick tekrar dener */
       }
@@ -1082,7 +1172,7 @@ export function useTrustSessionController({
       cancelled = true;
       clearInterval(id);
     };
-  }, [trustOutgoingPending, activeTag?.id, userId, role, applyAcceptedTrustVideoFromRow]);
+  }, [trustOutgoingPending, activeTag?.id, userId, role, applyAcceptedTrustVideoFromRow, finalizeTrustTerminal]);
 
   useEffect(() => {
     if (!trustOutgoingPending) return;
@@ -1207,6 +1297,22 @@ export function useTrustSessionController({
       appAlert('Hata', 'Yolculuk bilgisi bulunamadı');
       return;
     }
+    if (Date.now() < trustGuvenPressLockUntil) {
+      try {
+        perfLog('TRUST_SECOND_REQUEST_GUARD', JSON.stringify({ action: 'press_debounce_skip' }));
+      } catch {
+        /* noop */
+      }
+      return;
+    }
+    if (trustGuvenCooldownUntil > Date.now()) {
+      try {
+        perfLog('TRUST_SECOND_REQUEST_GUARD', JSON.stringify({ action: 'terminal_cooldown_skip' }));
+      } catch {
+        /* noop */
+      }
+      return;
+    }
     if (sendInFlightRef.current || trustOutgoingPending) {
       try {
         perfLog(
@@ -1236,6 +1342,12 @@ export function useTrustSessionController({
       appAlert('Uyarı', 'Güven isteği zaten sürüyor.');
       return;
     }
+    prepTrustNewRequest();
+    const pressLockUntil = Date.now() + TRUST_GUVEN_PRESS_DEBOUNCE_MS;
+    setTrustGuvenPressLockUntil(pressLockUntil);
+    setTimeout(() => {
+      setTrustGuvenPressLockUntil((prev) => (prev === pressLockUntil ? 0 : prev));
+    }, TRUST_GUVEN_PRESS_DEBOUNCE_MS + 32);
     sendInFlightRef.current = true;
     setTrustOutgoingPending(true);
     outgoingTrustTagIdRef.current = tagId;
@@ -1310,11 +1422,15 @@ export function useTrustSessionController({
     showCallScreen,
     trustRequestModal,
     boardingCommsClosed,
+    prepTrustNewRequest,
+    trustGuvenCooldownUntil,
+    trustGuvenPressLockUntil,
   ]);
 
   const respondTrust = useCallback(
     async (accept: boolean) => {
       if (!trustRequestModal?.trustId) return;
+      const trustId = trustRequestModal.trustId;
       const tagIdForRecovery = String(
         trustRequestModal.tagId ?? activeTagIdRef.current ?? '',
       ).trim();
@@ -1322,15 +1438,21 @@ export function useTrustSessionController({
         trustCallPerf('TRUST_CALL_ACCEPT_PRESS', {
           role: roleRef.current,
           tag_id: tagIdForRecovery,
-          request_id: trustRequestModal.trustId,
+          request_id: trustId,
         });
+      } else {
+        stopTrustRepeatAlerts(trustId, 'respond_reject_press');
       }
       setTrustModalLoading(true);
-      const res = await postTrustRespond(trustRequestModal.trustId, accept);
+      const res = await postTrustRespond(trustId, accept);
       setTrustModalLoading(false);
       if (!res?.success) {
+        finalizeTrustTerminal('respond_error', { trustId });
         appAlert('Hata', String(res?.error ?? 'Yanıt gönderilemedi'));
-        setTrustRequestModal(null);
+        return;
+      }
+      if (!accept) {
+        finalizeTrustTerminal('respond_reject', { trustId });
         return;
       }
       setTrustRequestModal(null);
@@ -1354,7 +1476,7 @@ export function useTrustSessionController({
       };
       void bootstrapAfterAccept();
     },
-    [trustRequestModal, recoverTrustVideoByTagId],
+    [trustRequestModal, recoverTrustVideoByTagId, finalizeTrustTerminal, stopTrustRepeatAlerts],
   );
 
   const processTrustSocketRequestInternal = useCallback(
@@ -1742,8 +1864,6 @@ export function useTrustSessionController({
         if (reason === 'rejected') {
           if (!trustIdApplies) {
             if (tagOk && trustOutgoingPendingRef.current) {
-              outboundTrustIdRef.current = null;
-              setTrustOutgoingPending(false);
               appAlert('Güven isteği', 'Karşı taraf şu an müsait değil.', [{ text: 'Tamam' }], {
                 variant: 'info',
                 autoDismissMs: 2600,
@@ -1754,6 +1874,9 @@ export function useTrustSessionController({
                   openChatRef.current?.();
                 }, 150);
               }
+              finalizeTrustTerminal('trust_session_ended_rejected_outgoing', {
+                trustId: endTrustId,
+              });
               console.log(
                 '[TRUST]',
                 JSON.stringify({
@@ -1798,7 +1921,7 @@ export function useTrustSessionController({
             }, 150);
           }
 
-          clearAllTrustState();
+          finalizeTrustTerminal('trust_session_ended_rejected', { trustId: endTrustId });
           return;
         }
 
@@ -1825,6 +1948,7 @@ export function useTrustSessionController({
       peerDisplayNameForPeerId,
       userId,
       clearAllTrustState,
+      finalizeTrustTerminal,
       role,
       processTrustSocketRequestInternal,
       processTrustSessionReadyInternal,

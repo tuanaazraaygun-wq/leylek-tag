@@ -18,6 +18,7 @@ type LoopEntry = {
   playFn: () => void | Promise<void>;
   intervalMs: number;
   tickInFlight: boolean;
+  stopped: boolean;
 };
 
 class RepeatingAlertSoundController {
@@ -40,23 +41,32 @@ class RepeatingAlertSoundController {
 
   private runTick(key: string, entry: LoopEntry): void {
     if (AppState.currentState !== 'active') return;
-    if (entry.tickInFlight) return;
+    if (entry.stopped || entry.tickInFlight) return;
 
     entry.tickInFlight = true;
+    const gen = entry.generation;
     void Promise.resolve(entry.playFn())
       .catch(() => {})
       .finally(() => {
         const cur = this.loops.get(key);
-        if (cur && cur.generation === entry.generation) {
-          cur.tickInFlight = false;
+        if (!cur || cur.generation !== gen || cur.stopped) {
+          return;
         }
+        cur.tickInFlight = false;
       });
+  }
+
+  private invalidateEntry(entry: LoopEntry): void {
+    entry.stopped = true;
+    entry.generation = ++this.nextGeneration;
+    entry.tickInFlight = false;
   }
 
   private clearEntry(key: string): void {
     const entry = this.loops.get(key);
     if (!entry) return;
     clearInterval(entry.timerId);
+    this.invalidateEntry(entry);
     this.loops.delete(key);
   }
 
@@ -77,6 +87,11 @@ class RepeatingAlertSoundController {
 
     this.ensureInstalled();
 
+    const existing = this.loops.get(id);
+    if (existing && !existing.stopped && !existing.tickInFlight) {
+      return;
+    }
+
     this.clearEntry(id);
 
     const intervalMs = Math.max(500, options?.intervalMs ?? DEFAULT_INTERVAL_MS);
@@ -86,13 +101,14 @@ class RepeatingAlertSoundController {
     const entry: LoopEntry = {
       timerId: setInterval(() => {
         const cur = this.loops.get(id);
-        if (!cur || cur.generation !== generation) return;
+        if (!cur || cur.generation !== generation || cur.stopped) return;
         this.runTick(id, cur);
       }, intervalMs),
       generation,
       playFn,
       intervalMs,
       tickInFlight: false,
+      stopped: false,
     };
 
     this.loops.set(id, entry);
@@ -113,7 +129,9 @@ class RepeatingAlertSoundController {
   }
 
   isRepeatingAlertActive(key: string): boolean {
-    return this.loops.has(String(key || '').trim());
+    const id = String(key || '').trim();
+    const entry = this.loops.get(id);
+    return !!entry && !entry.stopped;
   }
 
   destroyRepeatingAlertSoundController(): void {

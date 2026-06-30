@@ -999,6 +999,19 @@ async function playVideoTrustCallToneCore(): Promise<void> {
   }
 }
 
+/** Trust modal terminal — stop cached repeat playback without unloading asset. */
+export async function stopVideoTrustCachedPlayback(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const sound = videoTrustCachedSound;
+  if (!sound) return;
+  try {
+    await sound.stopAsync();
+    await sound.setPositionAsync(0);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Karşı taraf Güven Al isteği görünür olduğunda — match/QM/TDM/error ailesinden ayrı. */
 export async function playVideoTrustCallSound(options?: PlayVideoTrustCallSoundOptions): Promise<void> {
   if (Platform.OS === 'web') return;

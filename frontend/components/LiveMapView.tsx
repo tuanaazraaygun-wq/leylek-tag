@@ -2820,7 +2820,8 @@ function LiveMapView({
   const mapMarkerChrome: MapMarkerChromeTone = isScopeLight ? 'light' : 'dark';
   const journeyTrustUiEnabled = !EMERGENCY_TRUST_JOURNEY_UI_DISABLED;
   const trustRequestAction = journeyTrustUiEnabled ? onTrustRequest : undefined;
-  const trustGuvenUiBlocked = !!trustRequestBlockReason || !!trustRequestPending;
+  const trustGuvenUiBlocked =
+    !!trustRequestBlockReason || !!trustRequestPending || !!trustRequestDisabled;
 
   const chatBadgePulse = useRef(new Animated.Value(1)).current;
   const prevChatUnreadRef = useRef(0);
@@ -3112,10 +3113,10 @@ function LiveMapView({
     setMapManualRefreshVisible(false);
   }, [mapEngineReady]);
 
-  /** Güven AL — kalkan, yumuşak nabız (sürücü + yolcu) */
+  /** Güven AL — kalkan, yumuşak nabız (sürücü + yolcu); light theme skips extra animation load. */
   const guvenShieldPulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (!trustRequestAction) return;
+    if (!trustRequestAction || isScopeLight) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(guvenShieldPulse, {
@@ -3137,7 +3138,7 @@ function LiveMapView({
       loop.stop();
       guvenShieldPulse.setValue(1);
     };
-  }, [trustRequestAction, guvenShieldPulse]);
+  }, [trustRequestAction, isScopeLight, guvenShieldPulse]);
   
   // YEŞİL ROTA: Şoför → Yolcu (buluşma) — koordinatlar yalnız OSRM polyline / düz çizgi
   const [meetingRouteCoordinates, setMeetingRouteCoordinates] = useState<
@@ -4780,10 +4781,11 @@ function LiveMapView({
   
   /** QR satırı yalnız klasik trip action bar’da; immersive/modern sürücü UI’da görünmez. */
   const showClassicTripQrPulse = useMemo(() => {
+    if (isScopeLight) return false;
     if (isDriver && navigationMode) return false;
     if (isDriver && MapView && !navigationMode && modernLeylekOfferUi) return false;
     return true;
-  }, [isDriver, navigationMode, modernLeylekOfferUi]);
+  }, [isDriver, isScopeLight, navigationMode, modernLeylekOfferUi]);
 
   useEffect(() => {
     if (!showClassicTripQrPulse) {
@@ -7235,16 +7237,6 @@ function LiveMapView({
                     zIndex={8}
                   />
                 ) : null}
-                {isScopeLight && driverNavRouteLayers.bright.length >= 2 ? (
-                  <Polyline
-                    coordinates={driverNavRouteLayers.bright}
-                    strokeWidth={22}
-                    strokeColor={NAV_ROUTE_STROKE_LIGHT_HALO}
-                    lineCap="round"
-                    lineJoin="round"
-                    zIndex={8}
-                  />
-                ) : null}
                 {driverNavRouteLayers.bright.length >= 2 ? (
                   <Polyline
                     coordinates={driverNavRouteLayers.bright}
@@ -7274,16 +7266,6 @@ function LiveMapView({
             Array.isArray(meetingRouteCoordinates) &&
             meetingRouteCoordinates.length > 1 && (
               <>
-                {isScopeLight ? (
-                  <Polyline
-                    coordinates={meetingRouteCoordinates}
-                    strokeWidth={15}
-                    strokeColor={NAV_ROUTE_STROKE_LIGHT_HALO}
-                    lineCap="round"
-                    lineJoin="round"
-                    zIndex={9}
-                  />
-                ) : null}
                 <Polyline
                   coordinates={meetingRouteCoordinates}
                   strokeWidth={11}
@@ -7335,16 +7317,6 @@ function LiveMapView({
                     coordinates={driverNavRouteLayers.dim}
                     strokeWidth={6}
                     strokeColor={destNavStroke.dim}
-                    lineCap="round"
-                    lineJoin="round"
-                    zIndex={8}
-                  />
-                ) : null}
-                {isScopeLight && driverNavRouteLayers.bright.length >= 2 ? (
-                  <Polyline
-                    coordinates={driverNavRouteLayers.bright}
-                    strokeWidth={22}
-                    strokeColor={NAV_ROUTE_STROKE_LIGHT_HALO}
                     lineCap="round"
                     lineJoin="round"
                     zIndex={8}
@@ -7914,7 +7886,7 @@ function LiveMapView({
                             jLt?.paxBottomGuvenBtn,
                             trustGuvenUiBlocked ? styles.mapCallFabCircleDisabled : null,
                           ]}
-                          disabled={!!trustRequestPending}
+                          disabled={trustGuvenUiBlocked}
                           onPress={() => {
                             logPax('onTrustRequest', trustRequestAction);
                             handleMatchedTrustPress();
@@ -8126,7 +8098,7 @@ function LiveMapView({
                             jLt?.drvBottomGuvenBtn,
                             trustGuvenUiBlocked ? styles.mapCallFabCircleDisabled : null,
                           ]}
-                          disabled={!!trustRequestPending}
+                          disabled={trustGuvenUiBlocked}
                           onPress={() => {
                             logPax('onTrustRequest', trustRequestAction);
                             handleMatchedTrustPress();
@@ -8629,7 +8601,7 @@ function LiveMapView({
                       styles.navImmersiveGuvenBtn,
                       trustGuvenUiBlocked ? styles.mapCallFabCircleDisabled : null,
                     ]}
-                    disabled={!!trustRequestPending}
+                    disabled={trustGuvenUiBlocked}
                     onPress={() => {
                       handleMatchedTrustPress();
                     }}
