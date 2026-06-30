@@ -18719,6 +18719,28 @@ function DriverDashboard({
     }
   };
 
+  const startTripCallAsDriverRef = useRef(startTripCallAsDriver);
+  startTripCallAsDriverRef.current = startTripCallAsDriver;
+
+  const handleDriverLiveMapCall = useCallback((type: 'audio' | 'video') => {
+    void startTripCallAsDriverRef.current(type);
+  }, []);
+
+  const handleDriverLiveMapTrustRequest = useCallback(() => {
+    void (async () => {
+      await awaitSocketRegisterBeforeCriticalAction(
+        driverEnsureSocketRegistered,
+        'trust_request',
+      );
+      void sendDriverTrustRequest();
+    })();
+  }, [driverEnsureSocketRegistered, sendDriverTrustRequest]);
+
+  const handleDriverOpenTrustedHub = useCallback(() => {
+    void playTapSound();
+    router.push('/trusted-network?role=driver' as never);
+  }, [router]);
+
   useEffect(() => {
     if (!user?.id || !driverIncomingCallData?.callId || !driverIncomingCallData.channelName) return;
     if (trustVideoSession) return;
@@ -21659,27 +21681,14 @@ function DriverDashboard({
             otherUserDetails={otherUserDetails || undefined}
             onShowQRModal={() => setShowQRModal(true)}
             onShowBoardingQRModal={() => setDriverBoardingQrModalVisible(true)}
-            onCall={async (type) => {
-              await startTripCallAsDriver(type);
-            }}
+            onCall={handleDriverLiveMapCall}
             voiceCallPending={calling}
-            onTrustRequest={() => {
-              void (async () => {
-                await awaitSocketRegisterBeforeCriticalAction(
-                  driverEnsureSocketRegistered,
-                  'trust_request',
-                );
-                void sendDriverTrustRequest();
-              })();
-            }}
+            onTrustRequest={handleDriverLiveMapTrustRequest}
             trustRequestPending={trustOutgoingPending}
             trustRequestDisabled={driverTrustGuvenButtonDisabled}
             trustRequestBlockReason={driverTrustGuvenBlockReason}
             trustRequestLabel="Yolcudan Güven Al"
-            onOpenTrustedHub={() => {
-              void playTapSound();
-              router.push('/trusted-network?role=driver' as never);
-            }}
+            onOpenTrustedHub={handleDriverOpenTrustedHub}
             trustedInviteRefreshNonce={driverTrustedInviteRefreshNonce}
             onChat={openDriverMatchedChat}
             chatUnreadCount={driverChatUnread}

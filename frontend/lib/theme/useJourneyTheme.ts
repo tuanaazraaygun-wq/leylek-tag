@@ -225,12 +225,12 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
     paxBottomDeckShell: {
       backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
-      borderTopColor: tokens.borderColors.cardTopCyan,
+      borderTopColor: tokens.border.default,
     },
     drvBottomDeckShell: {
       backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
-      borderTopColor: tokens.borderColors.cardTopCyan,
+      borderTopColor: tokens.border.default,
     },
     paxBottomQrBtnBoarding: {
       backgroundColor: tokens.accent.primary,
@@ -362,7 +362,7 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
     driverNavChipLabelText: { color: tokens.text.inverse, fontWeight: '800' },
     trustedAddChipText: { color: tokens.accent.primary },
     trustedAddChipMutedText: { color: tokens.text.muted },
-    dangerBtnText: { color: tokens.status.error },
+    dangerBtnText: { color: 'rgba(185, 28, 28, 0.92)', fontWeight: '700' },
     qrPrimaryBtnText: { color: tokens.text.inverse, fontWeight: '800' },
     paxBottomCallLabel: { color: tokens.text.primary },
     paxBottomChatBtnText: { color: tokens.text.primary },
@@ -409,17 +409,18 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
 }
 
 function buildJourneyUi(tokens: LhThemeTokens): JourneyUiColors {
+  const inkPrimary = 'rgba(15, 23, 42, 0.94)';
   return {
     accent: tokens.accent.primary,
     textMuted: tokens.text.muted,
-    textSoft: tokens.text.primary,
+    textSoft: inkPrimary,
     activity: tokens.accent.primary,
     successIcon: tokens.accent.primary,
     errorIcon: tokens.status.error,
-    ctaIcon: tokens.text.primary,
-    ctaIconLight: tokens.text.primary,
+    ctaIcon: inkPrimary,
+    ctaIconLight: inkPrimary,
     ctaIconFill: tokens.text.inverse,
-    matchedCommIcon: tokens.text.primary,
+    matchedCommIcon: inkPrimary,
     matchedNavIcon: tokens.text.inverse,
     matchedQrIcon: '#FFFFFF',
     closeIcon: tokens.text.primary,
