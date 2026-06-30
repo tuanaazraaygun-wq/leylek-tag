@@ -3,7 +3,7 @@
  * index.tsx bu modülü import eder; dosya yoksa EAS bundle patlıyordu.
  */
 import { Platform, AppState } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import {
   DEFAULT_DRIVER_OFFER_SOUND,
   DEFAULT_DRIVER_OFFER_VOLUME,
@@ -39,6 +39,39 @@ const SOUND_URLS = {
 } as const;
 
 const MATCH_CHIME_VOLUME = 0.46;
+
+const IOS_CRITICAL_ALERT_VOLUME = 0.95;
+const IOS_CALL_INCOMING_VOLUME = 1.0;
+const IOS_OFFER_ALERT_VOLUME_FLOOR = 0.95;
+
+const VIDEO_TRUST_CALL_VOLUME_BASE = 0.44;
+const FORCE_END_ALERT_VOLUME_BASE = 0.4;
+
+function iosAudioModePatch(): {
+  interruptionModeIOS?: typeof InterruptionModeIOS.DuckOthers;
+} {
+  if (Platform.OS !== 'ios') return {};
+  return { interruptionModeIOS: InterruptionModeIOS.DuckOthers };
+}
+
+function androidAudioModePatch(): {
+  interruptionModeAndroid: typeof InterruptionModeAndroid.DuckOthers;
+} {
+  return { interruptionModeAndroid: InterruptionModeAndroid.DuckOthers };
+}
+
+function resolveIosOfferAlertVolume(volume: number): number {
+  if (Platform.OS !== 'ios') return volume;
+  return Math.max(volume, IOS_OFFER_ALERT_VOLUME_FLOOR);
+}
+
+function resolveVideoTrustCallVolume(): number {
+  return Platform.OS === 'ios' ? IOS_CRITICAL_ALERT_VOLUME : VIDEO_TRUST_CALL_VOLUME_BASE;
+}
+
+function resolveForceEndAlertVolume(): number {
+  return Platform.OS === 'ios' ? IOS_CRITICAL_ALERT_VOLUME : FORCE_END_ALERT_VOLUME_BASE;
+}
 
 const DRIVER_OFFER_SOUND_SOURCES = {
   classic: require('../assets/sounds/driver-offer-classic.wav'),
@@ -76,7 +109,8 @@ export async function loadSounds(): Promise<void> {
       staysActiveInBackground: false,
       shouldDuckAndroid: true,
       playThroughEarpieceAndroid: false,
-      interruptionModeAndroid: 1,
+      ...iosAudioModePatch(),
+      ...androidAudioModePatch(),
     });
   } catch {
     /* ignore */
@@ -84,7 +118,7 @@ export async function loadSounds(): Promise<void> {
 }
 
 /** Offer alert bursts — louder, no Android ducking (restored by loadSounds on UI tones). */
-async function loadOfferAlertAudioMode(): Promise<void> {
+export async function loadOfferAlertAudioMode(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
     await Audio.setAudioModeAsync({
@@ -93,7 +127,8 @@ async function loadOfferAlertAudioMode(): Promise<void> {
       staysActiveInBackground: false,
       shouldDuckAndroid: false,
       playThroughEarpieceAndroid: false,
-      interruptionModeAndroid: 1,
+      ...iosAudioModePatch(),
+      ...androidAudioModePatch(),
     });
   } catch {
     /* ignore */
@@ -306,7 +341,9 @@ async function playDriverOfferToneOnce(
 export async function playDriverNewOfferLuxuryTone(): Promise<void> {
   const userId = await resolveDriverOfferUserId();
   const kind = userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND;
-  const volume = userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME;
+  const volume = resolveIosOfferAlertVolume(
+    userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME,
+  );
   await playDriverOfferToneOnce(kind, volume, { useCache: true });
 }
 
@@ -325,9 +362,10 @@ export async function previewDriverOfferSound(options?: PreviewDriverOfferSoundO
   const kind =
     options?.type ??
     (userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND);
-  const volume =
+  const volume = resolveIosOfferAlertVolume(
     options?.volume ??
-    (userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME);
+      (userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME),
+  );
   await playDriverOfferToneOnce(kind, volume, { bypassCooldown: true, useCache: false });
 }
 
@@ -377,7 +415,9 @@ export async function playDriverOfferAlertBurst(playMs = 2000): Promise<void> {
     await stopOfferAlertBurstPlayback();
     const userId = await resolveDriverOfferUserId();
     const kind = userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND;
-    const volume = userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME;
+    const volume = resolveIosOfferAlertVolume(
+      userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME,
+    );
     const sound = await ensureDriverOfferSoundLoaded(kind);
     if (!sound) return;
     await sound.setVolumeAsync(volume);
@@ -410,12 +450,13 @@ async function playEphemeralOfferAlertBurst(
 ): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
+  const alertVolume = resolveIosOfferAlertVolume(volume);
   try {
     await loadOfferAlertAudioMode();
     await stopOfferAlertBurstPlayback();
     const { sound } = await Audio.Sound.createAsync(source, {
       shouldPlay: false,
-      volume,
+      volume: alertVolume,
       isLooping: false,
     });
     if (slot === 'qm') {
@@ -795,6 +836,11 @@ export const CALL_SONIC_VOLUMES = {
   ended: 0.3,
 } as const;
 
+/** iOS incoming ring — full device volume; Android keeps CALL_SONIC_VOLUMES.incoming. */
+export function resolveCallIncomingLoopVolume(): number {
+  return Platform.OS === 'ios' ? IOS_CALL_INCOMING_VOLUME : CALL_SONIC_VOLUMES.incoming;
+}
+
 /**
  * Placeholder sources — map to existing bundle WAV until call-*.wav assets ship.
  * Swap requires in 5A-2 only; controller API stays stable.
@@ -904,8 +950,34 @@ export async function playChatInboundSound(options?: PlayChatInboundSoundOptions
 
 // ── Video Trust (Güven Al) invite — soft premium 2-stage (P0-D) ──
 
-const VIDEO_TRUST_CALL_VOLUME = 0.44;
 const VIDEO_TRUST_CALL_SOURCE = require('../assets/sounds/video-trust-call.wav');
+
+let videoTrustCachedSound: Audio.Sound | null = null;
+let videoTrustCachedLoadPromise: Promise<Audio.Sound | null> | null = null;
+
+async function ensureVideoTrustCachedSound(): Promise<Audio.Sound | null> {
+  if (Platform.OS === 'web') return null;
+  if (videoTrustCachedSound) return videoTrustCachedSound;
+  if (!videoTrustCachedLoadPromise) {
+    videoTrustCachedLoadPromise = (async (): Promise<Audio.Sound | null> => {
+      try {
+        await loadOfferAlertAudioMode();
+        const { sound } = await Audio.Sound.createAsync(VIDEO_TRUST_CALL_SOURCE, {
+          shouldPlay: false,
+          volume: resolveVideoTrustCallVolume(),
+          isLooping: false,
+        });
+        videoTrustCachedSound = sound;
+        return sound;
+      } catch (e) {
+        videoTrustCachedLoadPromise = null;
+        if (__DEV__) console.warn('ensureVideoTrustCachedSound', e);
+        return null;
+      }
+    })();
+  }
+  return videoTrustCachedLoadPromise;
+}
 
 export type PlayVideoTrustCallSoundOptions = {
   trustId?: string | null;
@@ -915,19 +987,13 @@ export type PlayVideoTrustCallSoundOptions = {
 
 async function playVideoTrustCallToneCore(): Promise<void> {
   try {
-    await loadSounds();
-    const { sound } = await Audio.Sound.createAsync(VIDEO_TRUST_CALL_SOURCE, {
-      shouldPlay: false,
-      volume: VIDEO_TRUST_CALL_VOLUME,
-      isLooping: false,
-    });
+    await loadOfferAlertAudioMode();
+    const sound = await ensureVideoTrustCachedSound();
+    if (!sound) return;
+    const volume = resolveVideoTrustCallVolume();
+    await sound.setVolumeAsync(volume);
     await sound.setPositionAsync(0);
     await sound.playAsync();
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (status.isLoaded && status.didJustFinish) {
-        sound.unloadAsync().catch(() => {});
-      }
-    });
   } catch (e) {
     if (__DEV__) console.warn('playVideoTrustCallToneCore', e);
   }
@@ -957,8 +1023,34 @@ export function resetVideoTrustCallSoundGate(): void {
 
 // ── Force-end counterparty alert — short amber warning (P0-D) ──
 
-const FORCE_END_ALERT_VOLUME = 0.4;
 const FORCE_END_ALERT_SOURCE = require('../assets/sounds/force-end-alert.wav');
+
+let forceEndCachedSound: Audio.Sound | null = null;
+let forceEndCachedLoadPromise: Promise<Audio.Sound | null> | null = null;
+
+async function ensureForceEndCachedSound(): Promise<Audio.Sound | null> {
+  if (Platform.OS === 'web') return null;
+  if (forceEndCachedSound) return forceEndCachedSound;
+  if (!forceEndCachedLoadPromise) {
+    forceEndCachedLoadPromise = (async (): Promise<Audio.Sound | null> => {
+      try {
+        await loadOfferAlertAudioMode();
+        const { sound } = await Audio.Sound.createAsync(FORCE_END_ALERT_SOURCE, {
+          shouldPlay: false,
+          volume: resolveForceEndAlertVolume(),
+          isLooping: false,
+        });
+        forceEndCachedSound = sound;
+        return sound;
+      } catch (e) {
+        forceEndCachedLoadPromise = null;
+        if (__DEV__) console.warn('ensureForceEndCachedSound', e);
+        return null;
+      }
+    })();
+  }
+  return forceEndCachedLoadPromise;
+}
 
 export type PlayForceEndAlertSoundOptions = {
   tagId?: string | null;
@@ -980,19 +1072,13 @@ export function parseForceEndTagFromPushData(data: unknown): string | null {
 
 async function playForceEndAlertToneCore(): Promise<void> {
   try {
-    await loadSounds();
-    const { sound } = await Audio.Sound.createAsync(FORCE_END_ALERT_SOURCE, {
-      shouldPlay: false,
-      volume: FORCE_END_ALERT_VOLUME,
-      isLooping: false,
-    });
+    await loadOfferAlertAudioMode();
+    const sound = await ensureForceEndCachedSound();
+    if (!sound) return;
+    const volume = resolveForceEndAlertVolume();
+    await sound.setVolumeAsync(volume);
     await sound.setPositionAsync(0);
     await sound.playAsync();
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (status.isLoaded && status.didJustFinish) {
-        sound.unloadAsync().catch(() => {});
-      }
-    });
   } catch (e) {
     if (__DEV__) console.warn('playForceEndAlertToneCore', e);
   }

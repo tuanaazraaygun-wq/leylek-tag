@@ -14,12 +14,22 @@ export type PaymentLegalDisclaimerProps = {
   accentColor?: string;
   /** Link to Katkı Payı ve IBAN Bilgilendirmesi */
   showDetailLink?: boolean;
+  /** Light-theme surface overrides (White mode payment modals). */
+  surfaceStyle?: import('react-native').ViewStyle;
+  headerLabelStyle?: import('react-native').TextStyle;
+  lineTextStyle?: import('react-native').TextStyle;
+  /** When true, body lines use primary text instead of muted. */
+  lightCaption?: boolean;
 };
 
 export function PaymentLegalDisclaimer({
   compact = false,
   accentColor = 'rgba(34, 211, 238, 0.88)',
   showDetailLink = false,
+  surfaceStyle,
+  headerLabelStyle,
+  lineTextStyle,
+  lightCaption = false,
 }: PaymentLegalDisclaimerProps) {
   const router = useRouter();
 
@@ -27,20 +37,28 @@ export function PaymentLegalDisclaimer({
     <GlassSurface
       variant="plain"
       borderRadius={LDS_RADIUS.md}
-      style={[styles.wrap, compact && styles.wrapCompact]}
+      style={[styles.wrap, compact && styles.wrapCompact, surfaceStyle]}
     >
       <View style={styles.headerRow}>
         <Ionicons name="shield-checkmark-outline" size={compact ? 14 : 16} color={accentColor} />
-        <PremiumText variant="caption" muted style={styles.headerLabel}>
+        <PremiumText
+          variant="caption"
+          muted={!lightCaption}
+          style={[styles.headerLabel, headerLabelStyle]}
+        >
           Katkı payı bilgilendirmesi
         </PremiumText>
       </View>
       {PAYMENT_LEGAL_DISCLAIMER_LINES.map((line) => (
         <View key={line} style={styles.lineRow}>
-          <PremiumText variant="caption" muted style={styles.bullet}>
+          <PremiumText variant="caption" muted={!lightCaption} style={styles.bullet}>
             •
           </PremiumText>
-          <PremiumText variant="caption" muted style={[styles.line, compact && styles.lineCompact]}>
+          <PremiumText
+            variant="caption"
+            muted={!lightCaption}
+            style={[styles.line, compact && styles.lineCompact, lineTextStyle]}
+          >
             {line}
           </PremiumText>
         </View>

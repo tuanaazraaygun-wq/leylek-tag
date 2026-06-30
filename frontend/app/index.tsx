@@ -202,6 +202,9 @@ import {
   BOARDING_DECLINES_BEFORE_BANNER_ONLY,
 } from '../lib/boardingProximity';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
+
+/** iOS: boarding proximity poll — lighter main-thread load on match screens. */
+const BOARDING_PROXIMITY_POLL_MS = Platform.OS === 'ios' ? 1200 : 600;
 import {
   persistAccessToken,
   clearSessionStorage,
@@ -9220,6 +9223,7 @@ function PassengerDashboard({
 
   useEffect(() => {
     if (showCallScreen) {
+      stopAllRepeatingAlertSounds('call_open');
       offerSoundController.pauseForCallSession();
       void preloadCallSonic();
     } else {
@@ -11077,7 +11081,7 @@ function PassengerDashboard({
         setPassengerBoardingGuidanceNearBanner(false);
       }
     };
-    const id = setInterval(tick, 600);
+    const id = setInterval(tick, BOARDING_PROXIMITY_POLL_MS);
     tick();
     return () => clearInterval(id);
   }, [
@@ -11146,7 +11150,7 @@ function PassengerDashboard({
         passengerBoardingProximityPromptConsumedRef.current = false;
       }
     };
-    const id = setInterval(tick, 600);
+    const id = setInterval(tick, BOARDING_PROXIMITY_POLL_MS);
     tick();
     return () => clearInterval(id);
   }, [
@@ -12605,6 +12609,25 @@ function PassengerDashboard({
     }
   };
 
+  const startTripCallAsPassengerRef = useRef(startTripCallAsPassenger);
+  startTripCallAsPassengerRef.current = startTripCallAsPassenger;
+
+  const handlePassengerLiveMapCall = useCallback((type: 'audio' | 'video') => {
+    void startTripCallAsPassengerRef.current(type);
+  }, []);
+
+  const handlePassengerLiveMapTrustRequest = useCallback(() => {
+    void (async () => {
+      await awaitSocketRegisterBeforeCriticalAction(ensureSocketRegistered, 'trust_request');
+      void sendPassengerTrustRequest();
+    })();
+  }, [ensureSocketRegistered, sendPassengerTrustRequest]);
+
+  const handlePassengerOpenTrustedHub = useCallback(() => {
+    playTapSound();
+    router.push('/trusted-network?role=passenger' as never);
+  }, [router]);
+
   const handleVoiceCall = () => {
     void startTripCallAsPassenger('audio');
   };
@@ -13960,27 +13983,14 @@ function PassengerDashboard({
                   price={activeTag?.final_price}
                   offeredPrice={activeTag?.offered_price}
                   routeInfo={passengerLiveMapRouteInfo}
-                  onCall={async (type) => {
-                    await startTripCallAsPassenger(type);
-                  }}
+                  onCall={handlePassengerLiveMapCall}
                   voiceCallPending={calling}
-                  onTrustRequest={() => {
-                    void (async () => {
-                      await awaitSocketRegisterBeforeCriticalAction(
-                        ensureSocketRegistered,
-                        'trust_request',
-                      );
-                      void sendPassengerTrustRequest();
-                    })();
-                  }}
+                  onTrustRequest={handlePassengerLiveMapTrustRequest}
                   trustRequestPending={trustOutgoingPending}
                   trustRequestDisabled={passengerTrustGuvenButtonDisabled}
                   trustRequestBlockReason={passengerTrustGuvenBlockReason}
                   trustRequestLabel="Sürücüden Güven Al"
-                  onOpenTrustedHub={() => {
-                    playTapSound();
-                    router.push('/trusted-network?role=passenger' as never);
-                  }}
+                  onOpenTrustedHub={handlePassengerOpenTrustedHub}
                   trustedInviteRefreshNonce={trustedInviteRefreshNonce}
                   onChat={openPassengerMatchedChat}
                   chatUnreadCount={passengerChatUnread}
@@ -15038,7 +15048,7 @@ function PassengerDashboard({
 
                         <View style={styles.priceModalPayLockHeader}>
                           <Ionicons name="lock-closed-outline" size={18} color="rgba(34,211,238,0.85)" />
-                          <PremiumText variant="step" style={styles.priceModalPayLockTitle}>
+                          <PremiumText variant="step" style={[styles.priceModalPayLockTitle, rpLt?.priceModalPayLockTitle]}>
                             Katkı yöntemini seç
                           </PremiumText>
                         </View>
@@ -15064,7 +15074,7 @@ function PassengerDashboard({
                             </View>
                             <View style={styles.priceModalPayOptionBody}>
                               <View style={styles.priceModalPayOptionTitleRow}>
-                                <PremiumText variant="body" style={styles.priceModalPayOptionTitle}>
+                                <PremiumText variant="body" style={[styles.priceModalPayOptionTitle, rpLt?.priceModalPayOptionTitle]}>
                                   Nakit katkı
                                 </PremiumText>
                                 <GlassSurface
@@ -15077,7 +15087,7 @@ function PassengerDashboard({
                                   </PremiumText>
                                 </GlassSurface>
                               </View>
-                              <PremiumText variant="caption" muted style={styles.priceModalPayOptionDesc}>
+                              <PremiumText variant="caption" muted style={[styles.priceModalPayOptionDesc, rpLt?.priceModalPayOptionDesc]}>
                                 Yolculuk sonunda katkıyı sürücüye nakit olarak iletirsiniz.
                               </PremiumText>
                             </View>
@@ -15090,10 +15100,10 @@ function PassengerDashboard({
                         <GlassSurface
                           variant="plain"
                           borderRadius={LDS_RADIUS.sm}
-                          style={styles.priceModalPayDefaultNote}
+                          style={[styles.priceModalPayDefaultNote, rpLt?.priceModalPayDefaultNote]}
                         >
                           <Ionicons name="information-circle-outline" size={17} color="rgba(186,201,222,0.72)" />
-                          <PremiumText variant="caption" muted style={styles.priceModalPayDefaultNoteText}>
+                          <PremiumText variant="caption" muted style={[styles.priceModalPayDefaultNoteText, rpLt?.priceModalPayDefaultNoteText]}>
                             Seçim yapmazsan varsayılan nakit katkı uygulanır.
                           </PremiumText>
                         </GlassSurface>
@@ -17235,6 +17245,7 @@ function DriverDashboard({
 
   useEffect(() => {
     if (showCallScreen) {
+      stopAllRepeatingAlertSounds('call_open');
       offerSoundController.pauseForCallSession();
       void preloadCallSonic();
     } else {
@@ -20220,7 +20231,7 @@ function DriverDashboard({
         setDriverBoardingNearBanner(false);
       }
     };
-    const id = setInterval(tick, 600);
+    const id = setInterval(tick, BOARDING_PROXIMITY_POLL_MS);
     tick();
     return () => clearInterval(id);
   }, [

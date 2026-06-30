@@ -17,6 +17,7 @@ type LoopEntry = {
   generation: number;
   playFn: () => void | Promise<void>;
   intervalMs: number;
+  tickInFlight: boolean;
 };
 
 class RepeatingAlertSoundController {
@@ -37,13 +38,19 @@ class RepeatingAlertSoundController {
     }
   };
 
-  private runTick(entry: LoopEntry): void {
+  private runTick(key: string, entry: LoopEntry): void {
     if (AppState.currentState !== 'active') return;
-    try {
-      void Promise.resolve(entry.playFn()).catch(() => {});
-    } catch {
-      /* noop */
-    }
+    if (entry.tickInFlight) return;
+
+    entry.tickInFlight = true;
+    void Promise.resolve(entry.playFn())
+      .catch(() => {})
+      .finally(() => {
+        const cur = this.loops.get(key);
+        if (cur && cur.generation === entry.generation) {
+          cur.tickInFlight = false;
+        }
+      });
   }
 
   private clearEntry(key: string): void {
@@ -80,17 +87,18 @@ class RepeatingAlertSoundController {
       timerId: setInterval(() => {
         const cur = this.loops.get(id);
         if (!cur || cur.generation !== generation) return;
-        this.runTick(cur);
+        this.runTick(id, cur);
       }, intervalMs),
       generation,
       playFn,
       intervalMs,
+      tickInFlight: false,
     };
 
     this.loops.set(id, entry);
 
     if (immediate) {
-      this.runTick(entry);
+      this.runTick(id, entry);
     }
   }
 

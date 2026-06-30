@@ -178,6 +178,11 @@ export type PassengerRoutePickerLightSurfaces = {
   priceOfferPaymentWarnCard: ViewStyle;
   priceOfferPaymentWarnTitle: TextStyle;
   priceOfferPaymentWarnBody: TextStyle;
+  priceModalPayOptionTitle: TextStyle;
+  priceModalPayOptionDesc: TextStyle;
+  priceModalPayDefaultNote: ViewStyle;
+  priceModalPayDefaultNoteText: TextStyle;
+  priceModalPayLockTitle: TextStyle;
 };
 
 const PASSENGER_UI_DARK: PassengerUiColors = {
@@ -570,6 +575,14 @@ function buildPassengerRoutePickerLightSurfaces(tokens: LhThemeTokens): Passenge
     },
     priceOfferPaymentWarnTitle: { color: tokens.text.primary },
     priceOfferPaymentWarnBody: { color: tokens.text.muted },
+    priceModalPayOptionTitle: { color: tokens.text.primary },
+    priceModalPayOptionDesc: { color: tokens.text.muted },
+    priceModalPayDefaultNote: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    priceModalPayDefaultNoteText: { color: tokens.text.muted },
+    priceModalPayLockTitle: { color: tokens.text.primary },
   };
 }
 

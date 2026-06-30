@@ -17,6 +17,7 @@ import {
   startRepeatingAlertSound,
   stopRepeatingAlertSound,
 } from '../lib/repeatingAlertSoundController';
+import { offerSoundController } from '../lib/offerSoundController';
 import { perfLog } from '../utils/perfDiagLog';
 
 /** P0-E4 — Güven Al call setup latency marks (tag_id / request_id keyed). */
@@ -267,6 +268,7 @@ export function useTrustSessionController({
   useEffect(() => {
     const trustId = trustRequestModal?.trustId?.trim();
     if (!trustId) return;
+    offerSoundController.stopAllOfferLoops('trust_modal');
     const key = `video_trust:${trustId}`;
     startRepeatingAlertSound(key, () => playVideoTrustCallSoundRepeatTick(), { intervalMs: 2000 });
     return () => {

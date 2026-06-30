@@ -82,6 +82,11 @@ export type PaymentModalLightSurfaces = {
   boardingSecondaryBtn: ViewStyle;
   backScan: ViewStyle;
   backScanText: TextStyle;
+  phaseCaption: TextStyle;
+  description: TextStyle;
+  legalDisclaimerWrap: ViewStyle;
+  legalDisclaimerHeader: TextStyle;
+  legalDisclaimerLine: TextStyle;
 };
 
 export type RatingModalLightSurfaces = {
@@ -317,6 +322,15 @@ function buildPaymentModalLightSurfaces(tokens: LhThemeTokens): PaymentModalLigh
       borderColor: tokens.border.default,
     },
     backScanText: { color: tokens.accent.secondary },
+    phaseCaption: { color: tokens.text.muted },
+    description: { color: tokens.text.muted },
+    legalDisclaimerWrap: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+      borderWidth: 1,
+    },
+    legalDisclaimerHeader: { color: tokens.text.primary, opacity: 1 },
+    legalDisclaimerLine: { color: tokens.text.primary, opacity: 0.92 },
   };
 }
 

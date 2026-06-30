@@ -127,7 +127,7 @@ export default function TransferPaymentConfirmModal({
                   <PremiumText variant="step" style={[styles.phaseStep, payLt?.phaseStep]}>
                     {phaseStep}
                   </PremiumText>
-                  <PremiumText variant="caption" muted style={styles.phaseCaption}>
+                  <PremiumText variant="caption" muted={!payLt} style={[styles.phaseCaption, payLt?.phaseCaption]}>
                     {phaseCaption}
                   </PremiumText>
                 </View>
@@ -135,11 +135,19 @@ export default function TransferPaymentConfirmModal({
                 <PremiumText variant="body" style={styles.questionText}>
                   {questionText}
                 </PremiumText>
-                <PremiumText variant="caption" muted style={styles.description}>
+                <PremiumText variant="caption" muted={!payLt} style={[styles.description, payLt?.description]}>
                   {nameLine}
                 </PremiumText>
 
-                <PaymentLegalDisclaimer compact accentColor={payUi.accent} showDetailLink />
+                <PaymentLegalDisclaimer
+                  compact
+                  accentColor={payUi.accent}
+                  showDetailLink
+                  lightCaption={!!payLt}
+                  surfaceStyle={payLt?.legalDisclaimerWrap}
+                  headerLabelStyle={payLt?.legalDisclaimerHeader}
+                  lineTextStyle={payLt?.legalDisclaimerLine}
+                />
 
                 <View style={styles.buttonColumn}>
                   <TouchableOpacity

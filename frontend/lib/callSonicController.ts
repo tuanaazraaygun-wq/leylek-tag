@@ -18,6 +18,8 @@ import {
   CALL_SONIC_SOURCES,
   CALL_SONIC_VOLUMES,
   loadCallSonicAudioMode,
+  loadOfferAlertAudioMode,
+  resolveCallIncomingLoopVolume,
   type CallSonicStingerKind,
 } from '../utils/sound';
 
@@ -102,7 +104,8 @@ class CallSonicController {
   }
 
   private loopVolume(kind: CallSonicLoopKind): number {
-    return kind === 'outgoing' ? CALL_SONIC_VOLUMES.ringback : CALL_SONIC_VOLUMES.incoming;
+    if (kind === 'incoming') return resolveCallIncomingLoopVolume();
+    return CALL_SONIC_VOLUMES.ringback;
   }
 
   private stingerSource(kind: CallSonicStingerKind): number {
@@ -150,7 +153,11 @@ class CallSonicController {
     const gen = ++this.generation;
 
     try {
-      await loadCallSonicAudioMode();
+      if (kind === 'incoming') {
+        await loadOfferAlertAudioMode();
+      } else {
+        await loadCallSonicAudioMode();
+      }
       const { sound } = await Audio.Sound.createAsync(this.loopSource(kind), {
         shouldPlay: false,
         volume: this.loopVolume(kind),

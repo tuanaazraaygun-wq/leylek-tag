@@ -2764,7 +2764,7 @@ function MatchedChatUnreadBadge({
   );
 }
 
-export default function LiveMapView({
+function LiveMapView({
   userLocation,
   otherLocation,
   destinationLocation,
@@ -12431,3 +12431,4 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 });
+export default React.memo(LiveMapView);
