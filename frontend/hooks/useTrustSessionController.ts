@@ -12,7 +12,7 @@ import {
   type TrustActiveSessionRow,
 } from '../lib/trustApi';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
-import { playVideoTrustCallSoundRepeatTick, stopVideoTrustCachedPlayback } from '../utils/sound';
+import { playVideoTrustCallSound, playVideoTrustCallSoundRepeatTick, stopVideoTrustCachedPlayback } from '../utils/sound';
 import {
   startRepeatingAlertSound,
   stopAllRepeatingAlertSounds,
@@ -98,6 +98,7 @@ export function trustCallPerf(step: string, payload: TrustCallPerfPayload = {}):
 export type TrustGuvenBlockReason =
   | 'boarding_confirmed'
   | 'trust_pending'
+  | 'trust_cooldown'
   | 'incoming_modal_open'
   | 'trust_video_active'
   | 'trust_modal_loading'
@@ -107,12 +108,17 @@ export type TrustGuvenBlockReason =
 export const TRUST_GUVEN_BLOCK_MESSAGES: Record<TrustGuvenBlockReason, string> = {
   boarding_confirmed: 'Yolculuk doğrulandıktan sonra Güven Al kullanılamaz.',
   trust_pending: 'Güven Al isteği zaten beklemede.',
+  trust_cooldown: 'Lütfen birkaç saniye bekleyin.',
   incoming_modal_open: 'Gelen Güven Al isteğini önce yanıtla.',
   trust_video_active: 'Görüntülü güven görüşmesi zaten açık.',
   trust_modal_loading: 'Gelen Güven Al isteği yanıtlanıyor.',
   call_screen_active: 'Önce devam eden aramayı sonlandırın.',
   no_active_tag: 'Aktif eşleşme bulunamadı.',
 };
+
+export const IOS_TRUST_ACTION_COOLDOWN_MS = 8000;
+export const IOS_TRUST_INCOMPLETE_MSG =
+  'Güven araması şu anda tamamlanamadı. Biraz sonra tekrar deneyebilirsiniz.';
 
 /** tag_id / activeTag yarışı için kısa retry; socket tek sefer kaçsa bile activeTag yetişince modal / video açılır */
 const MAX_TRUST_TAG_RETRY_ATTEMPTS = 14;
@@ -127,8 +133,9 @@ const TRUST_VIDEO_ACTIVE_POLL_MS = 2600;
 
 /** Gelen pending güven isteği: socket kaçsa / tag geç hydrate olsa bile GET /trust/active ile toparla */
 const INCOMING_PENDING_TRUST_RECOVERY_INTERVAL_MS = 5200;
-const TRUST_TERMINAL_COOLDOWN_MS = Platform.OS === 'ios' ? 220 : 120;
+const TRUST_TERMINAL_COOLDOWN_MS = 120;
 const TRUST_GUVEN_PRESS_DEBOUNCE_MS = 3000;
+const IOS_TRUST_ALERT_SECOND_PLAY_MS = 2000;
 
 const ACTIVE_TAG_INCOMING_RECOVERY_DELAY_MS = 420;
 
@@ -238,7 +245,9 @@ export function useTrustSessionController({
   const [trustOutgoingPending, setTrustOutgoingPending] = useState(false);
   const [trustGuvenCooldownUntil, setTrustGuvenCooldownUntil] = useState(0);
   const [trustGuvenPressLockUntil, setTrustGuvenPressLockUntil] = useState(0);
+  const trustActionCooldownUntilRef = useRef(0);
   const lastTrustAlertKeyRef = useRef<string | null>(null);
+  const iosTrustAlertTimerIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [trustVideoSession, setTrustVideoSession] = useState<TrustVideoSessionState>(null);
 
   const trustOutgoingPendingRef = useRef(false);
@@ -270,25 +279,6 @@ export function useTrustSessionController({
     trustRequestModalRef.current = trustRequestModal;
   }, [trustRequestModal]);
 
-  /** P0-D — Güven Al isteği modalı görünür olunca premium video-trust tonu (foreground). */
-  useEffect(() => {
-    const trustId = trustRequestModal?.trustId?.trim();
-    if (!trustId) return;
-    offerSoundController.stopAllOfferLoops('trust_modal');
-    const key = `video_trust:${trustId}`;
-    if (lastTrustAlertKeyRef.current && lastTrustAlertKeyRef.current !== key) {
-      stopRepeatingAlertSound(lastTrustAlertKeyRef.current, 'trust_modal_key_change');
-    }
-    lastTrustAlertKeyRef.current = key;
-    startRepeatingAlertSound(key, () => playVideoTrustCallSoundRepeatTick(), { intervalMs: 2000 });
-    return () => {
-      stopRepeatingAlertSound(key, 'trust_modal_cleanup');
-      if (lastTrustAlertKeyRef.current === key) {
-        lastTrustAlertKeyRef.current = null;
-      }
-    };
-  }, [trustRequestModal?.trustId]);
-
   const trustTagRetryTimerIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const clearTrustTagRetryTimers = useCallback(() => {
@@ -313,22 +303,40 @@ export function useTrustSessionController({
         /* noop */
       }
     }
-    stopAllRepeatingAlertSounds('trust_terminal');
+    stopAllRepeatingAlertSounds(
+      Platform.OS === 'ios' ? 'ios_safe_trust_terminal' : 'trust_terminal',
+    );
+    iosTrustAlertTimerIdsRef.current.forEach((timerId) => clearTimeout(timerId));
+    iosTrustAlertTimerIdsRef.current = [];
     void stopVideoTrustCachedPlayback();
   }, []);
 
-  const startTrustTerminalCooldown = useCallback(() => {
-    const until = Date.now() + TRUST_TERMINAL_COOLDOWN_MS;
+  const startTrustActionCooldown = useCallback(() => {
+    const ms = Platform.OS === 'ios' ? IOS_TRUST_ACTION_COOLDOWN_MS : TRUST_TERMINAL_COOLDOWN_MS;
+    const until = Date.now() + ms;
+    trustActionCooldownUntilRef.current = until;
     setTrustGuvenCooldownUntil(until);
     const timerId = setTimeout(() => {
-      setTrustGuvenCooldownUntil((prev) => (prev === until ? 0 : prev));
-    }, TRUST_TERMINAL_COOLDOWN_MS + 32);
+      setTrustGuvenCooldownUntil((prev) => {
+        if (prev === until) {
+          trustActionCooldownUntilRef.current = 0;
+          return 0;
+        }
+        return prev;
+      });
+    }, ms + 32);
     trustTagRetryTimerIdsRef.current.push(timerId);
   }, []);
 
   const finalizeTrustTerminal = useCallback(
-    (source: string, opts?: { trustId?: string | null; skipCooldown?: boolean }) => {
+    (
+      source: string,
+      opts?: { trustId?: string | null; skipCooldown?: boolean; notifyIncomplete?: boolean },
+    ) => {
       stopTrustRepeatAlerts(opts?.trustId ?? null, source);
+      offerSoundController.stopAllOfferLoops(
+        Platform.OS === 'ios' ? 'ios_safe_trust_terminal' : source,
+      );
       clearTrustTagRetryTimers();
       outboundTrustIdRef.current = null;
       outgoingTrustTagIdRef.current = null;
@@ -339,7 +347,14 @@ export function useTrustSessionController({
       setTrustRequestModal(null);
       setTrustModalLoading(false);
       if (!opts?.skipCooldown) {
-        startTrustTerminalCooldown();
+        startTrustActionCooldown();
+      }
+      if (opts?.notifyIncomplete && Platform.OS === 'ios') {
+        appAlert('Güven', IOS_TRUST_INCOMPLETE_MSG, [{ text: 'Tamam' }], {
+          variant: 'info',
+          autoDismissMs: 3600,
+          cancelable: true,
+        });
       }
       try {
         perfLog(
@@ -347,14 +362,53 @@ export function useTrustSessionController({
           JSON.stringify({
             source,
             trust_id: normTrustId(opts?.trustId) || null,
+            notify_incomplete: !!opts?.notifyIncomplete,
           }),
         );
       } catch {
         /* noop */
       }
     },
-    [clearTrustTagRetryTimers, startTrustTerminalCooldown, stopTrustRepeatAlerts],
+    [clearTrustTagRetryTimers, startTrustActionCooldown, stopTrustRepeatAlerts],
   );
+
+  /** P0-D — Güven Al isteği modalı görünür olunca premium video-trust tonu (foreground). */
+  useEffect(() => {
+    const trustId = trustRequestModal?.trustId?.trim();
+    if (!trustId) return;
+    offerSoundController.stopAllOfferLoops('trust_modal');
+    const key = `video_trust:${trustId}`;
+    if (lastTrustAlertKeyRef.current && lastTrustAlertKeyRef.current !== key) {
+      stopRepeatingAlertSound(lastTrustAlertKeyRef.current, 'trust_modal_key_change');
+    }
+    lastTrustAlertKeyRef.current = key;
+
+    if (Platform.OS === 'ios') {
+      void playVideoTrustCallSound({ trustId });
+      const secondPlayTimer = setTimeout(() => {
+        void playVideoTrustCallSoundRepeatTick();
+      }, IOS_TRUST_ALERT_SECOND_PLAY_MS);
+      iosTrustAlertTimerIdsRef.current.push(secondPlayTimer);
+      return () => {
+        clearTimeout(secondPlayTimer);
+        iosTrustAlertTimerIdsRef.current = iosTrustAlertTimerIdsRef.current.filter(
+          (t) => t !== secondPlayTimer,
+        );
+        stopTrustRepeatAlerts(trustId, 'trust_modal_cleanup');
+        if (lastTrustAlertKeyRef.current === key) {
+          lastTrustAlertKeyRef.current = null;
+        }
+      };
+    }
+
+    startRepeatingAlertSound(key, () => playVideoTrustCallSoundRepeatTick(), { intervalMs: 2000 });
+    return () => {
+      stopRepeatingAlertSound(key, 'trust_modal_cleanup');
+      if (lastTrustAlertKeyRef.current === key) {
+        lastTrustAlertKeyRef.current = null;
+      }
+    };
+  }, [trustRequestModal?.trustId, stopTrustRepeatAlerts]);
 
   const prepTrustNewRequest = useCallback(() => {
     stopTrustRepeatAlerts(null, 'before_new_request');
@@ -535,8 +589,10 @@ export function useTrustSessionController({
     }
   }, [boardingCommsClosed]);
 
-  const trustGuvenCooldownActive = trustGuvenCooldownUntil > Date.now();
-  const trustGuvenPressLocked = trustGuvenPressLockUntil > Date.now();
+  const trustGuvenCooldownActive =
+    trustActionCooldownUntilRef.current > Date.now() || trustGuvenCooldownUntil > Date.now();
+  const trustGuvenPressLocked =
+    Platform.OS !== 'ios' && trustGuvenPressLockUntil > Date.now();
 
   const trustGuvenButtonDisabled =
     trustOutgoingPending ||
@@ -548,11 +604,12 @@ export function useTrustSessionController({
 
   const trustGuvenBlockReason = useMemo((): TrustGuvenBlockReason | null => {
     if (boardingCommsClosed) return 'boarding_confirmed';
+    if (trustGuvenCooldownActive) return 'trust_cooldown';
     if (trustVideoSession) return 'trust_video_active';
     if (trustRequestModal) return 'incoming_modal_open';
     if (trustModalLoading) return 'trust_modal_loading';
     if (trustOutgoingPending) return 'trust_pending';
-    if (trustGuvenCooldownActive || trustGuvenPressLocked) return 'trust_pending';
+    if (Platform.OS !== 'ios' && trustGuvenPressLocked) return 'trust_pending';
     if (showCallScreen || incomingCallBlocked) return 'call_screen_active';
     const uid = userId?.trim();
     const tagId = activeTag?.id ? String(activeTag.id) : '';
@@ -573,10 +630,13 @@ export function useTrustSessionController({
   ]);
 
   /**
-   * Sesli arama yalnızca Agora güven görüşmesi kanalına gerçekten katılımda engellenir.
-   * Bekleyen güven isteği / modal — klasik sesli aramayı bloke etmez (ayrı token/kanal).
+   * Sesli arama: Agora güven görüşmesi kanalında her zaman engellenir.
+   * iOS safe-mode: bekleyen güven isteği / modal sırasında da yeni arama tetiklenmez.
    */
-  const isTrustBlockingCalls = !!trustVideoSession;
+  const isTrustBlockingCalls =
+    !!trustVideoSession ||
+    (Platform.OS === 'ios' &&
+      (!!trustRequestModal || trustOutgoingPending || trustModalLoading));
 
   const peerDisplayNameForPeerId = useCallback(
     (peer: string) => {
@@ -1057,8 +1117,6 @@ export function useTrustSessionController({
       if (!trustOutgoingPendingRef.current) return;
       if (trustVideoSessionRef.current) return;
       if (Date.now() - t0 > REQUESTER_TRUST_POLL_MAX_MS) {
-        outboundTrustIdRef.current = null;
-        setTrustOutgoingPending(false);
         console.log(
           '[TRUST]',
           JSON.stringify({
@@ -1068,10 +1126,16 @@ export function useTrustSessionController({
             action: 'clear_outgoing_pending',
           }),
         );
-        appAlert('Güven', 'Yanıt alınamadı. Tekrar deneyebilirsiniz.', [{ text: 'Tamam' }], {
-          variant: 'info',
-          autoDismissMs: 3200,
-          cancelable: true,
+        if (Platform.OS !== 'ios') {
+          appAlert('Güven', 'Yanıt alınamadı. Tekrar deneyebilirsiniz.', [{ text: 'Tamam' }], {
+            variant: 'info',
+            autoDismissMs: 3200,
+            cancelable: true,
+          });
+        }
+        finalizeTrustTerminal('requester_outgoing_poll_timeout', {
+          trustId: outboundTrustIdRef.current,
+          notifyIncomplete: Platform.OS === 'ios',
         });
         return;
       }
@@ -1146,11 +1210,13 @@ export function useTrustSessionController({
           }),
         );
         if (st === 'rejected') {
-          appAlert('Güven isteği', 'Karşı taraf şu an müsait değil.', [{ text: 'Tamam' }], {
-            variant: 'info',
-            autoDismissMs: 2600,
-            cancelable: true,
-          });
+          if (Platform.OS !== 'ios') {
+            appAlert('Güven isteği', 'Karşı taraf şu an müsait değil.', [{ text: 'Tamam' }], {
+              variant: 'info',
+              autoDismissMs: 2600,
+              cancelable: true,
+            });
+          }
           if (!activeTagRef.current?.boarding_confirmed_at) {
             setTimeout(() => {
               openChatRef.current?.();
@@ -1159,6 +1225,7 @@ export function useTrustSessionController({
         }
         finalizeTrustTerminal('requester_outgoing_poll_terminal', {
           trustId: terminalTrustId || null,
+          notifyIncomplete: Platform.OS === 'ios' && st === 'rejected',
         });
       } catch {
         /* noop — sonraki tick tekrar dener */
@@ -1297,17 +1364,22 @@ export function useTrustSessionController({
       appAlert('Hata', 'Yolculuk bilgisi bulunamadı');
       return;
     }
-    if (Date.now() < trustGuvenPressLockUntil) {
+    if (Date.now() < trustActionCooldownUntilRef.current || trustGuvenCooldownUntil > Date.now()) {
       try {
-        perfLog('TRUST_SECOND_REQUEST_GUARD', JSON.stringify({ action: 'press_debounce_skip' }));
+        perfLog('TRUST_SECOND_REQUEST_GUARD', JSON.stringify({ action: 'terminal_cooldown_skip' }));
       } catch {
         /* noop */
       }
+      appAlert('Bilgi', TRUST_GUVEN_BLOCK_MESSAGES.trust_cooldown, [{ text: 'Tamam' }], {
+        variant: 'info',
+        autoDismissMs: 2600,
+        cancelable: true,
+      });
       return;
     }
-    if (trustGuvenCooldownUntil > Date.now()) {
+    if (Platform.OS !== 'ios' && Date.now() < trustGuvenPressLockUntil) {
       try {
-        perfLog('TRUST_SECOND_REQUEST_GUARD', JSON.stringify({ action: 'terminal_cooldown_skip' }));
+        perfLog('TRUST_SECOND_REQUEST_GUARD', JSON.stringify({ action: 'press_debounce_skip' }));
       } catch {
         /* noop */
       }
@@ -1343,11 +1415,15 @@ export function useTrustSessionController({
       return;
     }
     prepTrustNewRequest();
-    const pressLockUntil = Date.now() + TRUST_GUVEN_PRESS_DEBOUNCE_MS;
-    setTrustGuvenPressLockUntil(pressLockUntil);
-    setTimeout(() => {
-      setTrustGuvenPressLockUntil((prev) => (prev === pressLockUntil ? 0 : prev));
-    }, TRUST_GUVEN_PRESS_DEBOUNCE_MS + 32);
+    if (Platform.OS === 'ios') {
+      startTrustActionCooldown();
+    } else {
+      const pressLockUntil = Date.now() + TRUST_GUVEN_PRESS_DEBOUNCE_MS;
+      setTrustGuvenPressLockUntil(pressLockUntil);
+      setTimeout(() => {
+        setTrustGuvenPressLockUntil((prev) => (prev === pressLockUntil ? 0 : prev));
+      }, TRUST_GUVEN_PRESS_DEBOUNCE_MS + 32);
+    }
     sendInFlightRef.current = true;
     setTrustOutgoingPending(true);
     outgoingTrustTagIdRef.current = tagId;
@@ -1358,7 +1434,7 @@ export function useTrustSessionController({
     try {
       const res = await postTrustRequest(tagId);
       if (!res?.success) {
-        setTrustOutgoingPending(false);
+        finalizeTrustTerminal('send_trust_error', { skipCooldown: true });
         const err = String(res?.error ?? 'İstek gönderilemedi');
         const det = String((res as { detail?: unknown }).detail ?? '');
         if (err === BOARDING_COMM_CLOSED_CODE || det === BOARDING_COMM_CLOSED_CODE) {
@@ -1425,6 +1501,8 @@ export function useTrustSessionController({
     prepTrustNewRequest,
     trustGuvenCooldownUntil,
     trustGuvenPressLockUntil,
+    startTrustActionCooldown,
+    finalizeTrustTerminal,
   ]);
 
   const respondTrust = useCallback(
@@ -1452,7 +1530,10 @@ export function useTrustSessionController({
         return;
       }
       if (!accept) {
-        finalizeTrustTerminal('respond_reject', { trustId });
+        finalizeTrustTerminal('respond_reject', {
+          trustId,
+          notifyIncomplete: Platform.OS === 'ios',
+        });
         return;
       }
       setTrustRequestModal(null);
@@ -1864,11 +1945,13 @@ export function useTrustSessionController({
         if (reason === 'rejected') {
           if (!trustIdApplies) {
             if (tagOk && trustOutgoingPendingRef.current) {
-              appAlert('Güven isteği', 'Karşı taraf şu an müsait değil.', [{ text: 'Tamam' }], {
-                variant: 'info',
-                autoDismissMs: 2600,
-                cancelable: true,
-              });
+              if (Platform.OS !== 'ios') {
+                appAlert('Güven isteği', 'Karşı taraf şu an müsait değil.', [{ text: 'Tamam' }], {
+                  variant: 'info',
+                  autoDismissMs: 2600,
+                  cancelable: true,
+                });
+              }
               if (!activeTagRef.current?.boarding_confirmed_at) {
                 setTimeout(() => {
                   openChatRef.current?.();
@@ -1876,6 +1959,7 @@ export function useTrustSessionController({
               }
               finalizeTrustTerminal('trust_session_ended_rejected_outgoing', {
                 trustId: endTrustId,
+                notifyIncomplete: Platform.OS === 'ios',
               });
               console.log(
                 '[TRUST]',
@@ -1906,10 +1990,12 @@ export function useTrustSessionController({
               .toLowerCase() === currentUserId;
 
           if (isRejectingUser) {
-            appAlert('Bilgi', 'Müsait değilseniz mesaj yazabilirsiniz', [{ text: 'Tamam' }], {
-              variant: 'info',
-            });
-          } else {
+            if (Platform.OS !== 'ios') {
+              appAlert('Bilgi', 'Müsait değilseniz mesaj yazabilirsiniz', [{ text: 'Tamam' }], {
+                variant: 'info',
+              });
+            }
+          } else if (Platform.OS !== 'ios') {
             appAlert('Güven isteği', 'Karşı taraf şu an müsait değil.', [{ text: 'Tamam' }], {
               variant: 'info',
             });
@@ -1921,7 +2007,10 @@ export function useTrustSessionController({
             }, 150);
           }
 
-          finalizeTrustTerminal('trust_session_ended_rejected', { trustId: endTrustId });
+          finalizeTrustTerminal('trust_session_ended_rejected', {
+            trustId: endTrustId,
+            notifyIncomplete: Platform.OS === 'ios' && !isRejectingUser,
+          });
           return;
         }
 

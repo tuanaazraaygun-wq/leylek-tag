@@ -954,6 +954,7 @@ const VIDEO_TRUST_CALL_SOURCE = require('../assets/sounds/video-trust-call.wav')
 
 let videoTrustCachedSound: Audio.Sound | null = null;
 let videoTrustCachedLoadPromise: Promise<Audio.Sound | null> | null = null;
+let videoTrustPlayInFlight = false;
 
 async function ensureVideoTrustCachedSound(): Promise<Audio.Sound | null> {
   if (Platform.OS === 'web') return null;
@@ -986,6 +987,8 @@ export type PlayVideoTrustCallSoundOptions = {
 };
 
 async function playVideoTrustCallToneCore(): Promise<void> {
+  if (Platform.OS === 'ios' && videoTrustPlayInFlight) return;
+  if (Platform.OS === 'ios') videoTrustPlayInFlight = true;
   try {
     await loadOfferAlertAudioMode();
     const sound = await ensureVideoTrustCachedSound();
@@ -996,6 +999,8 @@ async function playVideoTrustCallToneCore(): Promise<void> {
     await sound.playAsync();
   } catch (e) {
     if (__DEV__) console.warn('playVideoTrustCallToneCore', e);
+  } finally {
+    if (Platform.OS === 'ios') videoTrustPlayInFlight = false;
   }
 }
 
@@ -1040,6 +1045,7 @@ const FORCE_END_ALERT_SOURCE = require('../assets/sounds/force-end-alert.wav');
 
 let forceEndCachedSound: Audio.Sound | null = null;
 let forceEndCachedLoadPromise: Promise<Audio.Sound | null> | null = null;
+let forceEndPlayInFlight = false;
 
 async function ensureForceEndCachedSound(): Promise<Audio.Sound | null> {
   if (Platform.OS === 'web') return null;
@@ -1084,6 +1090,8 @@ export function parseForceEndTagFromPushData(data: unknown): string | null {
 }
 
 async function playForceEndAlertToneCore(): Promise<void> {
+  if (Platform.OS === 'ios' && forceEndPlayInFlight) return;
+  if (Platform.OS === 'ios') forceEndPlayInFlight = true;
   try {
     await loadOfferAlertAudioMode();
     const sound = await ensureForceEndCachedSound();
@@ -1094,6 +1102,8 @@ async function playForceEndAlertToneCore(): Promise<void> {
     await sound.playAsync();
   } catch (e) {
     if (__DEV__) console.warn('playForceEndAlertToneCore', e);
+  } finally {
+    if (Platform.OS === 'ios') forceEndPlayInFlight = false;
   }
 }
 

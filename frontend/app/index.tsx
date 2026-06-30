@@ -9224,10 +9224,16 @@ function PassengerDashboard({
   useEffect(() => {
     if (showCallScreen) {
       stopAllRepeatingAlertSounds('call_open');
-      offerSoundController.pauseForCallSession();
+      if (Platform.OS === 'ios') {
+        offerSoundController.stopAllOfferLoops('call_open');
+      } else {
+        offerSoundController.pauseForCallSession();
+      }
       void preloadCallSonic();
     } else {
-      offerSoundController.resumeAfterCallSession();
+      if (Platform.OS !== 'ios') {
+        offerSoundController.resumeAfterCallSession();
+      }
       void cleanupCallSonic();
     }
   }, [showCallScreen]);
@@ -12466,7 +12472,9 @@ function PassengerDashboard({
     if (passengerTrustBlocksCalls) {
       appAlert(
         'Uyarı',
-        'Güven görüşmesi (video) açıkken sesli arama başlatılamaz. Önce güven görüşmesini sonlandırın.',
+        Platform.OS === 'ios'
+          ? 'Güven isteği devam ederken arama başlatılamaz. Lütfen bekleyin.'
+          : 'Güven görüşmesi (video) açıkken sesli arama başlatılamaz. Önce güven görüşmesini sonlandırın.',
       );
       return;
     }
@@ -13989,6 +13997,7 @@ function PassengerDashboard({
                   trustRequestPending={trustOutgoingPending}
                   trustRequestDisabled={passengerTrustGuvenButtonDisabled}
                   trustRequestBlockReason={passengerTrustGuvenBlockReason}
+                  trustBlocksMatchedCall={passengerTrustBlocksCalls}
                   trustRequestLabel="Sürücüden Güven Al"
                   onOpenTrustedHub={handlePassengerOpenTrustedHub}
                   trustedInviteRefreshNonce={trustedInviteRefreshNonce}
@@ -17246,10 +17255,16 @@ function DriverDashboard({
   useEffect(() => {
     if (showCallScreen) {
       stopAllRepeatingAlertSounds('call_open');
-      offerSoundController.pauseForCallSession();
+      if (Platform.OS === 'ios') {
+        offerSoundController.stopAllOfferLoops('call_open');
+      } else {
+        offerSoundController.pauseForCallSession();
+      }
       void preloadCallSonic();
     } else {
-      offerSoundController.resumeAfterCallSession();
+      if (Platform.OS !== 'ios') {
+        offerSoundController.resumeAfterCallSession();
+      }
       void cleanupCallSonic();
     }
   }, [showCallScreen]);
@@ -18579,7 +18594,9 @@ function DriverDashboard({
     if (driverTrustBlocksCalls) {
       appAlert(
         'Uyarı',
-        'Güven görüşmesi (video) açıkken sesli arama başlatılamaz. Önce güven görüşmesini sonlandırın.',
+        Platform.OS === 'ios'
+          ? 'Güven isteği devam ederken arama başlatılamaz. Lütfen bekleyin.'
+          : 'Güven görüşmesi (video) açıkken sesli arama başlatılamaz. Önce güven görüşmesini sonlandırın.',
       );
       return;
     }
@@ -21687,6 +21704,7 @@ function DriverDashboard({
             trustRequestPending={trustOutgoingPending}
             trustRequestDisabled={driverTrustGuvenButtonDisabled}
             trustRequestBlockReason={driverTrustGuvenBlockReason}
+            trustBlocksMatchedCall={driverTrustBlocksCalls}
             trustRequestLabel="Yolcudan Güven Al"
             onOpenTrustedHub={handleDriverOpenTrustedHub}
             trustedInviteRefreshNonce={driverTrustedInviteRefreshNonce}

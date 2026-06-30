@@ -31,6 +31,8 @@ import {
   preloadCallSonic,
   stopAllCallSonic,
 } from '../lib/callSonicController';
+import { stopAllRepeatingAlertSounds } from '../lib/repeatingAlertSoundController';
+import { offerSoundController } from '../lib/offerSoundController';
 
 const CALLER_OUTBOUND_WAITING_TEXT = 'Çağrınız yapılıyor, lütfen bekleyin.';
 
@@ -541,6 +543,12 @@ export default function CallScreenV2({
       remoteTeardownHandledRef.current = false;
 
       LOG('CallScreenV2 açıldı', { mode, callId, channelName });
+      stopAllRepeatingAlertSounds('call_screen_open');
+      if (Platform.OS === 'ios') {
+        offerSoundController.stopAllOfferLoops('call_screen_open');
+      } else {
+        offerSoundController.pauseForCallSession();
+      }
       void preloadCallSonic();
       setRemoteUid(0);
       setRemainingSec(CALL_MAX_SECONDS);

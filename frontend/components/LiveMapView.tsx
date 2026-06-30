@@ -463,6 +463,8 @@ interface LiveMapViewProps {
   trustRequestPending?: boolean;
   /** Güven AL basılamama nedeni — kullanıcı mesajı + görsel disabled */
   trustRequestBlockReason?: TrustGuvenBlockReason | null;
+  /** iOS safe-mode: trust modal/pending sırasında eşleşme haritası arama FAB'ı */
+  trustBlocksMatchedCall?: boolean;
   trustRequestLabel?: string;
   /** Harita ekranından Leylek Zeka sohbeti (global widget ayrı kalır) */
   onOpenLeylekZekaSupport?: () => void;
@@ -2803,6 +2805,7 @@ function LiveMapView({
   trustRequestDisabled = false,
   trustRequestPending = false,
   trustRequestBlockReason = null,
+  trustBlocksMatchedCall = false,
   trustRequestLabel,
   onOpenLeylekZekaSupport,
   peerMapPinScale = 1,
@@ -2969,7 +2972,7 @@ function LiveMapView({
   // ARAMA STATE'LERİ
   const [isCallLoading, setIsCallLoading] = useState(false);
   /** Aktif arama uçuşu — çift tıklama koruması; yalnız gerçek await + socket pending */
-  const callActionBlocked = isCallLoading || !!voiceCallPending;
+  const callActionBlocked = isCallLoading || !!voiceCallPending || !!trustBlocksMatchedCall;
   const callSpinnerVisible = callActionBlocked;
 
   /** Özel PNG marker: Android’de tracksViewChanges sürekli true kalınca pin kaybolabiliyor — bekleme ekranı gibi kısa süre sonra kapat */
@@ -4993,6 +4996,16 @@ function LiveMapView({
   const handleCall = async (type: 'audio' | 'video') => {
     if (callActionBlocked) {
       void tapButtonHaptic();
+      if (trustBlocksMatchedCall) {
+        appAlert(
+          'Uyarı',
+          Platform.OS === 'ios'
+            ? 'Güven isteği devam ederken arama başlatılamaz. Lütfen bekleyin.'
+            : 'Güven görüşmesi açıkken arama başlatılamaz.',
+          [{ text: 'Tamam' }],
+          { variant: 'info', autoDismissMs: 3200, cancelable: true },
+        );
+      }
       return;
     }
 
