@@ -471,6 +471,23 @@ export function DriverTrustedDirectInviteCard({
       return (
         <View style={styles.section}>
           {renderPollWarning()}
+          {session.errorMessage ? (
+            <GlassSurface
+              variant="plain"
+              borderRadius={LDS_RADIUS.sm}
+              style={[styles.pollWarning, qmLt?.pollWarningBanner, styles.declineErrorBanner]}
+            >
+              <Ionicons name="alert-circle-outline" size={16} color={LDS_COLOR_ERROR} />
+              <PremiumText variant="caption" style={styles.declineErrorText}>
+                {session.errorMessage}
+              </PremiumText>
+            </GlassSurface>
+          ) : null}
+          {inviteExpired ? (
+            <PremiumText variant="caption" muted style={styles.expiredHint}>
+              Süre doldu — bu davet artık reddedilemez.
+            </PremiumText>
+          ) : null}
           <InviteDetailsBlock
             pickupLabel={pickupLabel}
             dropoffLabel={dropoffLabel}
@@ -481,9 +498,9 @@ export function DriverTrustedDirectInviteCard({
           />
           <View style={styles.ctaRow}>
             <SecondaryButton
-              label={ACTION_DECLINE}
+              label={inviteExpired ? 'Süre doldu' : ACTION_DECLINE}
               onPress={handleDecline}
-              disabled={session.isAccepting}
+              disabled={session.isAccepting || inviteExpired}
               loading={session.isDeclining}
             />
             <PrimaryButton
@@ -693,6 +710,20 @@ const styles = StyleSheet.create({
     flex: 1,
     color: 'rgba(251, 191, 36, 0.95)',
     lineHeight: 17,
+  },
+  declineErrorBanner: {
+    borderColor: 'rgba(248, 113, 113, 0.32)',
+    backgroundColor: 'rgba(248, 113, 113, 0.1)',
+  },
+  declineErrorText: {
+    flex: 1,
+    color: LDS_COLOR_ERROR,
+    lineHeight: 17,
+  },
+  expiredHint: {
+    textAlign: 'center',
+    lineHeight: 18,
+    color: LDS_COLOR_ERROR,
   },
   detailsBlock: {
     gap: LDS_SPACING.md,

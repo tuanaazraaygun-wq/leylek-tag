@@ -35,8 +35,13 @@ export type PassengerDriverForceEndReviewModalProps = {
   informationalOnly?: boolean;
   /** Bilgilendirme gövde metni (backend message) */
   infoMessage?: string;
+  /** Biniş öncesi karşı taraf — aynı rota ile yeniden arama */
+  showRematchAction?: boolean;
+  onRematch?: () => void | Promise<void>;
+  onReport?: () => void | Promise<void>;
   /** true iken butonlar devre dışı — HTTP bitmeden kapanmaz */
   submitting?: boolean;
+  rematchSubmitting?: boolean;
 };
 
 export default function PassengerDriverForceEndReviewModal({
@@ -47,7 +52,11 @@ export default function PassengerDriverForceEndReviewModal({
   title,
   informationalOnly = false,
   infoMessage,
+  showRematchAction = false,
+  onRematch,
+  onReport,
   submitting = false,
+  rematchSubmitting = false,
 }: PassengerDriverForceEndReviewModalProps) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -141,6 +150,18 @@ export default function PassengerDriverForceEndReviewModal({
     void onReject();
   }, [onReject, stopForceEndRepeat]);
 
+  const handleRematch = useCallback(() => {
+    stopForceEndRepeat();
+    void onRematch?.();
+  }, [onRematch, stopForceEndRepeat]);
+
+  const handleReport = useCallback(() => {
+    stopForceEndRepeat();
+    void onReport?.();
+  }, [onReport, stopForceEndRepeat]);
+
+  const actionLocked = submitting || rematchSubmitting;
+
   const eventLine = title?.trim()
     ? title.trim()
     : informationalOnly
@@ -232,32 +253,77 @@ export default function PassengerDriverForceEndReviewModal({
             ) : null}
 
             <View style={styles.buttonColumn}>
-              <TouchableOpacity
-                style={[styles.primaryBtn, lightStyles?.primaryBtn, submitting && styles.btnDisabled]}
-                onPress={() => void handleConfirm()}
-                activeOpacity={0.88}
-                disabled={submitting}
-              >
-                <PremiumText variant="body" style={[styles.primaryBtnText, lightStyles?.primaryBtnText]}>
-                  {submitting ? 'Gönderiliyor…' : informationalOnly ? 'Tamam' : 'Onaylıyorum'}
-                </PremiumText>
-              </TouchableOpacity>
-              {!informationalOnly ? (
-                <TouchableOpacity
-                  style={[styles.secondaryBtn, lightStyles?.secondaryBtn, submitting && styles.btnDisabled]}
-                  onPress={() => void handleReject()}
-                  activeOpacity={0.88}
-                  disabled={submitting}
-                >
-                  <PremiumText
-                    variant="body"
-                    muted={!isModalLight}
-                    style={[styles.secondaryBtnText, lightStyles?.secondaryBtnText]}
+              {informationalOnly && showRematchAction ? (
+                <>
+                  <TouchableOpacity
+                    style={[styles.secondaryBtn, lightStyles?.secondaryBtn, actionLocked && styles.btnDisabled]}
+                    onPress={() => void handleReport()}
+                    activeOpacity={0.88}
+                    disabled={actionLocked || !onReport}
                   >
-                    {submitting ? 'Gönderiliyor…' : 'Onaylamıyorum'}
-                  </PremiumText>
-                </TouchableOpacity>
-              ) : null}
+                    <PremiumText
+                      variant="body"
+                      muted={!isModalLight}
+                      style={[styles.secondaryBtnText, lightStyles?.secondaryBtnText, styles.reportBtnText]}
+                    >
+                      Şikayet Et
+                    </PremiumText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.secondaryBtn, lightStyles?.secondaryBtn, actionLocked && styles.btnDisabled]}
+                    onPress={() => void handleConfirm()}
+                    activeOpacity={0.88}
+                    disabled={actionLocked}
+                  >
+                    <PremiumText
+                      variant="body"
+                      muted={!isModalLight}
+                      style={[styles.secondaryBtnText, lightStyles?.secondaryBtnText]}
+                    >
+                      Tamam
+                    </PremiumText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, lightStyles?.primaryBtn, actionLocked && styles.btnDisabled]}
+                    onPress={() => void handleRematch()}
+                    activeOpacity={0.88}
+                    disabled={actionLocked || !onRematch}
+                  >
+                    <PremiumText variant="body" style={[styles.primaryBtnText, lightStyles?.primaryBtnText]}>
+                      {rematchSubmitting ? 'Aranıyor…' : 'Başka sürücü ara'}
+                    </PremiumText>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, lightStyles?.primaryBtn, actionLocked && styles.btnDisabled]}
+                    onPress={() => void handleConfirm()}
+                    activeOpacity={0.88}
+                    disabled={actionLocked}
+                  >
+                    <PremiumText variant="body" style={[styles.primaryBtnText, lightStyles?.primaryBtnText]}>
+                      {submitting ? 'Gönderiliyor…' : informationalOnly ? 'Tamam' : 'Onaylıyorum'}
+                    </PremiumText>
+                  </TouchableOpacity>
+                  {!informationalOnly ? (
+                    <TouchableOpacity
+                      style={[styles.secondaryBtn, lightStyles?.secondaryBtn, actionLocked && styles.btnDisabled]}
+                      onPress={() => void handleReject()}
+                      activeOpacity={0.88}
+                      disabled={actionLocked}
+                    >
+                      <PremiumText
+                        variant="body"
+                        muted={!isModalLight}
+                        style={[styles.secondaryBtnText, lightStyles?.secondaryBtnText]}
+                      >
+                        {submitting ? 'Gönderiliyor…' : 'Onaylamıyorum'}
+                      </PremiumText>
+                    </TouchableOpacity>
+                  ) : null}
+                </>
+              )}
             </View>
           </GlassSurface>
         </Animated.View>
@@ -378,6 +444,9 @@ const styles = StyleSheet.create({
   secondaryBtnText: {
     fontWeight: '700',
     textAlign: 'center',
+  },
+  reportBtnText: {
+    color: 'rgba(248, 113, 113, 0.95)',
   },
   btnDisabled: {
     opacity: 0.55,

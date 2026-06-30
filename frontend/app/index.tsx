@@ -1166,6 +1166,90 @@ function isForceEndInformationalPrompt(
   return !!(data.pre_boarding || data.informational || data.already_completed);
 }
 
+type PassengerForceEndRematchSnapshot = {
+  pickupLat: number;
+  pickupLng: number;
+  pickupLabel: string;
+  dropoffLat: number;
+  dropoffLng: number;
+  dropoffLabel: string;
+  offeredPrice: number;
+  vehicleKind: 'car' | 'motorcycle';
+  distanceKm: number;
+  estimatedMinutes: number;
+  driverId: string;
+  tagId: string;
+};
+
+function buildPassengerForceEndRematchSnapshot(
+  tag: Tag | null | undefined,
+): PassengerForceEndRematchSnapshot | null {
+  if (!tag) return null;
+  const pickupLat = Number(tag.pickup_lat ?? tag.passenger_latitude ?? tag.passenger_lat);
+  const pickupLng = Number(tag.pickup_lng ?? tag.passenger_longitude ?? tag.passenger_lng);
+  const dropoffLat = Number(tag.dropoff_lat);
+  const dropoffLng = Number(tag.dropoff_lng);
+  if (
+    !Number.isFinite(pickupLat) ||
+    !Number.isFinite(pickupLng) ||
+    !Number.isFinite(dropoffLat) ||
+    !Number.isFinite(dropoffLng)
+  ) {
+    return null;
+  }
+  const offeredRaw = Number(tag.offered_price ?? tag.final_price ?? 0);
+  const offeredPrice =
+    Number.isFinite(offeredRaw) && offeredRaw > 0 ? Math.round(offeredRaw) : 0;
+  const distanceRaw = Number(tag.trip_distance_km ?? tag.distance_km ?? 0);
+  const distanceKm = Number.isFinite(distanceRaw) && distanceRaw > 0 ? distanceRaw : 0;
+  const minutesRaw = Number(tag.trip_duration_min ?? tag.estimated_minutes ?? 0);
+  const estimatedMinutes =
+    Number.isFinite(minutesRaw) && minutesRaw > 0 ? Math.max(0, Math.round(minutesRaw)) : 0;
+  const vehicleRaw = String(tag.passenger_vehicle_kind ?? tag.passenger_preferred_vehicle ?? 'car')
+    .trim()
+    .toLowerCase();
+  const vehicleKind: 'car' | 'motorcycle' = vehicleRaw === 'motorcycle' ? 'motorcycle' : 'car';
+  return {
+    pickupLat,
+    pickupLng,
+    pickupLabel: String(tag.pickup_location || '').trim() || 'Alış noktası',
+    dropoffLat,
+    dropoffLng,
+    dropoffLabel: String(tag.dropoff_location || '').trim() || 'Varış noktası',
+    offeredPrice,
+    vehicleKind,
+    distanceKm,
+    estimatedMinutes,
+    driverId: String(tag.driver_id || '').trim(),
+    tagId: String(tag.id || '').trim(),
+  };
+}
+
+function isPassengerCounterpartyPreBoardingDriverForceEnd(
+  data: Record<string, unknown>,
+  userId: string | null | undefined,
+  tag: Tag | null | undefined,
+): boolean {
+  if (!tag || tag.boarding_confirmed_at) return false;
+  const preBoarding = !!(data.pre_boarding ?? data.immediate);
+  if (!preBoarding) return false;
+  const enderId = String(data.ended_by ?? data.ender_id ?? '')
+    .trim()
+    .toLowerCase();
+  const uid = String(userId ?? '')
+    .trim()
+    .toLowerCase();
+  if (!enderId || !uid || enderId === uid) return false;
+  const initiatorType = String(data.initiator_type ?? data.ender_type ?? '')
+    .trim()
+    .toLowerCase();
+  if (initiatorType === 'driver') return true;
+  const driverId = String(tag.driver_id ?? '')
+    .trim()
+    .toLowerCase();
+  return !!(driverId && enderId === driverId);
+}
+
 /** Karşılıklı “Yolculuk Sonlandırma” legacy modal — force-end mavi kart / DB pending ile asla çakışmasın */
 function legacyTripEndModalVisible(
   showTripEndModal: boolean,
@@ -8142,6 +8226,7 @@ function PassengerDashboard({
     initiatorName: string;
     informationalOnly?: boolean;
     message?: string;
+    showRematchAction?: boolean;
   } | null>(null);
   const [passengerForceEndReviewSubmitting, setPassengerForceEndReviewSubmitting] = useState(false);
   /** Aynı tag için zorla-bitir onay modalı yalnızca bir kez (poll/useEffect tekrar açmasın) */
@@ -9324,6 +9409,9 @@ function PassengerDashboard({
   const isPollingActiveRef = useRef<boolean>(true);
   /** TEMP: next passenger price/offer attempt after socket trip_force_ended — for lifecycle logs */
   const passengerPostForceEndRef = useRef(false);
+  /** Pre-boarding driver force-end — rematch snapshot before activeTag clears */
+  const passengerForceEndRematchSnapshotRef = useRef<PassengerForceEndRematchSnapshot | null>(null);
+  const [passengerForceEndRematchSubmitting, setPassengerForceEndRematchSubmitting] = useState(false);
   /** TEMP: log ACTIVE_TAG_RESUME_AFTER_FORCE_END once when polling runs after lock clears */
   const resumeActiveTagPollAfterForceEndRef = useRef(false);
 
@@ -9376,7 +9464,8 @@ function PassengerDashboard({
   );
 
   const finalizePassengerForceEnd = useCallback(
-    (data: Record<string, unknown>) => {
+    (data: Record<string, unknown>, opts?: { preserveRoute?: boolean }) => {
+      const preserveRoute = opts?.preserveRoute === true;
       const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
       if (tid) {
         void playJourneyForceEndAccepted({ tagId: tid });
@@ -9401,8 +9490,13 @@ function PassengerDashboard({
       setPassengerDriverForceReview(null);
       passengerForceEndModalHandledTagIdsRef.current.clear();
       passengerForceEndLastRequestKeyRef.current = null;
+      if (!preserveRoute) {
+        passengerForceEndRematchSnapshotRef.current = null;
+      }
       setActiveTag(null);
-      setDestination(null);
+      if (!preserveRoute) {
+        setDestination(null);
+      }
       callCheck('clearIncomingCall', clearIncomingCall);
       clearIncomingCall();
       setShowCallScreen(false);
@@ -9420,12 +9514,14 @@ function PassengerDashboard({
       setShowQRModal(false);
       setShowPriceModal(false);
       resetPriceOfferPaymentUi();
-      setPriceInfo(null);
-      setSelectedPrice(0);
-      pricePrefetchRef.current = null;
+      if (!preserveRoute) {
+        setPriceInfo(null);
+        setSelectedPrice(0);
+        pricePrefetchRef.current = null;
+      }
       setPriceLoading(false);
       clearPassengerTrustState();
-      if (!ratingModalVisibleRef.current) {
+      if (!ratingModalVisibleRef.current && !preserveRoute) {
         setScreen('role-select');
       }
       const enderId = String(
@@ -9480,6 +9576,38 @@ function PassengerDashboard({
       onPending();
     },
     [finalizePassengerForceEnd],
+  );
+
+  const showPassengerPreBoardingDriverForceEndModal = useCallback(
+    (data: Record<string, unknown>, tag: Tag | null | undefined) => {
+      const tid = String(data.tag_id ?? tag?.id ?? '').trim();
+      if (!tid) return false;
+      const ini = String(
+        data.initiator_id ?? data.ended_by ?? data.ender_id ?? tag?.driver_id ?? '',
+      ).trim();
+      const snap = buildPassengerForceEndRematchSnapshot(tag);
+      if (snap) {
+        passengerForceEndRematchSnapshotRef.current = snap;
+      }
+      passengerForceEndModalHandledTagIdsRef.current.add(tid);
+      setShowTripEndModal(false);
+      setTripEndRequesterType(null);
+      setPassengerDriverForceReview({
+        tagId: tid,
+        initiatorId: ini,
+        initiatorType: 'driver',
+        initiatorName: displayFirstName(tag?.driver_name, 'Sürücü'),
+        informationalOnly: true,
+        showRematchAction: !!snap,
+        message: typeof data.message === 'string' ? data.message : undefined,
+      });
+      perfLog('PASSENGER_PRE_BOARDING_FORCE_END_MODAL', {
+        tagId: tid,
+        hasRematchSnapshot: !!snap,
+      });
+      return true;
+    },
+    [],
   );
 
   const clearPassengerChatPeekTimer = useCallback(() => {
@@ -9969,6 +10097,10 @@ function PassengerDashboard({
         return;
       }
       const informationalOnly = isForceEndInformationalPrompt(data);
+      const showRematchAction =
+        informationalOnly &&
+        initiatorType === 'driver' &&
+        !!(data.pre_boarding || data.informational || data.already_completed);
       const requestKey = forceEndCounterpartyRequestKey(tid, ini, null);
       perfLog('FORCE_END_REQUEST_RECEIVED', {
         tagId: tid,
@@ -10005,8 +10137,19 @@ function PassengerDashboard({
         initiatorType: data.initiator_type === 'passenger' ? 'passenger' : 'driver',
         initiatorName: displayFirstName(data.initiator_name, data.initiator_type === 'passenger' ? 'Yolcu' : 'Sürücü'),
         informationalOnly,
+        showRematchAction,
         message: typeof data.message === 'string' ? data.message : undefined,
       });
+      if (showRematchAction) {
+        const tagSnap =
+          activeTag?.id && String(activeTag.id) === tid
+            ? activeTag
+            : passengerActiveTagSnapshotRef.current;
+        const snap = buildPassengerForceEndRematchSnapshot(tagSnap);
+        if (snap) {
+          passengerForceEndRematchSnapshotRef.current = snap;
+        }
+      }
       perfLog('FORCE_END_UI_OPEN', {
         tagId: tid,
         requestedBy: ini,
@@ -10018,9 +10161,25 @@ function PassengerDashboard({
     },
     // 🆕 ZORLA BİTİRME — tamamlandıktan sonra (yolcu onayı zaten alındı veya yolcu zorla bitirdi)
     onTripForceEnded: (data) => {
-      perfLog('TRIP_FORCE_ENDED_EVENT', data);
-      perfLog('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
-      finalizePassengerForceEnd(data as Record<string, unknown>);
+      const payload = data as Record<string, unknown>;
+      perfLog('TRIP_FORCE_ENDED_EVENT', payload);
+      perfLog('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ (resolve):', payload);
+      const tid = String(payload.tag_id ?? '').trim();
+      if (
+        tid &&
+        passengerDriverForceReview?.tagId === tid &&
+        passengerDriverForceReview?.informationalOnly
+      ) {
+        perfLog('TRIP_FORCE_ENDED_DEFERRED_ALREADY_MODAL', { tagId: tid });
+        return;
+      }
+      const tagSnap = passengerActiveTagSnapshotRef.current ?? activeTag;
+      if (isPassengerCounterpartyPreBoardingDriverForceEnd(payload, user?.id, tagSnap)) {
+        if (showPassengerPreBoardingDriverForceEndModal(payload, tagSnap)) {
+          return;
+        }
+      }
+      finalizePassengerForceEnd(payload);
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
     onShowRatingModal: (data) => {
@@ -12016,6 +12175,190 @@ function PassengerDashboard({
     }
   };
 
+  const handlePassengerForceEndRematch = useCallback(async () => {
+    const review = passengerDriverForceReview;
+    const snap = passengerForceEndRematchSnapshotRef.current;
+    if (!review || !snap || !user?.id || passengerForceEndRematchSubmitting) {
+      appAlert('Hata', 'Yol bilgisi bulunamadı. Tamam ile çıkıp tekrar deneyebilirsiniz.');
+      return;
+    }
+    if (snap.offeredPrice < 1) {
+      appAlert('Hata', 'Önceki katkı tutarı bulunamadı.');
+      return;
+    }
+    if (passengerSendOfferInFlightRef.current) return;
+
+    setPassengerForceEndRematchSubmitting(true);
+    passengerSendOfferInFlightRef.current = true;
+    setLoading(true);
+
+    const tid = review.tagId;
+    const ini = review.initiatorId;
+
+    try {
+      setPassengerPickup({
+        latitude: snap.pickupLat,
+        longitude: snap.pickupLng,
+        address: snap.pickupLabel,
+      });
+      setDestination({
+        latitude: snap.dropoffLat,
+        longitude: snap.dropoffLng,
+        address: snap.dropoffLabel,
+      });
+      setRideVehiclePreference(snap.vehicleKind);
+      setPriceInfo({
+        distance_km: snap.distanceKm,
+        trip_distance_km: snap.distanceKm,
+        estimated_minutes: snap.estimatedMinutes,
+        min_price: snap.offeredPrice,
+        max_price: snap.offeredPrice,
+        suggested_price: snap.offeredPrice,
+        is_peak_hour: false,
+      });
+      setSelectedPrice(snap.offeredPrice);
+
+      passengerForceEndModalHandledTagIdsRef.current.delete(tid);
+      passengerForceEndLastRequestKeyRef.current = null;
+      setPassengerDriverForceReview(null);
+      finalizePassengerForceEnd(
+        {
+          tag_id: tid,
+          ender_id: ini,
+          ended_by: ini,
+          pre_boarding: true,
+          immediate: true,
+          should_rate: false,
+        },
+        { preserveRoute: true },
+      );
+
+      const generateUUID = () =>
+        'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === 'x' ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      const newTagId = generateUUID();
+      const requestId = generateUUID();
+      const offerAmt = snap.offeredPrice;
+
+      passengerPostForceEndRef.current = true;
+      perfLog('PASSENGER_FORCE_END_REMATCH_START', { priorTagId: tid, newTagId });
+
+      const res = await fetch(`${API_URL}/ride/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag_id: newTagId,
+          passenger_id: String(user.id),
+          pickup_lat: snap.pickupLat,
+          pickup_lng: snap.pickupLng,
+          pickup_location: snap.pickupLabel,
+          passenger_vehicle_kind: snap.vehicleKind,
+          dropoff_lat: snap.dropoffLat,
+          dropoff_lng: snap.dropoffLng,
+          dropoff_location: snap.dropoffLabel,
+          offered_price: offerAmt,
+          distance_km: snap.distanceKm,
+          estimated_minutes: snap.estimatedMinutes,
+          passenger_preferred_vehicle: snap.vehicleKind,
+          passenger_payment_method: 'cash',
+        }),
+      });
+
+      let data: Record<string, unknown> = {};
+      try {
+        data = (await res.json()) as Record<string, unknown>;
+      } catch {
+        throw new Error(`Sunucu yanıtı okunamadı (${res.status})`);
+      }
+
+      if (!res.ok || !data.tag) {
+        const detailRaw = data.detail;
+        const detailStr = Array.isArray(detailRaw)
+          ? (detailRaw as { msg?: string }[])
+              .map((x) => (typeof x?.msg === 'string' ? x.msg : ''))
+              .filter(Boolean)
+              .join('; ')
+          : typeof detailRaw === 'string'
+            ? detailRaw
+            : '';
+        const apiErr =
+          (typeof data.error === 'string' && data.error) ||
+          detailStr ||
+          `Sunucu yanıtı ${res.status}`;
+        throw new Error(apiErr);
+      }
+
+      const serverTag = data.tag as Record<string, unknown>;
+      const srvKm = Number(serverTag.distance_km);
+      const srvMin = Number(serverTag.estimated_minutes);
+      const resolvedTagId = String(serverTag.id ?? newTagId);
+      const mergedTag = {
+        ...serverTag,
+        id: resolvedTagId,
+        offered_price: offerAmt,
+        distance_km: Number.isFinite(srvKm) && srvKm > 0 ? srvKm : snap.distanceKm,
+        estimated_minutes:
+          Number.isFinite(srvMin) && srvMin > 0 ? Math.round(srvMin) : snap.estimatedMinutes,
+        status: serverTag.status || 'waiting',
+        passenger_payment_method:
+          normalizePassengerPaymentMethod(serverTag.passenger_payment_method) ?? 'cash',
+      };
+
+      setShowPriceModal(false);
+      resetPriceOfferPaymentUi();
+      setActiveTag(mergedTag as Tag);
+      setScreen('dashboard');
+      setCurrentRequestId(requestId);
+      passengerForceEndRematchSnapshotRef.current = null;
+
+      if (emitCreateTagRequest) {
+        emitCreateTagRequest({
+          request_id: requestId,
+          tag_id: resolvedTagId,
+          passenger_id: user.id,
+          passenger_name: user.name || user.phone,
+          pickup_location: snap.pickupLabel,
+          pickup_lat: snap.pickupLat,
+          pickup_lng: snap.pickupLng,
+          dropoff_location: snap.dropoffLabel,
+          dropoff_lat: snap.dropoffLat,
+          dropoff_lng: snap.dropoffLng,
+          offered_price: offerAmt,
+          distance_km: mergedTag.distance_km,
+          estimated_minutes: mergedTag.estimated_minutes,
+          passenger_preferred_vehicle: snap.vehicleKind,
+          passenger_vehicle_kind: snap.vehicleKind,
+          passenger_payment_method: 'cash',
+        });
+      }
+      perfLog('PASSENGER_FORCE_END_REMATCH_OK', { tagId: resolvedTagId });
+      passengerPostForceEndRef.current = false;
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      perfLog('PASSENGER_FORCE_END_REMATCH_ERROR', { message: raw });
+      void playFeedbackErrorSound();
+      appAlert('Hata', raw || 'Yeni arama başlatılamadı.');
+    } finally {
+      setPassengerForceEndRematchSubmitting(false);
+      passengerSendOfferInFlightRef.current = false;
+      setLoading(false);
+    }
+  }, [
+    passengerDriverForceReview,
+    passengerForceEndRematchSubmitting,
+    user?.id,
+    user?.name,
+    user?.phone,
+    finalizePassengerForceEnd,
+    emitCreateTagRequest,
+    resetPriceOfferPaymentUi,
+    setRideVehiclePreference,
+    setScreen,
+  ]);
+
   const handlePriceOfferSendPress = () => {
     playTapSound();
     void playUiTapSound();
@@ -13971,7 +14314,9 @@ function PassengerDashboard({
                   visible={!!passengerDriverForceReview}
                   tagId={passengerDriverForceReview?.tagId}
                   submitting={passengerForceEndReviewSubmitting}
+                  rematchSubmitting={passengerForceEndRematchSubmitting}
                   informationalOnly={!!passengerDriverForceReview?.informationalOnly}
+                  showRematchAction={!!passengerDriverForceReview?.showRematchAction}
                   infoMessage={passengerDriverForceReview?.message}
                   title={
                     passengerDriverForceReview?.informationalOnly
@@ -13982,6 +14327,23 @@ function PassengerDashboard({
                         ? 'Yolcu eşleşmeyi zorla bitirdi'
                         : undefined
                   }
+                  onReport={async () => {
+                    if (!user?.id) return;
+                    const driverId =
+                      passengerForceEndRematchSnapshotRef.current?.driverId ||
+                      passengerDriverForceReview?.initiatorId;
+                    if (!driverId) return;
+                    const r = await submitUserReport(
+                      String(user.id),
+                      driverId,
+                      'trip_cancelled_other',
+                    );
+                    appAlert(
+                      r.ok ? 'Şikayet alındı' : 'Hata',
+                      r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'),
+                    );
+                  }}
+                  onRematch={() => void handlePassengerForceEndRematch()}
                   onConfirm={async () => {
                     if (!passengerDriverForceReview || !user?.id || passengerForceEndReviewSubmitting) return;
                     const tid = passengerDriverForceReview.tagId;

@@ -12,7 +12,9 @@ import {
   type TrustedDirectApiResult,
   type TrustedDirectDriverInvitePublic,
 } from '../lib/trustedDirectApi';
+import { appAlert } from '../contexts/AppAlertContext';
 import { offerSoundController } from '../lib/offerSoundController';
+import { perfLog } from '../utils/perfDiagLog';
 
 const MAX_POLL_BACKOFF_MS = 10000;
 
@@ -303,6 +305,9 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
     if (!enabledRef.current || hasActiveTagRef.current) {
       return;
     }
+    if (acceptInFlightRef.current || declineInFlightRef.current) {
+      return;
+    }
 
     generationRef.current += 1;
     const generation = generationRef.current;
@@ -348,6 +353,9 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
   /** Push/poll refresh — no restoring status (keeps offerSoundController audible during fetch). */
   const refresh = useCallback(async () => {
     if (!enabledRef.current || hasActiveTagRef.current) {
+      return;
+    }
+    if (acceptInFlightRef.current || declineInFlightRef.current) {
       return;
     }
 
@@ -447,7 +455,14 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
 
   const decline = useCallback(async (): Promise<boolean> => {
     const iid = String(inviteRef.current?.id || '').trim();
-    if (!iid || declineInFlightRef.current) {
+    if (declineInFlightRef.current) {
+      return false;
+    }
+    if (!iid) {
+      const msg = 'Davet bulunamadı. Lütfen tekrar deneyin.';
+      perfLog('TDM_DECLINE_NO_INVITE', { status: statusRef.current });
+      setErrorMessage(msg);
+      appAlert('Reddet', msg, [{ text: 'Tamam', style: 'default' }], { variant: 'warning' });
       return false;
     }
 
@@ -470,29 +485,37 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
       }
     }
 
-    if (!mountedRef.current || generation !== generationRef.current) {
+    if (!mountedRef.current) {
       return false;
     }
 
     if (result.ok === false) {
-      const refreshResult = await getCurrentTrustedDirectInvite();
-      if (
-        refreshResult.ok &&
-        mountedRef.current &&
-        generation === generationRef.current
-      ) {
-        applyInvite(refreshResult.data, generation);
-        if (!refreshResult.data) {
-          return true;
+      if (generation === generationRef.current) {
+        const refreshResult = await getCurrentTrustedDirectInvite();
+        if (refreshResult.ok && mountedRef.current && generation === generationRef.current) {
+          applyInvite(refreshResult.data, generation);
+          if (!refreshResult.data) {
+            setInvite(null);
+            setStatus('idle');
+            setErrorMessage(null);
+            setPollErrorMessage(null);
+            setIsRestoring(false);
+            return true;
+          }
         }
       }
-      setErrorMessage(mapTdmUserFacingError(result));
+      const errMsg = mapTdmUserFacingError(result);
+      setErrorMessage(errMsg);
+      perfLog('TDM_DECLINE_FAILED', { inviteId: iid, code: result.code, message: errMsg });
+      appAlert('Reddet', errMsg, [{ text: 'Tamam', style: 'default' }], { variant: 'warning' });
       return false;
     }
 
     setInvite(null);
     setStatus('idle');
+    setErrorMessage(null);
     setPollErrorMessage(null);
+    setIsRestoring(false);
     return true;
   }, [applyInvite, stopPolling]);
 
