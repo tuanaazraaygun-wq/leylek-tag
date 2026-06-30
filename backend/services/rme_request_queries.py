@@ -580,11 +580,13 @@ def update_request_status_terminal(
         .update(payload)
         .eq("id", rid)
         .eq("status", from_norm)
-        .select("id")
         .execute()
     )
-    rows = result.data or []
-    return bool(rows)
+    _ = result  # Sync client may not return updated rows without PostgREST select
+    refreshed = load_request_by_id(supabase, rid)
+    if not refreshed:
+        return False
+    return str(refreshed.get("status") or "").strip().lower() == to_norm
 
 
 def ensure_request_declined_terminal(
@@ -778,8 +780,10 @@ def update_invite_status_terminal(
         .update(payload)
         .eq("id", iid)
         .eq("status", from_norm)
-        .select("id")
         .execute()
     )
-    rows = result.data or []
-    return bool(rows)
+    _ = result
+    refreshed = load_invite_by_id(supabase, iid)
+    if not refreshed:
+        return False
+    return str(refreshed.get("status") or "").strip().lower() == to_norm

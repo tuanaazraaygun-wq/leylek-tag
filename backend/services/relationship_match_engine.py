@@ -31,6 +31,7 @@ from services.rme_request_queries import (
     RME_INVITE_STATUS_ACCEPTED,
     RME_INVITE_STATUS_CANCELLED,
     RME_INVITE_STATUS_DECLINED,
+    RME_INVITE_STATUS_EXPIRED,
     RME_INVITE_STATUS_PENDING,
     RME_REQUEST_STATUS_ACCEPTED,
     RME_REQUEST_STATUS_CANCELLED,
@@ -1003,6 +1004,10 @@ def cancel_request(
         raise RmeNotFoundError()
 
     request_row = _lazy_expire_request_row(supabase, request_row)
+    request_status = str(request_row.get("status") or "").strip().lower()
+    if request_status == RME_REQUEST_STATUS_CANCELLED:
+        return {"request": request_row}
+
     _assert_request_pending_or_raise(request_row)
 
     now_iso = _utcnow_iso()
@@ -1019,6 +1024,8 @@ def cancel_request(
     )
     if not updated:
         refreshed = load_request_by_id(supabase, rid)
+        if refreshed and str(refreshed.get("status") or "").strip().lower() == RME_REQUEST_STATUS_CANCELLED:
+            return {"request": refreshed}
         if refreshed:
             refreshed = _lazy_expire_request_row(supabase, refreshed)
             _assert_request_pending_or_raise(refreshed)
