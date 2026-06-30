@@ -504,7 +504,8 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
           }
         }
       }
-      const errMsg = mapTdmUserFacingError(result);
+      const errMsg =
+        result.message?.trim() || mapTdmUserFacingError(result);
       setErrorMessage(errMsg);
       perfLog('TDM_DECLINE_FAILED', { inviteId: iid, code: result.code, message: errMsg });
       appAlert('Reddet', errMsg, [{ text: 'Tamam', style: 'default' }], { variant: 'warning' });

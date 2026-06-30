@@ -29,15 +29,19 @@ from services.quick_match import (
 from services.rme_request_queries import (
     MATCH_MODULE_TRUSTED_DIRECT,
     RME_INVITE_STATUS_ACCEPTED,
+    RME_INVITE_STATUS_CANCELLED,
+    RME_INVITE_STATUS_DECLINED,
     RME_INVITE_STATUS_PENDING,
     RME_REQUEST_STATUS_ACCEPTED,
     RME_REQUEST_STATUS_CANCELLED,
     RME_REQUEST_STATUS_DECLINED,
+    RME_REQUEST_STATUS_EXPIRED,
     RME_REQUEST_STATUS_PENDING,
     TDM_MAX_TRIP_KM,
     TDM_MIN_TRIP_KM,
     accept_invite_optimistic,
     cancel_pending_invites_for_request,
+    ensure_request_declined_terminal,
     expire_pending_invite_if_needed,
     expire_pending_request_if_needed,
     expire_stale_pending_for_requester,
@@ -56,6 +60,7 @@ from services.rme_request_queries import (
     load_request_by_idempotency_key,
     load_request_public_by_id,
     load_tag_for_accept_replay,
+    RME_DECLINE_REASON_DRIVER,
     update_invite_status_terminal,
     update_request_accept_with_matched_tag,
     update_request_status_terminal,
@@ -426,6 +431,91 @@ def _insert_audit_event(
         row["invite_id"] = invite_norm
 
     supabase.table(TABLE_RELATIONSHIP_MATCH_EVENTS).insert(row).execute()
+
+
+def _safe_insert_decline_audit_event(
+    supabase,
+    *,
+    request_id: str,
+    invite_id: str,
+    match_module: str,
+    actor_id: str,
+    decline_reason: str = RME_DECLINE_REASON_DRIVER,
+) -> None:
+    try:
+        _insert_audit_event(
+            supabase,
+            request_id=request_id,
+            invite_id=invite_id,
+            match_module=match_module,
+            event_type="invite_declined",
+            actor_id=actor_id,
+            payload_json={"decline_reason": decline_reason},
+        )
+    except Exception as exc:
+        logger.warning(
+            "tdm_decline audit insert failed request_id=%s invite_id=%s err=%s",
+            str(request_id or "")[:36],
+            str(invite_id or "")[:36],
+            exc,
+        )
+
+
+def _public_decline_terminal_payload(
+    invite_row: Optional[dict],
+    request_row: Optional[dict],
+) -> Dict[str, Any]:
+    invite = invite_row or {}
+    request = request_row or {}
+    return {
+        "invite": {
+            "id": str(invite.get("id") or ""),
+            "status": str(invite.get("status") or ""),
+            "decline_reason": invite.get("decline_reason"),
+            "responded_at": invite.get("responded_at"),
+        },
+        "request": {
+            "id": str(request.get("id") or ""),
+            "status": str(request.get("status") or ""),
+            "decline_reason": request.get("decline_reason"),
+            "responded_at": request.get("responded_at"),
+        },
+    }
+
+
+def _finalize_driver_decline(
+    supabase,
+    *,
+    invite_id: str,
+    request_id: str,
+    request_row: dict,
+    responder_norm: str,
+    audit: bool = True,
+) -> Dict[str, Any]:
+    """Ensure parent request is declined and return terminal rows."""
+    match_module = str(request_row.get("match_module") or MATCH_MODULE_TRUSTED_DIRECT)
+    if not ensure_request_declined_terminal(
+        supabase,
+        request_id,
+        decline_reason=RME_DECLINE_REASON_DRIVER,
+    ):
+        refreshed_request = load_request_by_id(supabase, request_id)
+        req_status = str((refreshed_request or {}).get("status") or "").strip().lower()
+        if req_status != RME_REQUEST_STATUS_DECLINED:
+            raise RmeInvalidStateError("İstek reddedilemedi.")
+
+    if audit:
+        _safe_insert_decline_audit_event(
+            supabase,
+            request_id=request_id,
+            invite_id=invite_id,
+            match_module=match_module,
+            actor_id=responder_norm,
+        )
+
+    invite_row = load_invite_by_id(supabase, invite_id)
+    request_row = load_request_by_id(supabase, request_id)
+    return _public_decline_terminal_payload(invite_row, request_row)
 
 
 def _audit_request_expired(
@@ -963,23 +1053,43 @@ def decline_invite(
     responder_norm = _norm_user_id(responder_id)
     iid = _norm_id(invite_id)
     if not responder_norm or not iid:
-        raise RmeNotFoundError()
+        raise RmeNotFoundError("Davet bulunamadı.")
 
     invite_row = load_invite_by_id(supabase, iid)
     if not invite_row:
-        raise RmeNotFoundError()
+        raise RmeNotFoundError("Davet bulunamadı.")
     if _norm_user_id(invite_row.get("responder_id")) != responder_norm:
-        raise RmeNotFoundError()
+        raise RmeNotFoundError("Davet bulunamadı.")
 
     invite_row = _lazy_expire_invite_row(supabase, invite_row)
-    _assert_invite_pending_or_raise(invite_row)
+    invite_status = str(invite_row.get("status") or "").strip().lower()
 
     request_id = _norm_id(invite_row.get("request_id"))
     request_row = load_request_by_id(supabase, request_id) if request_id else None
     if not request_row:
-        raise RmeNotFoundError()
+        raise RmeNotFoundError("İstek bulunamadı.")
 
     request_row = _lazy_expire_request_row(supabase, request_row)
+    request_status = str(request_row.get("status") or "").strip().lower()
+
+    if invite_status == RME_INVITE_STATUS_DECLINED:
+        return _finalize_driver_decline(
+            supabase,
+            invite_id=iid,
+            request_id=request_id,
+            request_row=request_row,
+            responder_norm=responder_norm,
+            audit=False,
+        )
+
+    if invite_status == RME_INVITE_STATUS_EXPIRED or request_status == RME_REQUEST_STATUS_EXPIRED:
+        raise RmeExpiredError("Davet süresi doldu.")
+    if invite_status == RME_INVITE_STATUS_CANCELLED:
+        raise RmeInvalidStateError("Davet iptal edildi.")
+    if invite_status == RME_INVITE_STATUS_ACCEPTED:
+        raise RmeInvalidStateError("Davet zaten kabul edildi.")
+
+    _assert_invite_pending_or_raise(invite_row)
     _assert_request_pending_or_raise(request_row)
 
     requester_norm = _norm_user_id(request_row.get("requester_id"))
@@ -992,48 +1102,28 @@ def decline_invite(
         from_status=RME_INVITE_STATUS_PENDING,
         to_status=RME_INVITE_STATUS_DECLINED,
         extra_fields={
-            "decline_reason": "driver_declined",
+            "decline_reason": RME_DECLINE_REASON_DRIVER,
             "responded_at": now_iso,
         },
     )
     if not invite_updated:
         refreshed_invite = load_invite_by_id(supabase, iid)
-        if refreshed_invite and str(refreshed_invite.get("status") or "").lower() == "declined":
+        refreshed_status = str((refreshed_invite or {}).get("status") or "").strip().lower()
+        if refreshed_status == RME_INVITE_STATUS_DECLINED:
             invite_row = refreshed_invite
+        elif refreshed_status == RME_INVITE_STATUS_EXPIRED:
+            raise RmeExpiredError("Davet süresi doldu.")
         else:
-            raise RmeInvalidStateError()
+            raise RmeInvalidStateError("Davet reddedilemedi.")
 
-    request_updated = update_request_status_terminal(
+    return _finalize_driver_decline(
         supabase,
-        request_id,
-        from_status=RME_REQUEST_STATUS_PENDING,
-        to_status=RME_REQUEST_STATUS_DECLINED,
-        extra_fields={
-            "decline_reason": "driver_declined",
-            "responded_at": now_iso,
-        },
-    )
-    if not request_updated:
-        refreshed_request = load_request_by_id(supabase, request_id)
-        if refreshed_request and str(refreshed_request.get("status") or "").lower() == "declined":
-            request_row = refreshed_request
-        else:
-            raise RmeInvalidStateError()
-
-    _insert_audit_event(
-        supabase,
-        request_id=request_id,
         invite_id=iid,
-        match_module=str(request_row.get("match_module") or MATCH_MODULE_TRUSTED_DIRECT),
-        event_type="invite_declined",
-        actor_id=responder_norm,
-        payload_json={"decline_reason": "driver_declined"},
+        request_id=request_id,
+        request_row=request_row,
+        responder_norm=responder_norm,
+        audit=True,
     )
-
-    return {
-        "invite": load_invite_by_id(supabase, iid),
-        "request": load_request_by_id(supabase, request_id),
-    }
 
 
 def accept_invite(

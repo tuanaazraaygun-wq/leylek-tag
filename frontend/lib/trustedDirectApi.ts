@@ -435,10 +435,13 @@ function userMessageFromParsedError(
     return { code: 'FORBIDDEN', message: 'Bu işlem için uygun değilsiniz' };
   }
   if (status === 404) {
+    if (code === 'not_found') {
+      return { code: 'NOT_FOUND', message: parsed.message || 'Kayıt bulunamadı' };
+    }
     if (isTdmFeatureDisabled(status, rawLower, path)) {
       return { code: 'UNAVAILABLE', message: 'Doğrudan eşleşme şu an kullanılamıyor' };
     }
-    return { code: 'NOT_FOUND', message: 'Kayıt bulunamadı' };
+    return { code: 'NOT_FOUND', message: parsed.message || 'Kayıt bulunamadı' };
   }
   if (status === 409) {
     if (code === 'driver_offline' || rawLower.includes('driver_offline')) {
@@ -492,8 +495,7 @@ function isTdmFeatureDisabled(status: number, detail: string, path: string): boo
   return (
     lower.includes('feature_disabled') ||
     lower.includes('not available') ||
-    lower === 'not found' ||
-    lower === ''
+    lower.includes('trusted direct match is not available')
   );
 }
 
@@ -526,7 +528,7 @@ export function mapTdmUserFacingError(
     return result.message || 'Bilgiler eksik veya geçersiz';
   }
   if (result.code === 'UNAVAILABLE') {
-    return 'Doğrudan eşleşme şu an kullanılamıyor';
+    return result.message?.trim() || 'Doğrudan eşleşme şu an kullanılamıyor';
   }
   if (result.code === 'NOT_FOUND') {
     return 'Kayıt bulunamadı';

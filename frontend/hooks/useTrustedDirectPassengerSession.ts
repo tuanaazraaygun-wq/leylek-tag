@@ -488,6 +488,22 @@ export function useTrustedDirectPassengerSession(
         return;
       }
 
+      const scopedId = String(result.data.id || '').trim();
+      if (scopedId) {
+        const latestResult = await getLatestTrustedDirectRequest(scopedId);
+        if (!mountedRef.current || generation !== generationRef.current) {
+          return;
+        }
+        if (
+          latestResult.ok &&
+          latestResult.data &&
+          String(latestResult.data.status || '').trim().toLowerCase() === 'declined'
+        ) {
+          applyRequestOutcome(latestResult.data, generation);
+          return;
+        }
+      }
+
       applyPendingRequest(result.data, generation);
     },
     [applyPendingRequest, probePendingAbsentOutcome, stopPolling],

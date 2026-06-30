@@ -262,8 +262,9 @@ export const TDM_NOTIFY_CTA = 'Bildirim gönder';
 export const TDM_NOTIFY_SHEET_TITLE = 'Yolcuya müsaitlik bildirimi gönder';
 export const TDM_NOTIFY_OPTION_AVAILABLE = 'Şu anda müsaitim';
 export const TDM_NOTIFY_OPTION_NEARBY = 'Yakınlardayım, istek gönderebilirsin';
-export const TDM_TERMINAL_DECLINED_TITLE = 'Sürücü şu anda müsait değil.';
-export const TDM_TERMINAL_DECLINED_BODY = 'İstersen başka sürücü arayabilirsin.';
+export const TDM_TERMINAL_DECLINED_TITLE = 'Sürücü şu anda müsait değil';
+export const TDM_TERMINAL_DECLINED_BODY =
+  'Dilerseniz başka güvenilir sürücülere istek gönderebilirsiniz.';
 export const TDM_TERMINAL_DECLINED_PRIMARY = 'Diğer sürücülere bak';
 export const TDM_TERMINAL_DECLINED_SECONDARY = 'Tamam';
 

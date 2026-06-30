@@ -25,6 +25,9 @@ RME_INVITE_STATUS_DECLINED = "declined"
 RME_INVITE_STATUS_EXPIRED = "expired"
 RME_INVITE_STATUS_CANCELLED = "cancelled"
 
+RME_DECLINE_REASON_DRIVER = "driver_declined"
+RME_DECLINE_REASON_RESPONDER = "responder_declined"
+
 MATCH_MODULE_TRUSTED_DIRECT = "trusted_direct"
 
 _REQUEST_SELECT = (
@@ -577,10 +580,53 @@ def update_request_status_terminal(
         .update(payload)
         .eq("id", rid)
         .eq("status", from_norm)
+        .select("id")
         .execute()
     )
     rows = result.data or []
     return bool(rows)
+
+
+def ensure_request_declined_terminal(
+    supabase,
+    request_id: str,
+    *,
+    decline_reason: str = RME_DECLINE_REASON_DRIVER,
+) -> bool:
+    """
+    Repair/idempotent: pending_responder → declined.
+    Returns True when request is declined after call (updated or already terminal).
+    """
+    rid = _norm_id(request_id)
+    if not rid:
+        return False
+
+    row = load_request_by_id(supabase, rid)
+    if not row:
+        return False
+
+    status = str(row.get("status") or "").strip().lower()
+    if status == RME_REQUEST_STATUS_DECLINED:
+        return True
+    if status != RME_REQUEST_STATUS_PENDING:
+        return False
+
+    now_iso = _utcnow_iso()
+    updated = update_request_status_terminal(
+        supabase,
+        rid,
+        from_status=RME_REQUEST_STATUS_PENDING,
+        to_status=RME_REQUEST_STATUS_DECLINED,
+        extra_fields={
+            "decline_reason": decline_reason,
+            "responded_at": now_iso,
+        },
+    )
+    if updated:
+        return True
+
+    refreshed = load_request_by_id(supabase, rid)
+    return str(refreshed.get("status") or "").strip().lower() == RME_REQUEST_STATUS_DECLINED if refreshed else False
 
 
 ORPHAN_TAG_LOOKBACK_SECONDS = 120
@@ -732,6 +778,7 @@ def update_invite_status_terminal(
         .update(payload)
         .eq("id", iid)
         .eq("status", from_norm)
+        .select("id")
         .execute()
     )
     rows = result.data or []

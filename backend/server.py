@@ -15342,7 +15342,15 @@ async def post_trusted_direct_invite_decline_http(
     await require_eligible_user(actor_id, action="trusted_direct_decline")
     try:
         result = decline_trusted_direct_invite(supabase, actor_id, invite_id)
-        return {"success": True, **result}
+        invite = (result or {}).get("invite") if isinstance(result, dict) else None
+        request = (result or {}).get("request") if isinstance(result, dict) else None
+        return {
+            "success": True,
+            "terminal": True,
+            "invite_status": str((invite or {}).get("status") or ""),
+            "request_status": str((request or {}).get("status") or ""),
+            **(result if isinstance(result, dict) else {}),
+        }
     except (
         RmeFeatureDisabledError,
         BlockedPairError,
