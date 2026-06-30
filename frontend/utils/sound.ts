@@ -5,12 +5,14 @@
 import { Platform, AppState } from 'react-native';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import {
+  applyOfferAlertVolumeFloor,
   DEFAULT_DRIVER_OFFER_SOUND,
   DEFAULT_DRIVER_OFFER_VOLUME,
   getDriverOfferSoundPreference,
   getDriverOfferSoundVolume,
   type DriverOfferSoundType,
 } from '../lib/driverOfferSoundPrefs';
+import { perfLog } from './perfDiagLog';
 import {
   driverOfferSessionGate,
   driverOfferToneCooldownGate,
@@ -42,7 +44,6 @@ const MATCH_CHIME_VOLUME = 0.46;
 
 const IOS_CRITICAL_ALERT_VOLUME = 0.95;
 const IOS_CALL_INCOMING_VOLUME = 1.0;
-const IOS_OFFER_ALERT_VOLUME_FLOOR = 0.95;
 
 const VIDEO_TRUST_CALL_VOLUME_BASE = 0.44;
 const FORCE_END_ALERT_VOLUME_BASE = 0.4;
@@ -60,9 +61,24 @@ function androidAudioModePatch(): {
   return { interruptionModeAndroid: InterruptionModeAndroid.DuckOthers };
 }
 
-function resolveIosOfferAlertVolume(volume: number): number {
-  if (Platform.OS !== 'ios') return volume;
-  return Math.max(volume, IOS_OFFER_ALERT_VOLUME_FLOOR);
+type OfferAlertVolumeKind =
+  | 'normal'
+  | 'urgent'
+  | 'quick_match'
+  | 'trusted_direct'
+  | 'preview';
+
+function resolveOfferAlertVolume(rawVolume: number, kind: OfferAlertVolumeKind): number {
+  const volume = applyOfferAlertVolumeFloor(rawVolume);
+  try {
+    perfLog(
+      'OFFER_ALERT_VOLUME_RESOLVED',
+      JSON.stringify({ kind, platform: Platform.OS, raw: rawVolume, volume }),
+    );
+  } catch {
+    /* noop */
+  }
+  return volume;
 }
 
 function resolveVideoTrustCallVolume(): number {
@@ -341,9 +357,8 @@ async function playDriverOfferToneOnce(
 export async function playDriverNewOfferLuxuryTone(): Promise<void> {
   const userId = await resolveDriverOfferUserId();
   const kind = userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND;
-  const volume = resolveIosOfferAlertVolume(
-    userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME,
-  );
+  const rawVolume = userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME;
+  const volume = resolveOfferAlertVolume(rawVolume, kind === 'urgent' ? 'urgent' : 'normal');
   await playDriverOfferToneOnce(kind, volume, { useCache: true });
 }
 
@@ -362,9 +377,12 @@ export async function previewDriverOfferSound(options?: PreviewDriverOfferSoundO
   const kind =
     options?.type ??
     (userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND);
-  const volume = resolveIosOfferAlertVolume(
+  const rawVolume =
     options?.volume ??
-      (userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME),
+    (userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME);
+  const volume = resolveOfferAlertVolume(
+    rawVolume,
+    options?.type === 'urgent' || kind === 'urgent' ? 'urgent' : 'preview',
   );
   await playDriverOfferToneOnce(kind, volume, { bypassCooldown: true, useCache: false });
 }
@@ -415,9 +433,8 @@ export async function playDriverOfferAlertBurst(playMs = 2000): Promise<void> {
     await stopOfferAlertBurstPlayback();
     const userId = await resolveDriverOfferUserId();
     const kind = userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND;
-    const volume = resolveIosOfferAlertVolume(
-      userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME,
-    );
+    const rawVolume = userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME;
+    const volume = resolveOfferAlertVolume(rawVolume, kind === 'urgent' ? 'urgent' : 'normal');
     const sound = await ensureDriverOfferSoundLoaded(kind);
     if (!sound) return;
     await sound.setVolumeAsync(volume);
@@ -450,7 +467,7 @@ async function playEphemeralOfferAlertBurst(
 ): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
-  const alertVolume = resolveIosOfferAlertVolume(volume);
+  const alertVolume = resolveOfferAlertVolume(volume, slot === 'qm' ? 'quick_match' : 'trusted_direct');
   try {
     await loadOfferAlertAudioMode();
     await stopOfferAlertBurstPlayback();
@@ -514,9 +531,10 @@ export async function preloadTrustedDirectOpsSound(): Promise<void> {
     tdmOpsPreloadPromise = (async () => {
       try {
         await loadOfferAlertAudioMode();
+        const preloadVolume = resolveOfferAlertVolume(TRUSTED_DIRECT_OPS_VOLUME, 'trusted_direct');
         const { sound } = await Audio.Sound.createAsync(TRUSTED_DIRECT_OPS_SOUND_SOURCE, {
           shouldPlay: false,
-          volume: TRUSTED_DIRECT_OPS_VOLUME,
+          volume: preloadVolume,
           isLooping: false,
         });
         await sound.unloadAsync();
@@ -656,12 +674,14 @@ async function playQuickMatchDriverOpsCall(): Promise<void> {
 
   try {
     await loadSounds();
+    const volume = resolveOfferAlertVolume(QUICK_MATCH_OPS_VOLUME, 'quick_match');
     const { sound } = await Audio.Sound.createAsync(QUICK_MATCH_OPS_SOUND_SOURCE, {
       shouldPlay: false,
-      volume: QUICK_MATCH_OPS_VOLUME,
+      volume,
       isLooping: false,
     });
     await sound.setPositionAsync(0);
+    await sound.setVolumeAsync(volume);
     await sound.playAsync();
     sound.setOnPlaybackStatusUpdate((status) => {
       if (status.isLoaded && status.didJustFinish) {
