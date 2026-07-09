@@ -17136,7 +17136,6 @@ function DriverDashboard({
   
   // 🆕 Sürücü Dashboard Panel State'leri
   const [showDriverPackagesModal, setShowDriverPackagesModal] = useState(false);
-  const [driverDashboardExpanded, setDriverDashboardExpanded] = useState(false);
   
   // Harita: index.tsx ile aynı backend kullanıldığında panel + teklif + harita birlikte çalışır.
   // Bilinen native crash yaşayan çok yeni API seviyesinde istenirse true yapılabilir.
@@ -21281,8 +21280,6 @@ function DriverDashboard({
                   onToggleOnline={(isOnline) => {
                     perfLog('Sürücü online durumu değişti:', isOnline);
                   }}
-                  expanded={driverDashboardExpanded}
-                  onExpandToggle={() => setDriverDashboardExpanded(!driverDashboardExpanded)}
                 />
               </View>
             </View>

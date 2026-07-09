@@ -66,20 +66,11 @@ export type DriverDashboardPanelLightSurfaces = {
 export type DriverCockpitQuickStripLightSurfaces = {
   card: ViewStyle;
   trustIconWrap: ViewStyle;
-  embeddedTrustIconWrap: ViewStyle;
-  metricCell: ViewStyle;
-  metricCellActive: ViewStyle;
-  embeddedMetricRow: ViewStyle;
+  compactRow: ViewStyle;
   title: TextStyle;
   subtitle: TextStyle;
-  metricLabel: TextStyle;
-  metricValue: TextStyle;
-  embeddedMetricLabel: TextStyle;
-  embeddedMetricValue: TextStyle;
-  metricValueActive: TextStyle;
-  qmPill: ViewStyle;
-  embeddedQmPill: ViewStyle;
-  qmLabel: TextStyle;
+  badge: ViewStyle;
+  badgeText: TextStyle;
 };
 
 export type DriverQuickMatchInviteLightSurfaces = {
@@ -200,8 +191,8 @@ function buildDriverDashboardPanelDarkSurfaces(): DriverDashboardPanelLightSurfa
   return {
     onlineStripActive: {
       backgroundColor: 'rgba(8,17,31,0.52)',
-      borderColor: 'rgba(34,211,238,0.14)',
-      borderTopColor: 'rgba(34,211,238,0.18)',
+      borderColor: 'rgba(34,211,238,0.10)',
+      borderTopColor: 'rgba(34,211,238,0.12)',
     },
     onlineStripInactive: {
       backgroundColor: 'rgba(8,17,31,0.38)',
@@ -344,6 +335,29 @@ function buildDriverDashboardPanelLightSurfaces(tokens: LhThemeTokens): DriverDa
   };
 }
 
+function buildDriverCockpitQuickStripDarkSurfaces(): DriverCockpitQuickStripLightSurfaces {
+  return {
+    card: {
+      backgroundColor: 'rgba(8,17,31,0.38)',
+      borderColor: 'rgba(30,58,95,0.38)',
+    },
+    trustIconWrap: {
+      backgroundColor: 'rgba(8,17,31,0.32)',
+      borderColor: 'rgba(30,58,95,0.38)',
+    },
+    compactRow: {
+      backgroundColor: 'transparent',
+    },
+    title: { color: 'rgba(243,248,255,0.94)' },
+    subtitle: { color: 'rgba(186,201,222,0.78)' },
+    badge: {
+      backgroundColor: 'rgba(34,211,238,0.10)',
+      borderColor: 'rgba(34,211,238,0.18)',
+    },
+    badgeText: { color: 'rgba(34,211,238,0.88)' },
+  };
+}
+
 function buildDriverCockpitQuickStripLightSurfaces(
   tokens: LhThemeTokens,
 ): DriverCockpitQuickStripLightSurfaces {
@@ -356,36 +370,16 @@ function buildDriverCockpitQuickStripLightSurfaces(
       backgroundColor: tokens.bg.glassMuted,
       borderColor: tokens.border.default,
     },
-    embeddedTrustIconWrap: {
-      backgroundColor: tokens.bg.glassMuted,
-      borderColor: tokens.border.default,
-    },
-    metricCell: {
-      backgroundColor: tokens.bg.glass,
-      borderColor: tokens.border.default,
-    },
-    metricCellActive: {
-      backgroundColor: tokens.bg.glassMuted,
-    },
-    embeddedMetricRow: {
+    compactRow: {
       backgroundColor: 'transparent',
     },
     title: { color: tokens.text.primary },
     subtitle: { color: tokens.text.muted },
-    metricLabel: { color: tokens.text.muted },
-    metricValue: { color: tokens.text.muted },
-    embeddedMetricLabel: { color: tokens.text.muted },
-    embeddedMetricValue: { color: tokens.text.muted },
-    metricValueActive: { color: tokens.text.primary },
-    qmPill: {
-      backgroundColor: tokens.bg.glass,
-      borderColor: tokens.border.default,
+    badge: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
     },
-    embeddedQmPill: {
-      backgroundColor: tokens.bg.glass,
-      borderColor: tokens.border.default,
-    },
-    qmLabel: { color: tokens.text.muted },
+    badgeText: { color: tokens.accent.primary },
   };
 }
 
@@ -583,7 +577,10 @@ export function useDriverTheme() {
   );
 
   const quickStripSurfaces = useMemo(
-    () => (isScopeLight ? buildDriverCockpitQuickStripLightSurfaces(effectiveTokens) : null),
+    () =>
+      isScopeLight
+        ? buildDriverCockpitQuickStripLightSurfaces(effectiveTokens)
+        : buildDriverCockpitQuickStripDarkSurfaces(),
     [isScopeLight, effectiveTokens],
   );
 
