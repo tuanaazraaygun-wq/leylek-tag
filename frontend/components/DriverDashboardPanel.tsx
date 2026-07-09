@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Animated,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../lib/backendConfig';
@@ -14,7 +13,6 @@ import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/bord
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
-import { PREMIUM_AUTH_CYAN, PREMIUM_BORDER_SLATE, PREMIUM_TEXT_MUTED } from './auth/premiumAuthStyles';
 import { useDriverTheme } from '../lib/theme/useDriverTheme';
 import DriverCockpitQuickStrip from './superUx/DriverCockpitQuickStrip';
 
@@ -55,9 +53,9 @@ interface DashboardData {
   };
 }
 
-const PANEL_HEIGHT_COLLAPSED = 110;
-const PANEL_HEIGHT_EXPANDED = 208;
-const ONLINE_STRIP_HEIGHT = 52;
+const PANEL_HEIGHT_COLLAPSED = 106;
+const PANEL_HEIGHT_EXPANDED = 204;
+const ONLINE_HERO_HEIGHT = 76;
 
 function sessionDisplayText(
   isActive: boolean,
@@ -227,13 +225,13 @@ export default function DriverDashboardPanel({
   if (loading) {
     return (
       <View style={styles.stack}>
-        <View style={styles.onlineStripWrap}>
-          <GlassSurface variant="plain" style={[styles.onlineStripLoading, dpLt?.onlineStripLoading]} borderRadius={LDS_RADIUS.lg}>
+        <View style={styles.onlineHeroWrap}>
+          <GlassSurface variant="plain" style={[styles.onlineHeroLoading, dpLt.onlineStripLoading]} borderRadius={LDS_RADIUS.xl}>
             <ActivityIndicator size="small" color={ui.activity} />
           </GlassSurface>
         </View>
         <View style={styles.container}>
-          <GlassSurface variant="panel" style={[styles.panelShellLoading, dpLt?.panelShellLoading]} borderRadius={LDS_RADIUS.xl}>
+          <GlassSurface variant="panel" style={[styles.panelShellLoading, dpLt.panelShellLoading]} borderRadius={LDS_RADIUS.xl}>
             <ActivityIndicator size="small" color={ui.activity} />
           </GlassSurface>
         </View>
@@ -259,28 +257,22 @@ export default function DriverDashboardPanel({
 
   return (
     <View style={styles.stack}>
-      <View style={styles.onlineStripWrap}>
+      <View style={styles.onlineHeroWrap}>
         <GlassSurface
           variant="plain"
           style={[
-            styles.onlineStrip,
-            isOnline ? styles.onlineStripActive : styles.onlineStripInactive,
-            isOnline ? dpLt?.onlineStripActive : dpLt?.onlineStripInactive,
+            styles.onlineHero,
+            isOnline ? dpLt.onlineStripActive : dpLt.onlineStripInactive,
           ]}
-          borderRadius={LDS_RADIUS.lg}
+          borderRadius={LDS_RADIUS.xl}
         >
-          <View style={styles.onlineStripLeft}>
-            <View
-              style={[
-                styles.statusDot,
-                isOnline ? styles.statusDotOnline : styles.statusDotOffline,
-              ]}
-            />
+          <View style={styles.onlineHeroLeft}>
+            <View style={[styles.statusDot, isOnline ? dpLt.statusDotOnline : dpLt.statusDotOffline]} />
             <View style={styles.onlineTextCol}>
-              <PremiumText variant="body" style={[styles.onlineStatusLabel, dpLt?.onlineStatusLabel]}>
+              <PremiumText variant="headline" style={[styles.onlineStatusLabel, dpLt.onlineStatusLabel]}>
                 {availabilityLabel}
               </PremiumText>
-              <PremiumText variant="caption" muted style={[styles.onlineStatusHint, dpLt?.onlineStatusHint]} numberOfLines={1}>
+              <PremiumText variant="caption" muted style={[styles.onlineStatusHint, dpLt.onlineStatusHint]} numberOfLines={2}>
                 {onlineStatusHint}
               </PremiumText>
             </View>
@@ -289,8 +281,8 @@ export default function DriverDashboardPanel({
           <TouchableOpacity
             style={[
               styles.switchTrack,
-              isOnline ? styles.switchTrackOn : styles.switchTrackOff,
-              isOnline ? dpLt?.switchTrackOn : dpLt?.switchTrackOff,
+              isOnline ? styles.switchTrackAlignEnd : styles.switchTrackAlignStart,
+              isOnline ? dpLt.switchTrackOn : dpLt.switchTrackOff,
               (toggling || !data.active_time.is_active) && styles.switchTrackDisabled,
             ]}
             onPress={toggleOnline}
@@ -309,8 +301,7 @@ export default function DriverDashboardPanel({
               <View
                 style={[
                   styles.switchThumb,
-                  isOnline ? styles.switchThumbOn : styles.switchThumbOff,
-                  isOnline && dpLt?.switchThumbOn,
+                  isOnline ? dpLt.switchThumbOn : dpLt.switchThumbOff,
                 ]}
               />
             )}
@@ -319,7 +310,7 @@ export default function DriverDashboardPanel({
       </View>
 
       <Animated.View style={[styles.container, { height: panelHeight }]}>
-        <GlassSurface variant="panel" style={[styles.panelShell, dpLt?.panelShell]} borderRadius={LDS_RADIUS.xl}>
+        <GlassSurface variant="panel" style={[styles.panelShell, dpLt.panelShell]} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.collapsedHud}>
             <View style={styles.cockpitGrid}>
               <View
@@ -327,22 +318,22 @@ export default function DriverDashboardPanel({
                 accessibilityRole="summary"
                 accessibilityLabel={`Bugünkü katkılar ${data.today.earnings} lira, ${data.today.trips_count} sefer. Hedef yüzde ${goalProgress}.`}
               >
-                <PremiumText variant="caption" muted style={[styles.instrumentLabel, dpLt?.instrumentLabel]}>
+                <PremiumText variant="caption" muted style={[styles.instrumentLabel, dpLt.instrumentLabel]}>
                   Bugünkü katkılar
                 </PremiumText>
-                <PremiumText variant="title" style={[styles.instrumentAmount, dpLt?.instrumentAmount]}>
+                <PremiumText variant="title" style={[styles.instrumentAmount, dpLt.instrumentAmount]}>
                   {data.today.earnings} ₺
                 </PremiumText>
                 <View style={styles.instrumentMetaRow}>
-                  <PremiumText variant="caption" muted style={[styles.instrumentMeta, dpLt?.instrumentMeta]}>
+                  <PremiumText variant="caption" muted style={[styles.instrumentMeta, dpLt.instrumentMeta]}>
                     {data.today.trips_count} sefer
                   </PremiumText>
-                  <PremiumText variant="caption" muted style={[styles.instrumentMeta, dpLt?.instrumentMeta]}>
+                  <PremiumText variant="caption" muted style={[styles.instrumentMeta, dpLt.instrumentMeta]}>
                     Hedef %{goalProgress}
                   </PremiumText>
                 </View>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, dpLt?.progressFill, { width: `${goalProgress}%` }]} />
+                <View style={[styles.progressTrack, dpLt.progressTrack]}>
+                  <View style={[styles.progressFill, dpLt.progressFill, { width: `${goalProgress}%` }]} />
                 </View>
               </View>
 
@@ -351,7 +342,7 @@ export default function DriverDashboardPanel({
               <DriverCockpitQuickStrip embedded onTrustedPress={onTrustedPress} />
             </View>
 
-            <View style={styles.footerRow}>
+            <View style={[styles.footerRow, dpLt.footerRow]}>
               <TouchableOpacity
                 style={styles.footerCell}
                 onPress={onExpandToggle}
@@ -369,10 +360,10 @@ export default function DriverDashboardPanel({
                   }
                 />
                 <View style={styles.footerTextCol}>
-                  <PremiumText variant="caption" muted style={[styles.footerMetaLabel, dpLt?.footerMetaLabel]}>
+                  <PremiumText variant="caption" muted style={[styles.footerMetaLabel, dpLt.footerMetaLabel]}>
                     Seans
                   </PremiumText>
-                  <PremiumText variant="caption" style={[styles.footerValue, dpLt?.footerValue]}>
+                  <PremiumText variant="caption" style={[styles.footerValue, dpLt.footerValue]}>
                     {sessionText}
                   </PremiumText>
                 </View>
@@ -394,10 +385,10 @@ export default function DriverDashboardPanel({
               >
                 <Ionicons name="cube-outline" size={14} color={ui.iconMuted} />
                 <View style={styles.footerTextCol}>
-                  <PremiumText variant="caption" muted style={[styles.footerMetaLabel, dpLt?.footerMetaLabel]}>
+                  <PremiumText variant="caption" muted style={[styles.footerMetaLabel, dpLt.footerMetaLabel]}>
                     Paket
                   </PremiumText>
-                  <PremiumText variant="caption" style={[styles.footerValue, dpLt?.footerValue]}>
+                  <PremiumText variant="caption" style={[styles.footerValue, dpLt.footerValue]}>
                     Yönet
                   </PremiumText>
                 </View>
@@ -408,15 +399,15 @@ export default function DriverDashboardPanel({
 
           {expanded && (
             <View style={styles.expandedContent}>
-              <View style={styles.statsRow}>
+              <View style={[styles.statsRow, dpLt.statsRow]}>
                 <View style={styles.statColumn}>
-                  <View style={[styles.statIconWrap, dpLt?.statIconWrap]}>
+                  <View style={[styles.statIconWrap, dpLt.statIconWrap]}>
                     <Ionicons name="car-outline" size={20} color={ui.statCar} />
                   </View>
-                  <PremiumText variant="title" style={[styles.statValue, dpLt?.statValue]}>
+                  <PremiumText variant="title" style={[styles.statValue, dpLt.statValue]}>
                     {data.today.trips_count}
                   </PremiumText>
-                  <PremiumText variant="caption" muted style={[styles.statLabel, dpLt?.statLabel]}>
+                  <PremiumText variant="caption" muted style={[styles.statLabel, dpLt.statLabel]}>
                     Bugünkü sefer
                   </PremiumText>
                 </View>
@@ -424,13 +415,13 @@ export default function DriverDashboardPanel({
                 <View style={styles.statDivider} />
 
                 <View style={styles.statColumn}>
-                  <View style={[styles.statIconWrap, styles.statIconWrapViolet]}>
-                    <Ionicons name="wallet-outline" size={20} color="rgba(226,232,240,0.88)" />
+                  <View style={[styles.statIconWrap, styles.statIconWrapMuted]}>
+                    <Ionicons name="wallet-outline" size={20} color={ui.iconMuted} />
                   </View>
-                  <PremiumText variant="title" style={[styles.statValue, dpLt?.statValue]}>
+                  <PremiumText variant="title" style={[styles.statValue, dpLt.statValue]}>
                     {data.weekly.earnings} ₺
                   </PremiumText>
-                  <PremiumText variant="caption" muted style={[styles.statLabel, dpLt?.statLabel]}>
+                  <PremiumText variant="caption" muted style={[styles.statLabel, dpLt.statLabel]}>
                     Haftalık paylaşım katkıları
                   </PremiumText>
                 </View>
@@ -438,15 +429,15 @@ export default function DriverDashboardPanel({
                 <View style={styles.statDivider} />
 
                 <View style={styles.statColumn}>
-                  <View style={[styles.statIconWrap, styles.statIconWrapAmber]}>
-                    <Ionicons name="star" size={20} color="rgba(251,211,141,0.95)" />
+                  <View style={[styles.statIconWrap, styles.statIconWrapMuted]}>
+                    <Ionicons name="star" size={20} color={ui.iconMuted} />
                   </View>
-                  <PremiumText variant="title" style={[styles.statValue, dpLt?.statValue]}>
+                  <PremiumText variant="title" style={[styles.statValue, dpLt.statValue]}>
                     {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
                       ? data.stats.rating.toFixed(1)
                       : '—'}
                   </PremiumText>
-                  <PremiumText variant="caption" muted style={[styles.statLabel, dpLt?.statLabel]}>
+                  <PremiumText variant="caption" muted style={[styles.statLabel, dpLt.statLabel]}>
                     {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
                       ? 'Puan'
                       : 'Henüz değerlendirme yok'}
@@ -463,36 +454,27 @@ export default function DriverDashboardPanel({
 
 const styles = StyleSheet.create({
   stack: {
-    gap: LDS_SPACING.xxs,
+    gap: LDS_SPACING.xs,
   },
-  onlineStripWrap: {
-    marginHorizontal: LDS_SPACING.sm,
+  onlineHeroWrap: {
+    marginHorizontal: 0,
   },
-  onlineStrip: {
-    minHeight: ONLINE_STRIP_HEIGHT,
+  onlineHero: {
+    minHeight: ONLINE_HERO_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: LDS_SPACING.xs,
-    paddingHorizontal: LDS_SPACING.sm,
-    gap: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    gap: LDS_SPACING.md,
     borderWidth: LDS_BORDER_WIDTH.standard,
   },
-  onlineStripActive: {
-    borderColor: 'rgba(34,211,238,0.22)',
-    borderTopColor: 'rgba(34,211,238,0.28)',
-    backgroundColor: 'rgba(6,55,52,0.18)',
-  },
-  onlineStripInactive: {
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
-    backgroundColor: 'rgba(8,17,31,0.42)',
-  },
-  onlineStripLoading: {
-    minHeight: ONLINE_STRIP_HEIGHT,
+  onlineHeroLoading: {
+    minHeight: ONLINE_HERO_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  onlineStripLeft: {
+  onlineHeroLeft: {
     flex: 1,
     minWidth: 0,
     flexDirection: 'row',
@@ -502,67 +484,43 @@ const styles = StyleSheet.create({
   onlineTextCol: {
     flex: 1,
     minWidth: 0,
-    gap: 1,
+    gap: 2,
   },
   onlineStatusLabel: {
-    fontWeight: '700',
-    letterSpacing: 0.06,
+    letterSpacing: -0.2,
   },
   onlineStatusHint: {
-    letterSpacing: 0.04,
-    lineHeight: 14,
+    letterSpacing: 0.02,
   },
   switchTrack: {
-    width: 52,
-    height: 30,
+    width: 64,
+    height: 36,
     borderRadius: LDS_RADIUS.full,
     borderWidth: LDS_BORDER_WIDTH.standard,
     justifyContent: 'center',
-    paddingHorizontal: 3,
+    paddingHorizontal: 4,
     flexShrink: 0,
   },
-  switchTrackOn: {
-    backgroundColor: 'rgba(6,55,52,0.95)',
-    borderColor: 'rgba(34,211,238,0.35)',
+  switchTrackAlignEnd: {
     alignItems: 'flex-end',
   },
-  switchTrackOff: {
-    backgroundColor: 'rgba(16,26,43,0.95)',
-    borderColor: PREMIUM_BORDER_SLATE,
+  switchTrackAlignStart: {
     alignItems: 'flex-start',
   },
   switchTrackDisabled: {
     opacity: 0.55,
   },
   switchThumb: {
-    width: 22,
-    height: 22,
+    width: 28,
+    height: 28,
     borderRadius: LDS_RADIUS.full,
     borderWidth: LDS_BORDER_WIDTH.hairline,
-  },
-  switchThumbOn: {
-    backgroundColor: PREMIUM_AUTH_CYAN,
-    borderColor: 'rgba(243,248,255,0.45)',
-    ...Platform.select({
-      ios: {
-        shadowColor: PREMIUM_AUTH_CYAN,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.45,
-        shadowRadius: 6,
-      },
-      android: { elevation: 3 },
-      default: {},
-    }),
-  },
-  switchThumbOff: {
-    backgroundColor: 'rgba(148,163,184,0.72)',
-    borderColor: 'rgba(148,163,184,0.35)',
   },
   switchSpinner: {
     alignSelf: 'center',
   },
   container: {
-    marginHorizontal: LDS_SPACING.sm,
+    marginHorizontal: 0,
     overflow: 'hidden',
     ...LDS_ELEVATION.panel,
   },
@@ -603,12 +561,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   instrumentAmount: {
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 21,
+    lineHeight: 25,
     fontWeight: '800',
     letterSpacing: -0.35,
     fontVariant: ['tabular-nums'],
-    color: 'rgba(94,229,209,0.96)',
   },
   instrumentMetaRow: {
     flexDirection: 'row',
@@ -624,26 +581,21 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 4,
     borderRadius: LDS_RADIUS.full,
-    backgroundColor: 'rgba(8,17,31,0.72)',
-    borderWidth: LDS_BORDER_WIDTH.hairline,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
     overflow: 'hidden',
     marginTop: LDS_SPACING.xxs,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
   },
   progressFill: {
     height: '100%',
     borderRadius: LDS_RADIUS.full,
-    backgroundColor: PREMIUM_AUTH_CYAN,
     minWidth: 0,
   },
   footerRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
     borderRadius: LDS_RADIUS.md,
-    backgroundColor: 'rgba(8,17,31,0.32)',
-    borderWidth: LDS_BORDER_WIDTH.hairline,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
     overflow: 'hidden',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
   },
   footerCell: {
     flex: 1,
@@ -675,19 +627,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   statusDot: {
-    width: 10,
-    height: 10,
+    width: 12,
+    height: 12,
     borderRadius: LDS_RADIUS.full,
     borderWidth: LDS_BORDER_WIDTH.hairline,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
     flexShrink: 0,
-  },
-  statusDotOnline: {
-    backgroundColor: PREMIUM_AUTH_CYAN,
-    borderColor: 'rgba(243,248,255,0.35)',
-  },
-  statusDotOffline: {
-    backgroundColor: 'rgba(148,163,184,0.55)',
   },
   expandedContent: {
     paddingHorizontal: LDS_SPACING.sm,
@@ -698,14 +642,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(8,17,31,0.48)',
     borderRadius: LDS_RADIUS.md,
     paddingVertical: LDS_SPACING.sm + 1,
     paddingHorizontal: LDS_SPACING.xs,
     borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
-    borderTopColor: 'rgba(34,211,238,0.09)',
-    ...LDS_ELEVATION.chip,
   },
   statColumn: {
     alignItems: 'center',
@@ -717,20 +657,14 @@ const styles = StyleSheet.create({
     width: LDS_SPACING.xxl + LDS_SPACING.xs,
     height: LDS_SPACING.xxl + LDS_SPACING.xs,
     borderRadius: LDS_RADIUS.sm,
-    backgroundColor: 'rgba(34,211,238,0.08)',
     borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: 'rgba(34,211,238,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: LDS_SPACING.xs,
   },
-  statIconWrapViolet: {
+  statIconWrapMuted: {
     backgroundColor: 'rgba(148,163,184,0.08)',
-    borderColor: 'rgba(148,163,184,0.22)',
-  },
-  statIconWrapAmber: {
-    backgroundColor: 'rgba(251,191,36,0.08)',
-    borderColor: 'rgba(251,191,36,0.22)',
+    borderColor: 'rgba(148,163,184,0.18)',
   },
   statValue: {
     letterSpacing: -0.22,

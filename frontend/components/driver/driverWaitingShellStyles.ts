@@ -5,8 +5,7 @@ import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 
 /**
- * Sürücü idle kokpit — shell stilleri (P-DRIVER-1..3).
- * Yalnızca presentation; logic / child component API değişmez.
+ * Sürücü idle kokpit — V2 shell stilleri (presentation-only).
  */
 export const driverWaitingShellStyles = StyleSheet.create({
   waitingRoot: {
@@ -17,9 +16,9 @@ export const driverWaitingShellStyles = StyleSheet.create({
   cockpitSafe: {
     backgroundColor: 'transparent',
   },
-  /** Üst katman: header + online + cockpit */
+  /** Üst katman: sade header + online hero + panel */
   cockpitUpperDeck: {
-    paddingBottom: LDS_SPACING.xxs,
+    paddingBottom: 0,
   },
   cockpitHeaderPad: {
     paddingHorizontal: LDS_SPACING.sm,
@@ -27,17 +26,19 @@ export const driverWaitingShellStyles = StyleSheet.create({
     paddingBottom: LDS_SPACING.xxs,
   },
   cockpitHeaderGlass: {
-    paddingVertical: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs + 2,
     paddingHorizontal: LDS_SPACING.sm,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
   },
   cockpitHeaderBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: LDS_SPACING.sm,
+    gap: LDS_SPACING.xs,
   },
   cockpitHeaderBtnShell: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -49,7 +50,7 @@ export const driverWaitingShellStyles = StyleSheet.create({
   cockpitHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: LDS_SPACING.xs,
+    gap: LDS_SPACING.xxs,
     flexShrink: 0,
   },
   cockpitHeaderTitleCol: {
@@ -58,22 +59,21 @@ export const driverWaitingShellStyles = StyleSheet.create({
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 0,
     paddingHorizontal: LDS_SPACING.xxs,
   },
   cockpitHeaderBrand: {
-    letterSpacing: -0.22,
+    letterSpacing: -0.12,
     textAlign: 'center',
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 19,
     fontWeight: '700',
   },
   cockpitPanelPad: {
-    paddingHorizontal: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
     paddingTop: LDS_SPACING.xxs,
-    paddingBottom: LDS_SPACING.xs,
+    paddingBottom: LDS_SPACING.xxs,
   },
-  /** Alt saha katmanı — dispatch / harita; üst kokpit ile ince dikiş; zemin CockpitBackground */
+  /** Alt saha — harita / teklif; üst deck’ten ince ayırıcı */
   cockpitOfferGround: {
     flex: 1,
     minHeight: 0,
@@ -85,11 +85,11 @@ export const driverWaitingShellStyles = StyleSheet.create({
     ...Platform.select({
       ios: {
         shadowColor: PREMIUM_NAVY_DEEP,
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.35,
-        shadowRadius: 10,
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.16,
+        shadowRadius: 6,
       },
-      android: { elevation: 2 },
+      android: { elevation: 1 },
       default: {},
     }),
   },

@@ -29,6 +29,7 @@ export type DriverUiColors = {
 
 export type DriverWaitingShellLightSurfaces = {
   waitingRoot: ViewStyle;
+  cockpitHeaderGlass: ViewStyle;
   cockpitHeaderBtnShell: ViewStyle;
   cockpitHeaderBrand: TextStyle;
   cockpitOfferGround: ViewStyle;
@@ -41,6 +42,9 @@ export type DriverDashboardPanelLightSurfaces = {
   switchTrackOn: ViewStyle;
   switchTrackOff: ViewStyle;
   switchThumbOn: ViewStyle;
+  switchThumbOff: ViewStyle;
+  statusDotOnline: ViewStyle;
+  statusDotOffline: ViewStyle;
   panelShell: ViewStyle;
   panelShellLoading: ViewStyle;
   onlineStatusLabel: TextStyle;
@@ -49,11 +53,14 @@ export type DriverDashboardPanelLightSurfaces = {
   instrumentLabel: TextStyle;
   instrumentMeta: TextStyle;
   progressFill: ViewStyle;
+  progressTrack: ViewStyle;
+  footerRow: ViewStyle;
   footerMetaLabel: TextStyle;
   footerValue: TextStyle;
   statIconWrap: ViewStyle;
   statValue: TextStyle;
   statLabel: TextStyle;
+  statsRow: ViewStyle;
 };
 
 export type DriverCockpitQuickStripLightSurfaces = {
@@ -157,9 +164,29 @@ const DRIVER_UI_DARK: DriverUiColors = {
   motorAccent: 'rgba(134,239,172,0.92)',
 };
 
+function buildDriverWaitingShellDarkSurfaces(): DriverWaitingShellLightSurfaces {
+  return {
+    waitingRoot: { backgroundColor: '#08111F' },
+    cockpitHeaderGlass: {
+      backgroundColor: 'rgba(8,17,31,0.55)',
+      borderColor: 'rgba(30,58,95,0.42)',
+    },
+    cockpitHeaderBtnShell: {
+      backgroundColor: 'rgba(8,17,31,0.42)',
+      borderColor: 'rgba(30,58,95,0.38)',
+    },
+    cockpitHeaderBrand: { color: 'rgba(243,248,255,0.94)' },
+    cockpitOfferGround: { borderTopColor: 'rgba(30,58,95,0.38)' },
+  };
+}
+
 function buildDriverWaitingShellLightSurfaces(tokens: LhThemeTokens): DriverWaitingShellLightSurfaces {
   return {
     waitingRoot: { backgroundColor: tokens.bg.canvas },
+    cockpitHeaderGlass: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
     cockpitHeaderBtnShell: {
       backgroundColor: tokens.bg.glassMuted,
       borderColor: tokens.border.default,
@@ -169,22 +196,96 @@ function buildDriverWaitingShellLightSurfaces(tokens: LhThemeTokens): DriverWait
   };
 }
 
+function buildDriverDashboardPanelDarkSurfaces(): DriverDashboardPanelLightSurfaces {
+  return {
+    onlineStripActive: {
+      backgroundColor: 'rgba(8,17,31,0.52)',
+      borderColor: 'rgba(34,211,238,0.14)',
+      borderTopColor: 'rgba(34,211,238,0.18)',
+    },
+    onlineStripInactive: {
+      backgroundColor: 'rgba(8,17,31,0.38)',
+      borderColor: 'rgba(30,58,95,0.42)',
+    },
+    onlineStripLoading: {
+      backgroundColor: 'rgba(8,17,31,0.38)',
+    },
+    switchTrackOn: {
+      backgroundColor: 'rgba(16,26,43,0.92)',
+      borderColor: 'rgba(34,211,238,0.22)',
+    },
+    switchTrackOff: {
+      backgroundColor: 'rgba(16,26,43,0.92)',
+      borderColor: 'rgba(30,58,95,0.48)',
+    },
+    switchThumbOn: {
+      backgroundColor: '#22D3EE',
+      borderColor: 'rgba(243,248,255,0.35)',
+    },
+    switchThumbOff: {
+      backgroundColor: 'rgba(148,163,184,0.72)',
+      borderColor: 'rgba(148,163,184,0.35)',
+    },
+    statusDotOnline: {
+      backgroundColor: '#22D3EE',
+      borderColor: 'rgba(243,248,255,0.28)',
+    },
+    statusDotOffline: {
+      backgroundColor: 'rgba(148,163,184,0.55)',
+      borderColor: 'rgba(30,58,95,0.38)',
+    },
+    panelShell: {
+      backgroundColor: 'rgba(8,17,31,0.42)',
+    },
+    panelShellLoading: {
+      backgroundColor: 'rgba(8,17,31,0.42)',
+    },
+    onlineStatusLabel: { color: 'rgba(243,248,255,0.96)', fontSize: 20, lineHeight: 24, fontWeight: '800' },
+    onlineStatusHint: { color: 'rgba(186,201,222,0.82)', fontSize: 12, lineHeight: 16 },
+    instrumentAmount: { color: 'rgba(226,232,240,0.94)' },
+    instrumentLabel: { color: 'rgba(186,201,222,0.82)' },
+    instrumentMeta: { color: 'rgba(186,201,222,0.78)' },
+    progressFill: { backgroundColor: 'rgba(34,211,238,0.72)' },
+    progressTrack: {
+      backgroundColor: 'rgba(8,17,31,0.72)',
+      borderColor: 'rgba(30,58,95,0.38)',
+    },
+    footerRow: {
+      backgroundColor: 'rgba(8,17,31,0.32)',
+      borderColor: 'rgba(30,58,95,0.38)',
+    },
+    footerMetaLabel: { color: 'rgba(186,201,222,0.78)' },
+    footerValue: { color: 'rgba(243,248,255,0.92)' },
+    statIconWrap: {
+      backgroundColor: 'rgba(34,211,238,0.06)',
+      borderColor: 'rgba(34,211,238,0.14)',
+    },
+    statValue: { color: 'rgba(243,248,255,0.94)' },
+    statLabel: { color: 'rgba(186,201,222,0.82)' },
+    statsRow: {
+      backgroundColor: 'rgba(8,17,31,0.48)',
+      borderColor: 'rgba(30,58,95,0.42)',
+      borderTopColor: 'rgba(30,58,95,0.42)',
+    },
+  };
+}
+
 function buildDriverDashboardPanelLightSurfaces(tokens: LhThemeTokens): DriverDashboardPanelLightSurfaces {
   return {
     onlineStripActive: {
-      backgroundColor: tokens.accent.glowLow,
-      borderColor: tokens.accent.glowMid,
-      borderTopColor: tokens.accent.glowMid,
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.border.default,
     },
     onlineStripInactive: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.glass,
       borderColor: tokens.border.default,
     },
     onlineStripLoading: {
       backgroundColor: tokens.bg.glassMuted,
     },
     switchTrackOn: {
-      backgroundColor: tokens.accent.glowLow,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.accent.glowMid,
     },
     switchTrackOff: {
@@ -194,7 +295,18 @@ function buildDriverDashboardPanelLightSurfaces(tokens: LhThemeTokens): DriverDa
     switchThumbOn: {
       backgroundColor: tokens.accent.primary,
       borderColor: tokens.text.inverse,
-      shadowColor: tokens.accent.primary,
+    },
+    switchThumbOff: {
+      backgroundColor: tokens.text.muted,
+      borderColor: tokens.border.default,
+    },
+    statusDotOnline: {
+      backgroundColor: tokens.accent.primary,
+      borderColor: tokens.border.default,
+    },
+    statusDotOffline: {
+      backgroundColor: tokens.text.muted,
+      borderColor: tokens.border.default,
     },
     panelShell: {
       backgroundColor: tokens.bg.glassMuted,
@@ -202,20 +314,33 @@ function buildDriverDashboardPanelLightSurfaces(tokens: LhThemeTokens): DriverDa
     panelShellLoading: {
       backgroundColor: tokens.bg.glassMuted,
     },
-    onlineStatusLabel: { color: tokens.text.primary },
-    onlineStatusHint: { color: tokens.text.muted },
+    onlineStatusLabel: { color: tokens.text.primary, fontSize: 20, lineHeight: 24, fontWeight: '800' },
+    onlineStatusHint: { color: tokens.text.muted, fontSize: 12, lineHeight: 16 },
     instrumentAmount: { color: tokens.text.primary },
     instrumentLabel: { color: tokens.text.muted },
     instrumentMeta: { color: tokens.text.muted },
     progressFill: { backgroundColor: tokens.accent.primary },
+    progressTrack: {
+      backgroundColor: tokens.bg.glass,
+      borderColor: tokens.border.default,
+    },
+    footerRow: {
+      backgroundColor: tokens.bg.glass,
+      borderColor: tokens.border.default,
+    },
     footerMetaLabel: { color: tokens.text.muted },
     footerValue: { color: tokens.text.primary },
     statIconWrap: {
-      backgroundColor: tokens.accent.glowLow,
-      borderColor: tokens.accent.glowMid,
+      backgroundColor: tokens.bg.glass,
+      borderColor: tokens.border.default,
     },
     statValue: { color: tokens.text.primary },
     statLabel: { color: tokens.text.muted },
+    statsRow: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.border.default,
+    },
   };
 }
 
@@ -442,12 +567,18 @@ export function useDriverTheme() {
   }, [isScopeLight, effectiveTokens]);
 
   const waitingShellSurfaces = useMemo(
-    () => (isScopeLight ? buildDriverWaitingShellLightSurfaces(effectiveTokens) : null),
+    () =>
+      isScopeLight
+        ? buildDriverWaitingShellLightSurfaces(effectiveTokens)
+        : buildDriverWaitingShellDarkSurfaces(),
     [isScopeLight, effectiveTokens],
   );
 
   const dashboardPanelSurfaces = useMemo(
-    () => (isScopeLight ? buildDriverDashboardPanelLightSurfaces(effectiveTokens) : null),
+    () =>
+      isScopeLight
+        ? buildDriverDashboardPanelLightSurfaces(effectiveTokens)
+        : buildDriverDashboardPanelDarkSurfaces(),
     [isScopeLight, effectiveTokens],
   );
 

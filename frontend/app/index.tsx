@@ -16549,7 +16549,7 @@ function DriverDashboard({
   onDriverOfferGoToRoleSelect,
 }: DriverDashboardProps) {
   const router = useRouter();
-  const { waitingShellSurfaces: dwsLt, ui: drvUi } = useDriverTheme();
+  const { waitingShellSurfaces: dwsLt, ui: drvUi, isScopeLight: driverScopeLight } = useDriverTheme();
   const { chromeSurfaces: jLt } = useJourneyBannerTheme();
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
@@ -21231,7 +21231,7 @@ function DriverDashboard({
               <View style={dws.cockpitHeaderPad}>
                 <GlassSurface
                   variant="header"
-                  style={dws.cockpitHeaderGlass}
+                  style={[dws.cockpitHeaderGlass, dwsLt?.cockpitHeaderGlass]}
                   borderRadius={LDS_RADIUS.lg}
                 >
                   <View style={dws.cockpitHeaderBar}>
@@ -21243,19 +21243,19 @@ function DriverDashboard({
                       accessibilityLabel="Rol seçimine dön"
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Ionicons name="chevron-back" size={22} color={drvUi.accent} />
+                      <Ionicons name="chevron-back" size={20} color={drvUi.accent} />
                     </TouchableOpacity>
                     <View
                       style={dws.cockpitHeaderTitleCol}
                       accessibilityRole="header"
                       accessibilityLabel="Leylek Yolculuk Kokpit"
                     >
-                      <PremiumText variant="title" style={[dws.cockpitHeaderBrand, dwsLt?.cockpitHeaderBrand]} numberOfLines={1}>
+                      <PremiumText variant="step" style={[dws.cockpitHeaderBrand, dwsLt?.cockpitHeaderBrand]} numberOfLines={1}>
                         Leylek Yolculuk · Kokpit
                       </PremiumText>
                     </View>
                     <View style={dws.cockpitHeaderActions}>
-                      <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} themeVariant={dwsLt ? 'light' : 'dark'} />
+                      <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} themeVariant={driverScopeLight ? 'light' : 'dark'} />
                       <TouchableOpacity
                         style={[dws.cockpitHeaderBtnShell, dwsLt?.cockpitHeaderBtnShell]}
                         onPress={() => onDriverOfferOpenProfile?.()}
@@ -21264,7 +21264,7 @@ function DriverDashboard({
                         accessibilityLabel="Profil"
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Ionicons name="person-circle-outline" size={24} color={drvUi.accent} />
+                        <Ionicons name="person-circle-outline" size={22} color={drvUi.accent} />
                       </TouchableOpacity>
                     </View>
                   </View>
