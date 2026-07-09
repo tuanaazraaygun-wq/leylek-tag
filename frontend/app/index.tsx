@@ -464,6 +464,15 @@ function _approvedVehicleKindsFromDriverDetails(dd: Record<string, unknown>): ('
   return out;
 }
 
+/** Rol seçimi — onaylı sürücü araç türleri (approved_vehicle_kinds SSOT). */
+function driverApprovedVehicleKindsForRoleSelect(
+  user: User | null | undefined,
+): ('car' | 'motorcycle')[] {
+  const dd = user?.driver_details;
+  if (!dd || typeof dd !== 'object' || Array.isArray(dd)) return [];
+  return _approvedVehicleKindsFromDriverDetails(dd as Record<string, unknown>);
+}
+
   /** Onaylı sürücü kaydı (yolcu modunda TDM «Sürücülerim» kartı guard). */
 function userHasDriverRegistration(user: User | null | undefined): boolean {
   const dd = user?.driver_details;
@@ -4426,53 +4435,39 @@ export default function App() {
   }
 
   if (screen === 'role-select') {
-    const mergeVehicleIntoUser = (u: NonNullable<typeof user>) => {
-      if (!rideVehicleKind || !selectedRole) return { ...u, role: selectedRole || u.role };
+    const mergeVehicleIntoUser = (
+      u: NonNullable<typeof user>,
+      role: 'passenger' | 'driver',
+      vehicleKind: 'car' | 'motorcycle',
+    ) => {
       const prev =
         u.driver_details && typeof u.driver_details === 'object' ? { ...u.driver_details } : {};
-      if (selectedRole === 'driver') (prev as Record<string, unknown>).vehicle_kind = rideVehicleKind;
-      else (prev as Record<string, unknown>).passenger_preferred_vehicle = rideVehicleKind;
-      return { ...u, role: selectedRole, driver_details: prev };
-    };
-
-    const handleRoleSelect = (role: 'passenger' | 'driver') => {
-      roleScreenHaptic();
-      setSelectedRole(role);
-      setRideVehicleKind(null);
-      
-      // Animasyon
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 0.95,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          friction: 3,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      if (role === 'driver') (prev as Record<string, unknown>).vehicle_kind = vehicleKind;
+      else (prev as Record<string, unknown>).passenger_preferred_vehicle = vehicleKind;
+      return { ...u, role, driver_details: prev };
     };
 
     const ROLE_CONTINUE_FETCH_MS = 15000;
     const DRIVER_CONTINUE_FAIL_MSG =
       'Sürücü paneli açılamadı. Bağlantınızı kontrol edip tekrar deneyin.';
 
-    const handleContinue = async () => {
-      if (!selectedRole || !rideVehicleKind || roleContinueBusy) return;
+    const continueRoleSelect = async (
+      role: 'passenger' | 'driver',
+      vehicleKind: 'car' | 'motorcycle',
+    ) => {
+      if (roleContinueBusy) return;
       void playUiTapSound();
       roleScreenHaptic();
       perfLog('DRIVER_CONTINUE_PRESSED', {
-        selected_role: selectedRole,
-        ride_vehicle_kind: rideVehicleKind,
+        selected_role: role,
+        ride_vehicle_kind: vehicleKind,
         user_id: user?.id ?? null,
       });
       setRoleContinueBusy(true);
       try {
         if (user?.id) {
-          const setRideUrl = `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(user.id)}&role=${selectedRole}&vehicle_kind=${rideVehicleKind}`;
-          if (selectedRole === 'driver') {
+          const setRideUrl = `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(user.id)}&role=${role}&vehicle_kind=${vehicleKind}`;
+          if (role === 'driver') {
             const setRideRes = await fetchWithTimeout(setRideUrl, {
               method: 'POST',
               timeoutMs: ROLE_CONTINUE_FETCH_MS,
@@ -4485,10 +4480,10 @@ export default function App() {
             if (!setRideRes.ok) {
               if (
                 setRideRes.status === 403 &&
-                (rideVehicleKind === 'motorcycle' || rideVehicleKind === 'car')
+                (vehicleKind === 'motorcycle' || vehicleKind === 'car')
               ) {
-                alertVehicleRegistrationRequired(rideVehicleKind, () => {
-                  setDriverKycScreenVehicleKind(rideVehicleKind);
+                alertVehicleRegistrationRequired(vehicleKind, () => {
+                  setDriverKycScreenVehicleKind(vehicleKind);
                   setScreen('driver-kyc');
                 });
               } else {
@@ -4503,8 +4498,7 @@ export default function App() {
             await fetch(setRideUrl, { method: 'POST' }).catch(() => {});
           }
         }
-        // Sürücü seçildiyse KYC kontrolü yap
-        if (selectedRole === 'driver') {
+        if (role === 'driver') {
           const kycUrl = `${API_URL}/driver/kyc/status?user_id=${encodeURIComponent(String(user?.id ?? ''))}`;
           const kycResponse = await fetchWithTimeout(kycUrl, {
             timeoutMs: ROLE_CONTINUE_FETCH_MS,
@@ -4516,7 +4510,7 @@ export default function App() {
           const kycData = await kycResponse.json();
 
           if (kycData.kyc_status === 'none' || kycData.kyc_status === 'rejected') {
-            if (user) await saveUser(mergeVehicleIntoUser(user));
+            if (user) await saveUser(mergeVehicleIntoUser(user, role, vehicleKind));
             setDriverKycScreenVehicleKind(null);
             if (kycData.kyc_status === 'rejected') {
               const rejectionReason =
@@ -4529,33 +4523,30 @@ export default function App() {
             }
             return;
           } else if (kycData.kyc_status === 'pending') {
-            // KYC beklemede - Dashboard'a git ama pending ekranı göster
             setKycStatus({
               status: 'pending',
-              submitted_at: kycData.submitted_at
+              submitted_at: kycData.submitted_at,
             });
-            await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
-            if (user) await saveUser(mergeVehicleIntoUser(user));
+            await AsyncStorage.setItem(`last_role_${user?.id}`, role);
+            if (user) await saveUser(mergeVehicleIntoUser(user, role, vehicleKind));
             perfLog('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'driver_kyc_pending' });
             setScreen('dashboard');
             return;
           }
-          // approved ise KYC durumunu temizle
           setKycStatus(null);
         }
 
-        await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
-        if (selectedRole && user) {
-          const updatedUser = mergeVehicleIntoUser(user);
+        await AsyncStorage.setItem(`last_role_${user?.id}`, role);
+        if (user) {
+          const updatedUser = mergeVehicleIntoUser(user, role, vehicleKind);
           await saveUser(updatedUser);
           perfLog('DRIVER_MODE_PERSISTED', {
             role: updatedUser.role,
             vehicle_kind:
               (updatedUser.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind ??
-              rideVehicleKind,
+              vehicleKind,
           });
 
-          // 📍 Hemen konum izni iste
           perfLog('📍 Rol seçildi, konum izni isteniyor...');
           requestLocationPermission();
 
@@ -4564,21 +4555,66 @@ export default function App() {
         }
       } catch (error) {
         console.error('Role kaydedilemedi:', error);
-        if (selectedRole === 'passenger' && user) {
-          const updatedUser = mergeVehicleIntoUser(user);
+        if (role === 'passenger' && user) {
+          const updatedUser = mergeVehicleIntoUser(user, role, vehicleKind);
           await saveUser(updatedUser);
-
-          // 📍 Konum izni iste
           requestLocationPermission();
-
           perfLog('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'role_continue_catch' });
           setScreen('dashboard');
-        } else if (selectedRole === 'driver') {
+        } else if (role === 'driver') {
           appAlert('Hata', DRIVER_CONTINUE_FAIL_MSG);
         }
       } finally {
         setRoleContinueBusy(false);
       }
+    };
+
+    const handleRoleSelect = (role: 'passenger' | 'driver') => {
+      if (roleContinueBusy) return;
+      roleScreenHaptic();
+      setSelectedRole(role);
+
+      if (role === 'driver') {
+        const approvedKinds = driverApprovedVehicleKindsForRoleSelect(user);
+        if (approvedKinds.length === 1) {
+          const soleKind = approvedKinds[0]!;
+          setRideVehicleKind(soleKind);
+          Animated.sequence([
+            Animated.timing(scaleAnim, {
+              toValue: 0.95,
+              duration: 100,
+              useNativeDriver: true,
+            }),
+            Animated.spring(scaleAnim, {
+              toValue: 1,
+              friction: 3,
+              useNativeDriver: true,
+            }),
+          ]).start();
+          void continueRoleSelect('driver', soleKind);
+          return;
+        }
+      }
+
+      setRideVehicleKind(null);
+
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 0.95,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 3,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    };
+
+    const handleContinue = async () => {
+      if (!selectedRole || !rideVehicleKind || roleContinueBusy) return;
+      await continueRoleSelect(selectedRole, rideVehicleKind);
     };
 
     const rs = roleSelectBreakpoints;
@@ -4714,14 +4750,22 @@ export default function App() {
       setShowAdminPanel(true);
     };
     const handleRoleSelectChangeRole = () => {
+      if (roleContinueBusy) return;
       roleScreenHaptic();
       setSelectedRole(null);
       setRideVehicleKind(null);
     };
     const handleRoleSelectVehicle = (kind: 'car' | 'motorcycle') => {
+      if (roleContinueBusy) return;
+      if (selectedRole === 'driver') {
+        const approvedKinds = driverApprovedVehicleKindsForRoleSelect(user);
+        if (approvedKinds.length > 0 && !approvedKinds.includes(kind)) return;
+      }
       roleScreenHaptic();
       setRideVehicleKind(kind);
     };
+
+    const driverApprovedKindsForUi = driverApprovedVehicleKindsForRoleSelect(user);
 
     return (
       <RoleSelectScreen
@@ -4803,6 +4847,7 @@ export default function App() {
         onSelectRole={handleRoleSelect}
         onSelectVehicle={handleRoleSelectVehicle}
         onChangeRole={handleRoleSelectChangeRole}
+        approvedDriverVehicleKinds={driverApprovedKindsForUi}
         continueBusy={roleContinueBusy}
         onContinue={() => { void handleContinue(); }}
         onLogoutPress={handleRoleSelectLogout}

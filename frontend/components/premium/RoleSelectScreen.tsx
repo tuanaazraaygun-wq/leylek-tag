@@ -114,6 +114,8 @@ export type RoleSelectScreenProps = {
   onSelectRole: (role: 'passenger' | 'driver') => void;
   onSelectVehicle: (kind: 'car' | 'motorcycle') => void;
   onChangeRole: () => void;
+  /** Sürücü rolünde yalnızca onaylı araç kartları gösterilir (boş = her ikisi). */
+  approvedDriverVehicleKinds?: ('car' | 'motorcycle')[];
   /** Devam Et API beklerken CTA spinner (RC-P0-1B) */
   continueBusy?: boolean;
   onContinue: () => void;
@@ -187,6 +189,7 @@ export function RoleSelectScreen({
   onSelectRole,
   onSelectVehicle,
   onChangeRole,
+  approvedDriverVehicleKinds = [],
   continueBusy = false,
   onContinue,
   onLogoutPress,
@@ -237,6 +240,15 @@ export function RoleSelectScreen({
 
     return kind === 'car' ? <CarHero {...heroProps} /> : <MotorcycleHero {...heroProps} />;
   };
+
+  const filterDriverVehicleCards =
+    selectedRole === 'driver' && approvedDriverVehicleKinds.length > 0;
+  const showCarVehicleCard =
+    selectedRole === 'passenger' || !filterDriverVehicleCards || approvedDriverVehicleKinds.includes('car');
+  const showMotorcycleVehicleCard =
+    selectedRole === 'passenger' ||
+    !filterDriverVehicleCards ||
+    approvedDriverVehicleKinds.includes('motorcycle');
 
   return (
     <View style={styles.roleSelectionContainer}>
@@ -726,6 +738,7 @@ export function RoleSelectScreen({
                           },
                         ]}
                       >
+                        {showCarVehicleCard ? (
                         <PremiumSelectionCard
                           selected={rideVehicleKind === 'car'}
                           onPress={() => onSelectVehicle('car')}
@@ -770,6 +783,7 @@ export function RoleSelectScreen({
                             ) : undefined
                           }
                         />
+                        ) : null}
                       </Animated.View>
                       <Animated.View
                         style={[
@@ -780,6 +794,7 @@ export function RoleSelectScreen({
                           },
                         ]}
                       >
+                        {showMotorcycleVehicleCard ? (
                         <PremiumSelectionCard
                           selected={rideVehicleKind === 'motorcycle'}
                           onPress={() => onSelectVehicle('motorcycle')}
@@ -824,6 +839,7 @@ export function RoleSelectScreen({
                             ) : undefined
                           }
                         />
+                        ) : null}
                       </Animated.View>
                     </View>
                     <View
