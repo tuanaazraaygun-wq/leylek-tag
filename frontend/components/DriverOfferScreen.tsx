@@ -72,6 +72,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAP_POLL_INTERVAL_MS = 9000;
 /** Dispatch radius ile hizalı saha tarama yarıçapı (backend `DISPATCH_RADIUS_KM` default) */
 const FIELD_DEFAULT_RADIUS_KM = 10;
+/** Embedded kokpit — liste peek yüksekliği (drag sheet yok) */
+const EMBEDDED_LIST_PEEK_HEIGHT = Math.min(Math.max(Math.round(SCREEN_HEIGHT * 0.36), 220), 320);
 /** FI-06B — temporal ring buffer (~5 dk @ 9s poll) */
 const FIELD_TEMPORAL_BUFFER_MAX = 34;
 const FIELD_TEMPORAL_MIN_SNAPSHOTS = 3;
@@ -1917,7 +1919,8 @@ export default function DriverOfferScreen({
   const [mapCityGrid, setMapCityGrid] = useState<DriverMapCityGridCell[]>([]);
   const [mapDriverCity, setMapDriverCity] = useState('');
   const [mapHud, setMapHud] = useState({ seeking: 0, nearby: 0, radius: FIELD_DEFAULT_RADIUS_KM });
-  const [mapExpanded, setMapExpanded] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(embedded);
+  const mapFirstLayout = embedded;
   const [mapPinsLoadError, setMapPinsLoadError] = useState<string | null>(null);
   const [mapZoomBand, setMapZoomBand] = useState<FieldMapZoomBand>('mid');
   const driverPulseScale = useRef(new Animated.Value(1)).current;
@@ -1997,8 +2000,8 @@ export default function DriverOfferScreen({
   /** Collapsed: yalnızca mini HUD bar; MapView yalnızca expanded iken mount */
   const showMapHost = mapExpanded;
 
-  /** Genişletilmiş harita yüksekliği */
-  const mapExpandedHeight = Math.min(SCREEN_HEIGHT * 0.42, 360);
+  /** Genişletilmiş harita yüksekliği — legacy non-embedded; embedded map-first flex ile dolar */
+  const mapExpandedHeight = mapFirstLayout ? undefined : Math.min(SCREEN_HEIGHT * 0.42, 360);
 
   /** Normal TAG: teklifleri gizleme; araç uyumsuzluğu yalnızca tanılama logu (sunucu hedefli socket teklifi kartta kalsın). */
   const visibleRequests = useMemo(() => {
@@ -2479,35 +2482,40 @@ export default function DriverOfferScreen({
       : null;
 
   const body = (
-    <View style={styles.driverOfferBody}>
-      {/* Dispatch deck — dispatch-first; harita altta */}
-      <View style={styles.listContainer}>
-        <LinearGradient
-          colors={[...LDS_GRADIENT_COCKPIT_BASE]}
-          locations={[...LDS_GRADIENT_COCKPIT_BASE_LOCATIONS]}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFillObject}
-        />
-        <LinearGradient
-          colors={[...LDS_GRADIENT_COCKPIT_TOP_HAZE]}
-          locations={[...LDS_GRADIENT_COCKPIT_TOP_HAZE_LOCATIONS]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFillObject}
-        />
-        {isMotor ? (
-          <LinearGradient
-            colors={['rgba(22, 101, 52, 0.12)', 'rgba(8,17,31,0.38)']}
-            style={StyleSheet.absoluteFillObject}
-            pointerEvents="none"
-          />
+    <View style={[styles.driverOfferBody, mapFirstLayout && styles.driverOfferBodyMapFirst]}>
+      {/* Liste — legacy: üstte flex:1; embedded map-first: altta peek panel */}
+      <View style={[styles.listContainer, mapFirstLayout && styles.listContainerMapFirst]}>
+        {!mapFirstLayout ? (
+          <>
+            <LinearGradient
+              colors={[...LDS_GRADIENT_COCKPIT_BASE]}
+              locations={[...LDS_GRADIENT_COCKPIT_BASE_LOCATIONS]}
+              pointerEvents="none"
+              style={StyleSheet.absoluteFillObject}
+            />
+            <LinearGradient
+              colors={[...LDS_GRADIENT_COCKPIT_TOP_HAZE]}
+              locations={[...LDS_GRADIENT_COCKPIT_TOP_HAZE_LOCATIONS]}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              pointerEvents="none"
+              style={StyleSheet.absoluteFillObject}
+            />
+            {isMotor ? (
+              <LinearGradient
+                colors={['rgba(22, 101, 52, 0.12)', 'rgba(8,17,31,0.38)']}
+                style={StyleSheet.absoluteFillObject}
+                pointerEvents="none"
+              />
+            ) : null}
+          </>
         ) : null}
         <GlassSurface
           variant="panel"
           style={[
             styles.dispatchDeck,
-            mapExpanded && styles.dispatchDeckMapExpanded,
+            mapExpanded && !mapFirstLayout && styles.dispatchDeckMapExpanded,
+            mapFirstLayout && styles.dispatchDeckMapFirstPeek,
             osLt?.dispatchDeck,
           ]}
           borderRadius={LDS_RADIUS.xl}
@@ -2539,63 +2547,72 @@ export default function DriverOfferScreen({
           </View>
 
         {visibleRequests.length === 0 ? (
-          <View style={[styles.emptyState, mapExpanded && styles.emptyStateMapExpanded]}>
+          <View style={[
+            styles.emptyState,
+            mapExpanded && !mapFirstLayout && styles.emptyStateMapExpanded,
+            mapFirstLayout && styles.emptyStateMapFirstPeek,
+          ]}>
             <GlassSurface
               variant="plain"
               style={[
                 styles.emptyStateCard,
-                mapExpanded && styles.emptyStateCardMapExpanded,
+                mapExpanded && !mapFirstLayout && styles.emptyStateCardMapExpanded,
+                mapFirstLayout && styles.emptyStateCardMapFirstPeek,
                 osLt?.emptyStateCard,
               ]}
               borderRadius={LDS_RADIUS.lg}
             >
-              <View style={[styles.emptyBrandStrip, osLt?.emptyBrandStrip]}>
-                <View style={styles.emptyBrandDotWrap} pointerEvents="none">
-                  <View style={styles.emptyBrandDotOuter} />
-                  <View style={styles.emptyBrandDot} />
+              {!mapFirstLayout ? (
+                <View style={[styles.emptyBrandStrip, osLt?.emptyBrandStrip]}>
+                  <View style={styles.emptyBrandDotWrap} pointerEvents="none">
+                    <View style={styles.emptyBrandDotOuter} />
+                    <View style={styles.emptyBrandDot} />
+                  </View>
+                  <PremiumText variant="caption" style={[styles.emptyBrandLabel, osLt?.emptyBrandLabel]}>
+                    Leylek Yolculuk · Saha operasyonu
+                  </PremiumText>
                 </View>
-                <PremiumText variant="caption" style={[styles.emptyBrandLabel, osLt?.emptyBrandLabel]}>
-                  Leylek Yolculuk · Saha operasyonu
-                </PremiumText>
-              </View>
+              ) : null}
 
-              <View
-                style={[
-                  styles.emptyInstrumentOrb,
-                  mapExpanded && styles.emptyInstrumentOrbMapExpanded,
-                ]}
-              >
+              {!mapFirstLayout ? (
                 <View
                   style={[
-                    styles.emptyOrbRing,
-                    styles.emptyOrbRingOuter,
-                    mapExpanded && styles.emptyOrbRingOuterMapExpanded,
-                    isMotor && styles.emptyOrbRingOuterMotor,
-                    osLt?.emptyOrbRingOuter,
+                    styles.emptyInstrumentOrb,
+                    mapExpanded && styles.emptyInstrumentOrbMapExpanded,
                   ]}
-                />
-                <View
-                  style={[
-                    styles.emptyOrbRing,
-                    styles.emptyOrbRingMid,
-                    mapExpanded && styles.emptyOrbRingMidMapExpanded,
-                    isMotor && styles.emptyOrbRingMidMotor,
-                    osLt?.emptyOrbRingMid,
-                  ]}
-                />
-                <View style={[styles.emptyOrbCore, mapExpanded && styles.emptyOrbCoreMapExpanded, osLt?.emptyOrbCore]}>
-                  <Ionicons
-                    name="radio-outline"
-                    size={mapExpanded ? 16 : 18}
-                    color={isMotor ? ui.motorAccent : ui.accent}
+                >
+                  <View
+                    style={[
+                      styles.emptyOrbRing,
+                      styles.emptyOrbRingOuter,
+                      mapExpanded && styles.emptyOrbRingOuterMapExpanded,
+                      isMotor && styles.emptyOrbRingOuterMotor,
+                      osLt?.emptyOrbRingOuter,
+                    ]}
                   />
+                  <View
+                    style={[
+                      styles.emptyOrbRing,
+                      styles.emptyOrbRingMid,
+                      mapExpanded && styles.emptyOrbRingMidMapExpanded,
+                      isMotor && styles.emptyOrbRingMidMotor,
+                      osLt?.emptyOrbRingMid,
+                    ]}
+                  />
+                  <View style={[styles.emptyOrbCore, mapExpanded && styles.emptyOrbCoreMapExpanded, osLt?.emptyOrbCore]}>
+                    <Ionicons
+                      name="radio-outline"
+                      size={mapExpanded ? 16 : 18}
+                      color={isMotor ? ui.motorAccent : ui.accent}
+                    />
+                  </View>
                 </View>
-              </View>
+              ) : null}
 
               <View
                 style={[
                   styles.emptyStatusPill,
-                  mapExpanded && styles.emptyStatusPillMapExpanded,
+                  mapExpanded && !mapFirstLayout && styles.emptyStatusPillMapExpanded,
                   isMotor && styles.emptyStatusPillMotor,
                   osLt?.emptyStatusPill,
                 ]}
@@ -2608,32 +2625,44 @@ export default function DriverOfferScreen({
 
               <PremiumText
                 variant="title"
-                style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded, osLt?.emptyTitle]}
+                style={[
+                  styles.emptyTitle,
+                  mapExpanded && !mapFirstLayout && styles.emptyTitleMapExpanded,
+                  mapFirstLayout && styles.emptyTitleMapFirstPeek,
+                  osLt?.emptyTitle,
+                ]}
               >
                 Teklif bekleniyor
               </PremiumText>
               <PremiumText
                 variant="caption"
                 muted
-                style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded, osLt?.emptySubtitle]}
+                style={[
+                  styles.emptySubtitle,
+                  mapExpanded && !mapFirstLayout && styles.emptySubtitleMapExpanded,
+                  mapFirstLayout && styles.emptySubtitleMapFirstPeek,
+                  osLt?.emptySubtitle,
+                ]}
               >
                 {resolveFieldRadiusKm(mapHud.radius)} km saha çevresinde tarama sürüyor.
               </PremiumText>
 
-              <View style={styles.emptyChipRow}>
-                <View style={[styles.emptyChip, osLt?.emptyChip]}>
-                  <Ionicons name="pulse-outline" size={11} color={ui.emptyChip} />
-                  <PremiumText variant="caption" style={[styles.emptyChipText, osLt?.emptyChipText]}>
-                    Canlı tarama
-                  </PremiumText>
+              {!mapFirstLayout ? (
+                <View style={styles.emptyChipRow}>
+                  <View style={[styles.emptyChip, osLt?.emptyChip]}>
+                    <Ionicons name="pulse-outline" size={11} color={ui.emptyChip} />
+                    <PremiumText variant="caption" style={[styles.emptyChipText, osLt?.emptyChipText]}>
+                      Canlı tarama
+                    </PremiumText>
+                  </View>
+                  <View style={[styles.emptyChip, osLt?.emptyChip]}>
+                    <Ionicons name="shield-checkmark-outline" size={11} color={ui.emptyChip} />
+                    <PremiumText variant="caption" style={[styles.emptyChipText, osLt?.emptyChipText]}>
+                      Leylek Yolculuk saha
+                    </PremiumText>
+                  </View>
                 </View>
-                <View style={[styles.emptyChip, osLt?.emptyChip]}>
-                  <Ionicons name="shield-checkmark-outline" size={11} color={ui.emptyChip} />
-                  <PremiumText variant="caption" style={[styles.emptyChipText, osLt?.emptyChipText]}>
-                    Leylek Yolculuk saha
-                  </PremiumText>
-                </View>
-              </View>
+              ) : null}
             </GlassSurface>
           </View>
         ) : (
@@ -2663,7 +2692,11 @@ export default function DriverOfferScreen({
                 }
               />
             );}}
-            contentContainerStyle={[styles.listContent, mapExpanded && styles.listContentMapExpanded]}
+            contentContainerStyle={[
+              styles.listContent,
+              mapExpanded && !mapFirstLayout && styles.listContentMapExpanded,
+              mapFirstLayout && styles.listContentMapFirstPeek,
+            ]}
             showsVerticalScrollIndicator={false}
           />
         )}
@@ -2673,129 +2706,140 @@ export default function DriverOfferScreen({
       <View
         style={[
           styles.mapCardShell,
-          mapExpanded && styles.mapCardShellExpandedLayer,
+          mapExpanded && !mapFirstLayout && styles.mapCardShellExpandedLayer,
+          mapFirstLayout && styles.mapCardShellMapFirst,
         ]}
       >
-        <GlassSurface
-          variant={mapExpanded ? 'plain' : 'panel'}
-          borderRadius={mapExpanded ? LDS_RADIUS.lg : LDS_RADIUS.xl}
-          style={[
-            styles.mapChromeShell,
-            mapExpanded ? styles.mapChromeShellExpanded : styles.mapChromeShellCollapsed,
-            mapExpanded ? osLt?.mapChromeShell : osLt?.mapChromeShellCollapsed,
-          ]}
-        >
-          <TouchableOpacity
+        {!mapFirstLayout ? (
+          <GlassSurface
+            variant={mapExpanded ? 'plain' : 'panel'}
+            borderRadius={mapExpanded ? LDS_RADIUS.lg : LDS_RADIUS.xl}
             style={[
-              styles.fieldOpHud,
-              mapExpanded ? styles.fieldOpHudExpanded : styles.fieldOpHudCollapsed,
-              !mapExpanded && osLt?.fieldOpHudCollapsed,
+              styles.mapChromeShell,
+              mapExpanded ? styles.mapChromeShellExpanded : styles.mapChromeShellCollapsed,
+              mapExpanded ? osLt?.mapChromeShell : osLt?.mapChromeShellCollapsed,
             ]}
-            onPress={() => setMapExpanded((v) => !v)}
-            activeOpacity={0.88}
-            accessibilityRole="button"
-            accessibilityLabel={mapExpanded ? 'Saha haritasını gizle' : 'Saha haritasını göster'}
           >
-            <View style={styles.fieldOpHudTopRow}>
-              <View style={styles.fieldOpHudBrandCol}>
-                <PremiumText variant="caption" style={[styles.fieldOpHudBrand, osLt?.fieldOpHudBrand]}>
-                  LEYLEK YOLCULUK
-                </PremiumText>
-                {mapExpanded ? (
-                  <>
-                    <PremiumText variant="step" style={[styles.fieldOpHudTitle, osLt?.fieldOpHudTitle]} numberOfLines={1}>
-                      Saha Operasyon Merkezi
-                    </PremiumText>
-                    <PremiumText variant="caption" muted style={[styles.fieldOpHudCaption, osLt?.fieldOpHudCaption]} numberOfLines={1}>
-                      Field Intelligence
-                    </PremiumText>
-                  </>
-                ) : (
-                  <PremiumText variant="caption" muted style={[styles.fieldOpHudCaption, osLt?.fieldOpHudCaption]} numberOfLines={1}>
-                    Saha Operasyon Merkezi · Field Intelligence
+            <TouchableOpacity
+              style={[
+                styles.fieldOpHud,
+                mapExpanded ? styles.fieldOpHudExpanded : styles.fieldOpHudCollapsed,
+                !mapExpanded && osLt?.fieldOpHudCollapsed,
+              ]}
+              onPress={() => setMapExpanded((v) => !v)}
+              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel={mapExpanded ? 'Saha haritasını gizle' : 'Saha haritasını göster'}
+            >
+              <View style={styles.fieldOpHudTopRow}>
+                <View style={styles.fieldOpHudBrandCol}>
+                  <PremiumText variant="caption" style={[styles.fieldOpHudBrand, osLt?.fieldOpHudBrand]}>
+                    LEYLEK YOLCULUK
                   </PremiumText>
-                )}
+                  {mapExpanded ? (
+                    <>
+                      <PremiumText variant="step" style={[styles.fieldOpHudTitle, osLt?.fieldOpHudTitle]} numberOfLines={1}>
+                        Saha Operasyon Merkezi
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={[styles.fieldOpHudCaption, osLt?.fieldOpHudCaption]} numberOfLines={1}>
+                        Field Intelligence
+                      </PremiumText>
+                    </>
+                  ) : (
+                    <PremiumText variant="caption" muted style={[styles.fieldOpHudCaption, osLt?.fieldOpHudCaption]} numberOfLines={1}>
+                      Saha Operasyon Merkezi · Field Intelligence
+                    </PremiumText>
+                  )}
+                </View>
+                <View style={styles.mapMiniHudChevronWrap}>
+                  <Ionicons
+                    name={mapExpanded ? 'chevron-down' : 'chevron-up'}
+                    size={mapExpanded ? 15 : 16}
+                    color={ui.accent}
+                  />
+                </View>
               </View>
-              <View style={styles.mapMiniHudChevronWrap}>
-                <Ionicons
-                  name={mapExpanded ? 'chevron-down' : 'chevron-up'}
-                  size={mapExpanded ? 15 : 16}
-                  color={ui.accent}
-                />
-              </View>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.fieldOpHudMetricsScroll}
-              contentContainerStyle={styles.fieldOpHudMetricsContent}
-            >
-              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
-                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
-                  Yakın Talepler
-                </PremiumText>
-                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
-                  {fieldIntelMetrics.nearRequestsLabel}
-                </PremiumText>
-              </View>
-              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
-                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
-                  Tarama Alanı
-                </PremiumText>
-                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
-                  {fieldIntelMetrics.scanLabel}
-                </PremiumText>
-              </View>
-              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
-                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
-                  Saha Durumu
-                </PremiumText>
-                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
-                  {fieldIntelMetrics.fieldStatus}
-                </PremiumText>
-              </View>
-              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
-                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
-                  Yakın Sinyal
-                </PremiumText>
-                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
-                  {fieldIntelMetrics.nearSignalLabel}
-                </PremiumText>
-              </View>
-              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
-                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
-                  Yoğun Bölge
-                </PremiumText>
-                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
-                  {fieldIntelMetrics.denseRegionLabel}
-                </PremiumText>
-              </View>
-            </ScrollView>
-            <PremiumText
-              variant="caption"
-              muted
-              style={[styles.fieldOpInsightLine, osLt?.fieldOpInsightLine]}
-              numberOfLines={1}
-            >
-              {resolveFieldOpportunityInsightLine({
-                mapExpanded,
-                spatialInsightLine: fieldIntelMetrics.spatialInsightLine,
-                operationScore: fieldIntelMetrics.operationScore,
-                trend: fieldTemporalTrendRef.current,
-                listedCount: fieldListedCountRef.current,
-              })}
-            </PremiumText>
-          </TouchableOpacity>
-        </GlassSurface>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.fieldOpHudMetricsScroll}
+                contentContainerStyle={styles.fieldOpHudMetricsContent}
+              >
+                <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                  <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
+                    Yakın Talepler
+                  </PremiumText>
+                  <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
+                    {fieldIntelMetrics.nearRequestsLabel}
+                  </PremiumText>
+                </View>
+                <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                  <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
+                    Tarama Alanı
+                  </PremiumText>
+                  <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
+                    {fieldIntelMetrics.scanLabel}
+                  </PremiumText>
+                </View>
+                <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                  <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
+                    Saha Durumu
+                  </PremiumText>
+                  <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
+                    {fieldIntelMetrics.fieldStatus}
+                  </PremiumText>
+                </View>
+                <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                  <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
+                    Yakın Sinyal
+                  </PremiumText>
+                  <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
+                    {fieldIntelMetrics.nearSignalLabel}
+                  </PremiumText>
+                </View>
+                <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                  <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
+                    Yoğun Bölge
+                  </PremiumText>
+                  <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
+                    {fieldIntelMetrics.denseRegionLabel}
+                  </PremiumText>
+                </View>
+              </ScrollView>
+              <PremiumText
+                variant="caption"
+                muted
+                style={[styles.fieldOpInsightLine, osLt?.fieldOpInsightLine]}
+                numberOfLines={1}
+              >
+                {resolveFieldOpportunityInsightLine({
+                  mapExpanded,
+                  spatialInsightLine: fieldIntelMetrics.spatialInsightLine,
+                  operationScore: fieldIntelMetrics.operationScore,
+                  trend: fieldTemporalTrendRef.current,
+                  listedCount: fieldListedCountRef.current,
+                })}
+              </PremiumText>
+            </TouchableOpacity>
+          </GlassSurface>
+        ) : null}
 
         {showMapHost ? (
           <View
-            style={[styles.mapExpandedMapHost, { height: mapExpandedHeight }]}
+            style={[
+              styles.mapExpandedMapHost,
+              mapFirstLayout && styles.mapExpandedMapHostMapFirst,
+              !mapFirstLayout && mapExpandedHeight != null ? { height: mapExpandedHeight } : null,
+            ]}
             pointerEvents="box-none"
           >
-            <View style={[styles.mapViewportFixed, styles.mapContainerSolidExpanded]}>
+            <View style={[
+              styles.mapViewportFixed,
+              mapExpanded && styles.mapContainerSolidExpanded,
+              mapFirstLayout && styles.mapViewportMapFirst,
+            ]}>
               {renderMap()}
-              <View style={styles.mapDimOverlay} pointerEvents="none" />
+              {!mapFirstLayout ? <View style={styles.mapDimOverlay} pointerEvents="none" /> : null}
               {!driverLocation || !mapReady ? (
                 <View style={styles.mapLoadingOverlay} pointerEvents="none">
                   <ActivityIndicator size="small" color={ui.activity} />
@@ -2813,7 +2857,8 @@ export default function DriverOfferScreen({
                   </GlassSurface>
                 </View>
               ) : null}
-              <View style={styles.mapTopOverlay} pointerEvents="box-none">
+              {!mapFirstLayout ? (
+                <View style={styles.mapTopOverlay} pointerEvents="box-none">
                   <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
                     <Ionicons name="chevron-back" size={24} color="#F1F5F9" />
                   </TouchableOpacity>
@@ -2840,6 +2885,7 @@ export default function DriverOfferScreen({
                   </View>
                   <View style={styles.mapTopSpacer} />
                 </View>
+              ) : null}
             </View>
           </View>
         ) : null}
@@ -2867,13 +2913,71 @@ const styles = StyleSheet.create({
     minHeight: 0,
     backgroundColor: 'transparent',
   },
-  /** Sütun: dispatch üstte (flex), harita altta (sabit) */
+  /** Legacy: dispatch üstte; embedded map-first: column-reverse ile harita üstte */
   driverOfferBody: {
     flex: 1,
     width: '100%',
     minHeight: 0,
     flexDirection: 'column',
     backgroundColor: 'transparent',
+  },
+  driverOfferBodyMapFirst: {
+    position: 'relative',
+    flexDirection: 'column-reverse',
+  },
+  listContainerMapFirst: {
+    flex: 0,
+    flexGrow: 0,
+    height: EMBEDDED_LIST_PEEK_HEIGHT,
+    maxHeight: EMBEDDED_LIST_PEEK_HEIGHT,
+    zIndex: 10,
+    elevation: 10,
+  },
+  dispatchDeckMapFirstPeek: {
+    marginHorizontal: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
+    marginTop: 0,
+  },
+  listContentMapFirstPeek: {
+    paddingTop: LDS_SPACING.xxs,
+    paddingBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+  },
+  emptyStateMapFirstPeek: {
+    paddingVertical: LDS_SPACING.xs,
+    justifyContent: 'flex-start',
+  },
+  emptyStateCardMapFirstPeek: {
+    paddingTop: LDS_SPACING.xs,
+    paddingBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+  },
+  emptyTitleMapFirstPeek: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  emptySubtitleMapFirstPeek: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  mapCardShellMapFirst: {
+    flex: 1,
+    flexShrink: 1,
+    minHeight: 0,
+    zIndex: 0,
+    elevation: 0,
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingBottom: LDS_SPACING.xxs,
+  },
+  mapExpandedMapHostMapFirst: {
+    flex: 1,
+    minHeight: 0,
+    zIndex: 0,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  mapViewportMapFirst: {
+    borderRadius: LDS_RADIUS.md,
   },
   mapCardShellExpandedLayer: {
     zIndex: 10,
