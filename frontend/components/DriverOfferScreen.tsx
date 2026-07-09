@@ -75,6 +75,12 @@ const FIELD_DEFAULT_RADIUS_KM = 10;
 /** Embedded kokpit — liste peek yüksekliği (drag sheet yok) */
 const EMBEDDED_LIST_PEEK_HEIGHT = Math.min(Math.max(Math.round(SCREEN_HEIGHT * 0.36), 220), 320);
 
+/** Map-first gesture pause — kullanıcı pan/pinch sonrası auto-fit susturma */
+const FIELD_MAP_GESTURE_PAUSE_MS = 30_000;
+const FIELD_MAP_MIN_AUTO_FIT_INTERVAL_MS = 3_000;
+/** GPS sıçraması bu eşiği geçerse pause bypass (km) */
+const FIELD_MAP_GPS_JUMP_BYPASS_KM = 0.4;
+
 /** Legacy (non-embedded) saha haritası — bölge/şehir zoom */
 const FIELD_INITIAL_DELTA_LEGACY = 0.12;
 const FIELD_FALLBACK_DELTA_LEGACY = 0.15;
@@ -2012,6 +2018,142 @@ export default function DriverOfferScreen({
   const fieldTemporalBufferRef = useRef(createFieldTemporalBufferState());
   const fieldTemporalTrendRef = useRef<FieldTemporalTrendResult | null>(null);
   const fieldListedCountRef = useRef(0);
+  const userGestureUntilMsRef = useRef(0);
+  const programmaticMoveActiveRef = useRef(false);
+  const lastAutoFitAtMsRef = useRef(0);
+  const initialFieldMapFitDoneRef = useRef(false);
+  const lastAutoFitCenterRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const refitRequestedRef = useRef(false);
+  const fieldMapFitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const programmaticMoveClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const markProgrammaticMapMove = useCallback(() => {
+    programmaticMoveActiveRef.current = true;
+    if (programmaticMoveClearTimeoutRef.current != null) {
+      clearTimeout(programmaticMoveClearTimeoutRef.current);
+    }
+    programmaticMoveClearTimeoutRef.current = setTimeout(() => {
+      programmaticMoveActiveRef.current = false;
+      programmaticMoveClearTimeoutRef.current = null;
+    }, 1200);
+  }, []);
+
+  const applyFieldMapAutoFit = useCallback(
+    (options?: { force?: boolean }) => {
+      const force = options?.force === true;
+      if (!mapExpanded || !mapReady || !mapRef.current || !driverLocation) return false;
+
+      const now = Date.now();
+      const forceRecenter = force || refitRequestedRef.current;
+      refitRequestedRef.current = false;
+
+      let gpsJumpBypass = false;
+      if (lastAutoFitCenterRef.current) {
+        const jumpKm = resolveFieldHaversineKm(
+          lastAutoFitCenterRef.current.latitude,
+          lastAutoFitCenterRef.current.longitude,
+          driverLocation.latitude,
+          driverLocation.longitude,
+        );
+        if (jumpKm >= FIELD_MAP_GPS_JUMP_BYPASS_KM) {
+          gpsJumpBypass = true;
+        }
+      }
+
+      const allowPauseBypass =
+        forceRecenter || !initialFieldMapFitDoneRef.current || gpsJumpBypass;
+
+      if (mapFirstLayout && !allowPauseBypass) {
+        if (now < userGestureUntilMsRef.current) return false;
+        if (now - lastAutoFitAtMsRef.current < FIELD_MAP_MIN_AUTO_FIT_INTERVAL_MS) return false;
+      }
+
+      const rk = resolveFieldRadiusKm(mapHud.radius);
+      const fitKm = resolveFieldFitCapKm(rk, mapFirstLayout);
+      const edgePadding = resolveFieldMapEdgePadding(mapFirstLayout);
+
+      const coordinates: { latitude: number; longitude: number }[] = [{ ...driverLocation }];
+
+      mapSeekingPins.forEach((p) => {
+        const pk = Number(p.pickup_distance_km ?? p.distance_km);
+        if (Number.isFinite(pk) && pk <= fitKm) {
+          coordinates.push({ latitude: p.pickup_lat, longitude: p.pickup_lng });
+        }
+      });
+      mapLightPins.forEach((p) => {
+        const dk = Number(p.distance_km);
+        if (Number.isFinite(dk) && dk <= fitKm) {
+          coordinates.push({ latitude: p.latitude, longitude: p.longitude });
+        }
+      });
+
+      markProgrammaticMapMove();
+      lastAutoFitAtMsRef.current = now;
+      lastAutoFitCenterRef.current = {
+        latitude: driverLocation.latitude,
+        longitude: driverLocation.longitude,
+      };
+      initialFieldMapFitDoneRef.current = true;
+
+      if (fieldMapFitTimeoutRef.current != null) {
+        clearTimeout(fieldMapFitTimeoutRef.current);
+        fieldMapFitTimeoutRef.current = null;
+      }
+
+      if (coordinates.length === 1) {
+        const { latitudeDelta, longitudeDelta } = resolveFieldSinglePointDeltas(
+          driverLocation,
+          rk,
+          mapFirstLayout,
+        );
+        mapRef.current.animateToRegion(
+          {
+            latitude: driverLocation.latitude,
+            longitude: driverLocation.longitude,
+            latitudeDelta,
+            longitudeDelta,
+          },
+          400,
+        );
+        return true;
+      }
+
+      fieldMapFitTimeoutRef.current = setTimeout(() => {
+        fieldMapFitTimeoutRef.current = null;
+        mapRef.current?.fitToCoordinates(coordinates, {
+          edgePadding,
+          animated: true,
+        });
+      }, 350);
+
+      return true;
+    },
+    [
+      mapExpanded,
+      mapReady,
+      driverLocation,
+      mapSeekingPins,
+      mapLightPins,
+      mapHud.radius,
+      mapFirstLayout,
+      markProgrammaticMapMove,
+    ],
+  );
+
+  const handleRecenterFieldMap = useCallback(() => {
+    userGestureUntilMsRef.current = 0;
+    refitRequestedRef.current = true;
+    applyFieldMapAutoFit({ force: true });
+  }, [applyFieldMapAutoFit]);
+
+  useEffect(() => {
+    return () => {
+      if (fieldMapFitTimeoutRef.current != null) clearTimeout(fieldMapFitTimeoutRef.current);
+      if (programmaticMoveClearTimeoutRef.current != null) {
+        clearTimeout(programmaticMoveClearTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const dur = 1800;
@@ -2068,6 +2210,9 @@ export default function DriverOfferScreen({
     if (!mapExpanded) {
       setMapReady(false);
       setMapZoomBand('mid');
+      initialFieldMapFitDoneRef.current = false;
+      lastAutoFitCenterRef.current = null;
+      userGestureUntilMsRef.current = 0;
     }
   }, [mapExpanded]);
 
@@ -2075,6 +2220,19 @@ export default function DriverOfferScreen({
     (region: { latitudeDelta?: number }) => {
       const next = resolveFieldMapZoomBand(region?.latitudeDelta, mapFirstLayout);
       setMapZoomBand((prev) => (prev === next ? prev : next));
+
+      if (!mapFirstLayout) return;
+
+      if (programmaticMoveActiveRef.current) {
+        programmaticMoveActiveRef.current = false;
+        if (programmaticMoveClearTimeoutRef.current != null) {
+          clearTimeout(programmaticMoveClearTimeoutRef.current);
+          programmaticMoveClearTimeoutRef.current = null;
+        }
+        return;
+      }
+
+      userGestureUntilMsRef.current = Date.now() + FIELD_MAP_GESTURE_PAUSE_MS;
     },
     [mapFirstLayout],
   );
@@ -2329,52 +2487,18 @@ export default function DriverOfferScreen({
 
   // Harita sınırları: sürücü + yalnızca tarama yarıçapı içindeki pinler (şehir grid zoom’u şişirmez)
   useEffect(() => {
-    if (!mapExpanded || !mapReady || !mapRef.current || !driverLocation) return;
-
-    const rk = resolveFieldRadiusKm(mapHud.radius);
-    const fitKm = resolveFieldFitCapKm(rk, mapFirstLayout);
-    const edgePadding = resolveFieldMapEdgePadding(mapFirstLayout);
-
-    const coordinates: { latitude: number; longitude: number }[] = [{ ...driverLocation }];
-
-    mapSeekingPins.forEach((p) => {
-      const pk = Number(p.pickup_distance_km ?? p.distance_km);
-      if (Number.isFinite(pk) && pk <= fitKm) {
-        coordinates.push({ latitude: p.pickup_lat, longitude: p.pickup_lng });
-      }
-    });
-    mapLightPins.forEach((p) => {
-      const dk = Number(p.distance_km);
-      if (Number.isFinite(dk) && dk <= fitKm) {
-        coordinates.push({ latitude: p.latitude, longitude: p.longitude });
-      }
-    });
-
-    if (coordinates.length === 1) {
-      const { latitudeDelta, longitudeDelta } = resolveFieldSinglePointDeltas(
-        driverLocation,
-        rk,
-        mapFirstLayout,
-      );
-      mapRef.current.animateToRegion(
-        {
-          latitude: driverLocation.latitude,
-          longitude: driverLocation.longitude,
-          latitudeDelta,
-          longitudeDelta,
-        },
-        400
-      );
-      return;
-    }
-
-    setTimeout(() => {
-      mapRef.current?.fitToCoordinates(coordinates, {
-        edgePadding,
-        animated: true,
-      });
-    }, 350);
-  }, [mapExpanded, mapReady, driverLocation, mapSeekingPins, mapLightPins, mapHud.radius, mapFirstLayout]);
+    applyFieldMapAutoFit();
+  }, [
+    mapExpanded,
+    mapReady,
+    driverLocation?.latitude,
+    driverLocation?.longitude,
+    mapSeekingPins,
+    mapLightPins,
+    mapHud.radius,
+    mapFirstLayout,
+    applyFieldMapAutoFit,
+  ]);
 
   const listedTagIdKey = useMemo(() => {
     const ids: string[] = [];
@@ -2943,6 +3067,17 @@ export default function DriverOfferScreen({
                   </GlassSurface>
                 </View>
               ) : null}
+              {mapFirstLayout && driverLocation && mapReady ? (
+                <TouchableOpacity
+                  style={styles.mapRecenterFab}
+                  onPress={handleRecenterFieldMap}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel="Haritayı merkeze al"
+                >
+                  <Ionicons name="locate" size={20} color={ui.accent} />
+                </TouchableOpacity>
+              ) : null}
               {!mapFirstLayout ? (
                 <View style={styles.mapTopOverlay} pointerEvents="box-none">
                   <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
@@ -3392,6 +3527,21 @@ const styles = StyleSheet.create({
       android: { elevation: 8 },
       default: {},
     }),
+  },
+  mapRecenterFab: {
+    position: 'absolute',
+    top: LDS_SPACING.sm,
+    right: LDS_SPACING.sm,
+    width: 40,
+    height: 40,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.82)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    zIndex: 7,
+    ...LDS_ELEVATION.chip,
   },
   mapTopSpacer: {
     width: 44,
