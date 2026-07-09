@@ -55,8 +55,8 @@ export const DRIVER_TRANSFER_CONFIRM_CAPTION_IBAN =
 export const QR_CASH_CONTRIBUTION_SUBTITLE =
   'Teklifte katkı payı nakit olarak belirlenmişti. Katkı payını ilettiğinizi onaylayın.';
 
-export const QR_CARD_CONTRIBUTION_CONFIRM_LABEL =
-  'Kart yoluyla katkı bildirimini onaylıyorum (yakında)';
+export const QR_CONTRIBUTION_CONFIRM_LABEL =
+  'Katkı payını ilettim — yolculuğu tamamla';
 
 export const PRICE_MODAL_CONTRIBUTION_SUBTITLE =
   `Katkı taraflar arasında netleşir. ${CONTRIBUTION_NO_COLLECTION_LINE}`;

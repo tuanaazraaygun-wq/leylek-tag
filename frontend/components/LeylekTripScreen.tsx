@@ -4029,16 +4029,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   }
 
   if (finishResult) {
-    const isCard = finishResult.paymentMethod === 'card';
     return (
       <SafeAreaView style={styles.resultRoot}>
         <View style={styles.resultCard}>
-          <View style={[styles.resultIcon, { backgroundColor: isCard ? '#2563EB' : '#16A34A' }]}>
-            <Ionicons name={isCard ? 'card-outline' : 'cash-outline'} size={42} color="#FFFFFF" />
+          <View style={[styles.resultIcon, { backgroundColor: '#16A34A' }]}>
+            <Ionicons name="cash-outline" size={42} color="#FFFFFF" />
           </View>
           <Text style={styles.resultTitle}>Yolculuk tamamlandı</Text>
           <Text style={styles.resultText}>
-            {isCard ? 'Kart ödeme altyapısı yakında burada açılacak.' : 'Katkı payı mutabakatı taraflar arasında tamamlanır'}
+            Katkı payı mutabakatı taraflar arasında tamamlanır
           </Text>
           <Pressable style={({ pressed }) => [styles.resultButton, pressed && { opacity: 0.86 }]} onPress={() => router.replace(MUHABBET_SAFE_ROUTE)}>
             <Text style={styles.resultButtonText}>Sohbete dön</Text>
@@ -4282,14 +4281,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               >
                 {paymentBusy ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="cash-outline" size={20} color="#FFFFFF" />}
                 <Text style={styles.paymentChoiceText}>Nakit</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.paymentChoiceButton, styles.paymentChoiceCardButton, pressed && styles.paymentChoicePressed]}
-                disabled={paymentBusy}
-                onPress={() => selectPaymentMethod('card')}
-              >
-                {paymentBusy ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="card-outline" size={20} color="#FFFFFF" />}
-                <Text style={styles.paymentChoiceText}>Kart</Text>
               </Pressable>
             </View>
             <Pressable

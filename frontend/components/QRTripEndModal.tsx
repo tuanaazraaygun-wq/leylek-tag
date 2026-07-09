@@ -33,7 +33,7 @@ import { tapButtonHaptic } from '../utils/touchHaptics';
 import { perfLog } from '../utils/perfDiagLog';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 import {
-  QR_CARD_CONTRIBUTION_CONFIRM_LABEL,
+  QR_CONTRIBUTION_CONFIRM_LABEL,
   QR_CASH_CONTRIBUTION_SUBTITLE,
 } from '../lib/legalUxCopy';
 import { PaymentLegalDisclaimer } from './legal/PaymentLegalDisclaimer';
@@ -106,7 +106,8 @@ export default function QRTripEndModal({
   const isTrustedDirect = String(matchChannel || '').trim().toLowerCase() === 'trusted';
   const effectiveBookingPaymentMethod: PaymentMethod | null =
     isTrustedDirect && bookingPaymentMethod === 'card' ? null : bookingPaymentMethod;
-  const showCardPaymentOption = !isTrustedDirect;
+  const hasKnownContributionMethod =
+    effectiveBookingPaymentMethod === 'cash' || effectiveBookingPaymentMethod === 'card';
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -406,7 +407,7 @@ export default function QRTripEndModal({
     if (!legacyPaymentPick || !pendingDriverId) {
       appAlert(
         'Seçim gerekli',
-        'Katkı payı veya kart seçeneğini işaretleyin.',
+        'Katkı payı seçeneğini işaretleyin.',
         [{ text: 'Tamam', style: 'default' }],
         { variant: 'info' },
       );
@@ -427,21 +428,15 @@ export default function QRTripEndModal({
     onClose();
   };
 
-  const paymentTitle =
-    effectiveBookingPaymentMethod === 'cash'
-      ? 'Katkı payı'
-      : effectiveBookingPaymentMethod === 'card'
-        ? 'Kart (yakında)'
-        : 'Katkı payını nasıl ilettiğinizi seçin';
+  const paymentTitle = hasKnownContributionMethod
+    ? 'Katkı payı'
+    : 'Katkı payını nasıl ilettiğinizi seçin';
 
-  const paymentSubtitle =
-    effectiveBookingPaymentMethod === 'cash'
-      ? QR_CASH_CONTRIBUTION_SUBTITLE
-      : effectiveBookingPaymentMethod === 'card'
-        ? 'Kart yakında. Şimdilik katkı bildirimini onaylayarak yolculuğu tamamlayın.'
-        : isTrustedDirect
-          ? 'Katkı payını nakit olarak ilettiğinizi onaylayın.'
-          : 'Bu yolculuk için teklifte katkı tercihi kayıtlı değil. Katkı payını nasıl ilettiğinizi seçin.';
+  const paymentSubtitle = hasKnownContributionMethod
+    ? QR_CASH_CONTRIBUTION_SUBTITLE
+    : isTrustedDirect
+      ? 'Katkı payını nakit olarak ilettiğinizi onaylayın.'
+      : 'Bu yolculuk için teklifte katkı tercihi kayıtlı değil. Katkı payını nasıl ilettiğinizi seçin.';
 
   const phaseStep = isTrustedDirect
     ? isDriver
@@ -477,30 +472,20 @@ export default function QRTripEndModal({
       <View style={styles.paymentFooter}>
         <PaymentLegalDisclaimer compact accentColor={payUi.accent} showDetailLink />
 
-        {effectiveBookingPaymentMethod === 'cash' && (
+        {hasKnownContributionMethod && (
           <TouchableOpacity
             style={[styles.primaryPayBtn, payLt?.primaryPayBtn]}
-            onPress={() => handlePassengerPaymentConfirm('cash')}
+            onPress={() =>
+              handlePassengerPaymentConfirm(
+                effectiveBookingPaymentMethod === 'card' ? 'card' : 'cash',
+              )
+            }
             disabled={processing}
             activeOpacity={0.88}
           >
             <Ionicons name="cash-outline" size={24} color={primaryIconColor} />
             <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
-              Katkı payını ilettim — yolculuğu tamamla
-            </PremiumText>
-          </TouchableOpacity>
-        )}
-
-        {showCardPaymentOption && effectiveBookingPaymentMethod === 'card' && (
-          <TouchableOpacity
-            style={[styles.primaryPayBtn, payLt?.primaryPayBtn]}
-            onPress={() => handlePassengerPaymentConfirm('card')}
-            disabled={processing}
-            activeOpacity={0.88}
-          >
-            <Ionicons name="card-outline" size={24} color={primaryIconColor} />
-            <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
-              {QR_CARD_CONTRIBUTION_CONFIRM_LABEL}
+              {QR_CONTRIBUTION_CONFIRM_LABEL}
             </PremiumText>
           </TouchableOpacity>
         )}
@@ -895,44 +880,6 @@ export default function QRTripEndModal({
                             </PremiumText>
                           </GlassSurface>
                         </TouchableOpacity>
-                        {showCardPaymentOption ? (
-                          <TouchableOpacity
-                            style={styles.legacyChipWrap}
-                            onPress={() => setLegacyPaymentPick('card')}
-                            activeOpacity={0.88}
-                          >
-                            <GlassSurface
-                              variant="plain"
-                              borderRadius={LDS_RADIUS.md}
-                              style={[
-                                styles.legacyChip,
-                                payLt?.legacyChip,
-                                legacyPaymentPick === 'card' && styles.legacyChipActive,
-                                legacyPaymentPick === 'card' && payLt?.legacyChipActive,
-                              ]}
-                            >
-                              <Ionicons
-                                name="card-outline"
-                                size={22}
-                                color={
-                                  legacyPaymentPick === 'card'
-                                    ? payUi.selectedIcon
-                                    : payUi.accent
-                                }
-                              />
-                              <PremiumText
-                                variant="body"
-                                style={[
-                                  styles.legacyChipText,
-                                  legacyPaymentPick === 'card' && styles.legacyChipTextActive,
-                                  legacyPaymentPick === 'card' && payLt?.legacyChipTextActive,
-                                ]}
-                              >
-                                Kart (yakında)
-                              </PremiumText>
-                            </GlassSurface>
-                          </TouchableOpacity>
-                        ) : null}
                       </View>
                     </>
                   )}

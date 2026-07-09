@@ -8364,7 +8364,7 @@ function LiveMapView({
             <View style={styles.driverRidePriceRow}>
               {passengerPaymentMethod ? (
                 <PremiumText variant="caption" muted style={styles.driverRidePayHint} numberOfLines={1}>
-                  {passengerPaymentMethod === 'card' ? 'Kart ile öde · yakında' : 'Nakit'}
+                  Nakit
                 </PremiumText>
               ) : (
                 <View style={styles.driverRidePriceRowSpacer} />
@@ -8519,14 +8519,12 @@ function LiveMapView({
           {passengerPaymentMethod ? (
             <View style={styles.matchedTopPaymentRow}>
               <Ionicons
-                name={passengerPaymentMethod === 'card' ? 'card-outline' : 'cash-outline'}
+                name="cash-outline"
                 size={12}
                 color={ui.textMuted}
               />
               <PremiumText variant="caption" muted style={styles.matchedTopPaymentText} numberOfLines={1}>
-                {passengerPaymentMethod === 'card'
-                  ? 'Yolcu: kart · yakında'
-                  : 'Yolcu: nakit'}
+                Yolcu: nakit
               </PremiumText>
             </View>
           ) : null}
