@@ -74,30 +74,112 @@ const MAP_POLL_INTERVAL_MS = 9000;
 const FIELD_DEFAULT_RADIUS_KM = 10;
 /** Embedded kokpit — liste peek yüksekliği (drag sheet yok) */
 const EMBEDDED_LIST_PEEK_HEIGHT = Math.min(Math.max(Math.round(SCREEN_HEIGHT * 0.36), 220), 320);
+
+/** Legacy (non-embedded) saha haritası — bölge/şehir zoom */
+const FIELD_INITIAL_DELTA_LEGACY = 0.12;
+const FIELD_FALLBACK_DELTA_LEGACY = 0.15;
+const FIELD_SINGLE_POINT_MIN_DELTA_LEGACY = 0.14;
+const FIELD_FIT_CAP_KM_LEGACY = 45;
+const FIELD_FIT_RADIUS_FACTOR_LEGACY = 1.2;
+
+/** Embedded map-first — sokak/mahalle zoom */
+const FIELD_INITIAL_DELTA_MAP_FIRST = 0.016;
+const FIELD_FALLBACK_DELTA_MAP_FIRST = 0.02;
+const FIELD_SINGLE_POINT_MIN_DELTA_MAP_FIRST = 0.018;
+const FIELD_SINGLE_POINT_MAX_DELTA_MAP_FIRST = 0.022;
+const FIELD_FIT_CAP_KM_MAP_FIRST = 4;
+const FIELD_FIT_RADIUS_FACTOR_MAP_FIRST = 0.35;
+
+/** Zoom LOD — latitudeDelta eşikleri (client-only, backend yok) */
+const FIELD_ZOOM_NEAR_MAX_DELTA = 0.04;
+const FIELD_ZOOM_MID_MAX_DELTA = 0.12;
+const FIELD_ZOOM_NEAR_MAX_DELTA_MAP_FIRST = 0.025;
+const FIELD_ZOOM_MID_MAX_DELTA_MAP_FIRST = 0.06;
+const FIELD_ZOOM_NEAR_HEAT_MAX = 20;
+const FIELD_ZOOM_MID_LIGHT_MAX = 20;
+
 /** FI-06B — temporal ring buffer (~5 dk @ 9s poll) */
 const FIELD_TEMPORAL_BUFFER_MAX = 34;
 const FIELD_TEMPORAL_MIN_SNAPSHOTS = 3;
 const FIELD_TEMPORAL_MIN_COVERAGE_MS = 27_000;
 const FIELD_TEMPORAL_DRIVER_RESET_KM = 2;
 
+type FieldMapZoomBand = 'near' | 'mid' | 'far';
+
 function resolveFieldRadiusKm(radius: number | undefined | null): number {
   const n = Number(radius);
   return Number.isFinite(n) && n > 0 ? Math.round(n) : FIELD_DEFAULT_RADIUS_KM;
 }
 
-type FieldMapZoomBand = 'near' | 'mid' | 'far';
+function resolveFieldInitialMapDelta(mapFirstLayout: boolean): number {
+  return mapFirstLayout ? FIELD_INITIAL_DELTA_MAP_FIRST : FIELD_INITIAL_DELTA_LEGACY;
+}
 
-/** Zoom LOD — latitudeDelta eşikleri (client-only, backend yok) */
-const FIELD_ZOOM_NEAR_MAX_DELTA = 0.04;
-const FIELD_ZOOM_MID_MAX_DELTA = 0.12;
-const FIELD_ZOOM_NEAR_HEAT_MAX = 20;
-const FIELD_ZOOM_MID_LIGHT_MAX = 20;
+function resolveFieldFallbackMapDelta(mapFirstLayout: boolean): number {
+  return mapFirstLayout ? FIELD_FALLBACK_DELTA_MAP_FIRST : FIELD_FALLBACK_DELTA_LEGACY;
+}
 
-function resolveFieldMapZoomBand(latitudeDelta: number | undefined | null): FieldMapZoomBand {
+function resolveFieldFitCapKm(radiusKm: number, mapFirstLayout: boolean): number {
+  const rk = resolveFieldRadiusKm(radiusKm);
+  if (mapFirstLayout) {
+    return Math.min(FIELD_FIT_CAP_KM_MAP_FIRST, rk * FIELD_FIT_RADIUS_FACTOR_MAP_FIRST);
+  }
+  return Math.min(FIELD_FIT_CAP_KM_LEGACY, rk * FIELD_FIT_RADIUS_FACTOR_LEGACY);
+}
+
+function resolveFieldSinglePointDeltas(
+  driverLocation: { latitude: number; longitude: number },
+  radiusKm: number,
+  mapFirstLayout: boolean,
+): { latitudeDelta: number; longitudeDelta: number } {
+  const rk = resolveFieldRadiusKm(radiusKm);
+  const cosLat = Math.cos((driverLocation.latitude * Math.PI) / 180);
+  if (mapFirstLayout) {
+    const latDelta = Math.min(
+      FIELD_SINGLE_POINT_MAX_DELTA_MAP_FIRST,
+      Math.max(FIELD_SINGLE_POINT_MIN_DELTA_MAP_FIRST, (rk / 111) * 0.35),
+    );
+    const lngDelta = Math.min(
+      FIELD_SINGLE_POINT_MAX_DELTA_MAP_FIRST,
+      Math.max(FIELD_SINGLE_POINT_MIN_DELTA_MAP_FIRST, (rk / (111 * Math.max(cosLat, 0.2))) * 0.35),
+    );
+    return { latitudeDelta: latDelta, longitudeDelta: lngDelta };
+  }
+  const latDelta = Math.max(FIELD_SINGLE_POINT_MIN_DELTA_LEGACY, (rk / 111) * 1.1);
+  const lngDelta = Math.max(
+    FIELD_SINGLE_POINT_MIN_DELTA_LEGACY,
+    (rk / (111 * Math.max(cosLat, 0.2))) * 1.1,
+  );
+  return { latitudeDelta: latDelta, longitudeDelta: lngDelta };
+}
+
+function resolveFieldMapEdgePadding(mapFirstLayout: boolean): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  if (mapFirstLayout) {
+    return {
+      top: 128,
+      right: 28,
+      bottom: EMBEDDED_LIST_PEEK_HEIGHT + 28,
+      left: 28,
+    };
+  }
+  return { top: 44, right: 36, bottom: 36, left: 36 };
+}
+
+function resolveFieldMapZoomBand(
+  latitudeDelta: number | undefined | null,
+  mapFirstLayout = false,
+): FieldMapZoomBand {
   const d = Number(latitudeDelta);
+  const nearMax = mapFirstLayout ? FIELD_ZOOM_NEAR_MAX_DELTA_MAP_FIRST : FIELD_ZOOM_NEAR_MAX_DELTA;
+  const midMax = mapFirstLayout ? FIELD_ZOOM_MID_MAX_DELTA_MAP_FIRST : FIELD_ZOOM_MID_MAX_DELTA;
   if (!Number.isFinite(d) || d <= 0) return 'near';
-  if (d < FIELD_ZOOM_NEAR_MAX_DELTA) return 'near';
-  if (d < FIELD_ZOOM_MID_MAX_DELTA) return 'mid';
+  if (d < nearMax) return 'near';
+  if (d < midMax) return 'mid';
   return 'far';
 }
 
@@ -1922,7 +2004,7 @@ export default function DriverOfferScreen({
   const [mapExpanded, setMapExpanded] = useState(embedded);
   const mapFirstLayout = embedded;
   const [mapPinsLoadError, setMapPinsLoadError] = useState<string | null>(null);
-  const [mapZoomBand, setMapZoomBand] = useState<FieldMapZoomBand>('mid');
+  const [mapZoomBand, setMapZoomBand] = useState<FieldMapZoomBand>(embedded ? 'near' : 'mid');
   const driverPulseScale = useRef(new Animated.Value(1)).current;
   const driverPulseOpacity = useRef(new Animated.Value(0.55)).current;
   const driverPulse2Scale = useRef(new Animated.Value(1)).current;
@@ -1991,10 +2073,10 @@ export default function DriverOfferScreen({
 
   const handleFieldMapRegionChangeComplete = useCallback(
     (region: { latitudeDelta?: number }) => {
-      const next = resolveFieldMapZoomBand(region?.latitudeDelta);
+      const next = resolveFieldMapZoomBand(region?.latitudeDelta, mapFirstLayout);
       setMapZoomBand((prev) => (prev === next ? prev : next));
     },
-    [],
+    [mapFirstLayout],
   );
 
   /** Collapsed: yalnızca mini HUD bar; MapView yalnızca expanded iken mount */
@@ -2250,7 +2332,8 @@ export default function DriverOfferScreen({
     if (!mapExpanded || !mapReady || !mapRef.current || !driverLocation) return;
 
     const rk = resolveFieldRadiusKm(mapHud.radius);
-    const fitKm = Math.min(45, rk * 1.2);
+    const fitKm = resolveFieldFitCapKm(rk, mapFirstLayout);
+    const edgePadding = resolveFieldMapEdgePadding(mapFirstLayout);
 
     const coordinates: { latitude: number; longitude: number }[] = [{ ...driverLocation }];
 
@@ -2268,14 +2351,17 @@ export default function DriverOfferScreen({
     });
 
     if (coordinates.length === 1) {
-      const latDelta = Math.max(0.14, (rk / 111) * 1.1);
-      const lngDelta = Math.max(0.14, (rk / (111 * Math.cos((driverLocation.latitude * Math.PI) / 180))) * 1.1);
+      const { latitudeDelta, longitudeDelta } = resolveFieldSinglePointDeltas(
+        driverLocation,
+        rk,
+        mapFirstLayout,
+      );
       mapRef.current.animateToRegion(
         {
           latitude: driverLocation.latitude,
           longitude: driverLocation.longitude,
-          latitudeDelta: latDelta,
-          longitudeDelta: lngDelta,
+          latitudeDelta,
+          longitudeDelta,
         },
         400
       );
@@ -2284,11 +2370,11 @@ export default function DriverOfferScreen({
 
     setTimeout(() => {
       mapRef.current?.fitToCoordinates(coordinates, {
-        edgePadding: { top: 44, right: 36, bottom: 36, left: 36 },
+        edgePadding,
         animated: true,
       });
     }, 350);
-  }, [mapExpanded, mapReady, driverLocation, mapSeekingPins, mapLightPins, mapHud.radius]);
+  }, [mapExpanded, mapReady, driverLocation, mapSeekingPins, mapLightPins, mapHud.radius, mapFirstLayout]);
 
   const listedTagIdKey = useMemo(() => {
     const ids: string[] = [];
@@ -2425,14 +2511,14 @@ export default function DriverOfferScreen({
             ? {
                 latitude: driverLocation.latitude,
                 longitude: driverLocation.longitude,
-                latitudeDelta: 0.12,
-                longitudeDelta: 0.12,
+                latitudeDelta: resolveFieldInitialMapDelta(mapFirstLayout),
+                longitudeDelta: resolveFieldInitialMapDelta(mapFirstLayout),
               }
             : {
                 latitude: 39.92,
                 longitude: 32.85,
-                latitudeDelta: 0.15,
-                longitudeDelta: 0.15,
+                latitudeDelta: resolveFieldFallbackMapDelta(mapFirstLayout),
+                longitudeDelta: resolveFieldFallbackMapDelta(mapFirstLayout),
               }
         }
         onMapReady={() => setMapReady(true)}
