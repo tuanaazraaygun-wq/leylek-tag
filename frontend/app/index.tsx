@@ -67,6 +67,7 @@ import {
   TDM_DRIVER_ROLE_BLOCK_OK,
   TDM_DRIVER_ROLE_BLOCK_TITLE,
 } from '../lib/trustedHubCopy';
+import { PRICE_MODAL_CONTRIBUTION_SUBTITLE } from '../lib/legalUxCopy';
 import QuickMatchPassengerFlow, {
   type QuickMatchRouteContext,
 } from '../components/superUx/QuickMatchPassengerFlow';
@@ -15062,7 +15063,7 @@ function PassengerDashboard({
                           </PremiumText>
                         </View>
                         <PremiumText variant="caption" muted style={styles.priceModalPaySubtitle}>
-                          Katkı taraflar arasında netleşir; LeylekTAG katkıyı tahsil etmez.
+                          {PRICE_MODAL_CONTRIBUTION_SUBTITLE}
                         </PremiumText>
 
                         <TouchableOpacity

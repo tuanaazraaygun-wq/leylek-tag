@@ -28,6 +28,7 @@ import {
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
 import type { useQuickMatchPassengerSession } from '../../hooks/useQuickMatchPassengerSession';
+import { QM_CONTRIBUTION_DISCLAIMER } from '../../lib/legalUxCopy';
 import { usePassengerTheme } from '../../lib/theme/usePassengerTheme';
 
 import { API_BASE_URL } from '../../lib/backendConfig';
@@ -753,7 +754,7 @@ export function QuickMatchPassengerFlow({
                   : 'Önerilen katkı payının 2 katına kadar artırabilirsiniz.'}
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.disclaimer} numberOfLines={2}>
-                LeylekTAG katkı payını tahsil etmez. Katkı payı yolculuk sonrası sürücüyle aranızda.
+                {QM_CONTRIBUTION_DISCLAIMER}
               </PremiumText>
             </>
           )}

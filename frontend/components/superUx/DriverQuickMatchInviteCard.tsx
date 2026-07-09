@@ -14,6 +14,7 @@ import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import type { useQuickMatchDriverSession } from '../../hooks/useQuickMatchDriverSession';
+import { TDM_CONTRIBUTION_DISCLAIMER } from '../../lib/legalUxCopy';
 import { useDriverTheme } from '../../lib/theme/useDriverTheme';
 
 export type DriverQuickMatchSessionView = Pick<
@@ -39,8 +40,6 @@ export type DriverQuickMatchInviteCardProps = {
 const TITLE_COPY = 'Hızlı Eşleşme Teklifi';
 const SUBTITLE_COPY = 'Yakındaki yolcu hızlı eşleşme bekliyor.';
 const POLL_WARNING_COPY = 'Bağlantı zayıf, yeniden deneniyor.';
-const CONTRIBUTION_DISCLAIMER = 'LeylekTAG katkıyı tahsil etmez.';
-
 function formatDistanceBand(band: string | null | undefined): string {
   switch (band) {
     case '0_5':
@@ -300,7 +299,7 @@ function InviteDetailsBlock({
       </View>
 
       <PremiumText variant="caption" muted style={styles.disclaimer}>
-        {CONTRIBUTION_DISCLAIMER}
+        {TDM_CONTRIBUTION_DISCLAIMER}
       </PremiumText>
 
       <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={[styles.countdownChip, qmLt?.countdownChip]}>

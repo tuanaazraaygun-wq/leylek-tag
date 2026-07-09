@@ -18,6 +18,41 @@ export const PAYMENT_LEGAL_DISCLAIMER_LINES = [
   'Kullanıcılar katkı payı bilgisini kontrol etmekle sorumludur.',
 ] as const;
 
+/** Tek satır tahsilat yapmama bildirimi — inline caption’lar için. */
+export const CONTRIBUTION_NO_COLLECTION_LINE = PAYMENT_LEGAL_DISCLAIMER_LINES[0];
+
+/** Kısa mutabakat çerçevesi; tam hukuki metin için PAYMENT_LEGAL_DISCLAIMER_LINES. */
+export const CONTRIBUTION_SETTLEMENT_CAPTION = PAYMENT_LEGAL_DISCLAIMER_LINES[1];
+
+export const QM_CONTRIBUTION_DISCLAIMER =
+  `${CONTRIBUTION_NO_COLLECTION_LINE} Katkı payı yolculuk sonrası sürücüyle aranızda.`;
+
+export const TDM_CONTRIBUTION_DISCLAIMER = CONTRIBUTION_NO_COLLECTION_LINE;
+
+export const DRIVER_CONTRIBUTION_CONFIRM_QUESTION_CASH =
+  'Nakit katkı payı mutabakatını onaylıyor musunuz?';
+
+export const DRIVER_CONTRIBUTION_CONFIRM_QUESTION_IBAN =
+  'Katkı payı mutabakatını onaylıyor musunuz?';
+
+export const DRIVER_CONTRIBUTION_CONFIRM_APPROVE_LABEL =
+  'Evet, katkı payı mutabakatını onaylıyorum';
+
+export const DRIVER_TRANSFER_CONFIRM_CAPTION_CASH =
+  'Yolcunun nakit katkı payı bildirimini onaylayın. Mutabakat taraflar arasındadır.';
+
+export const DRIVER_TRANSFER_CONFIRM_CAPTION_IBAN =
+  'Yolcunun katkı payı bildirimini onaylayın. Mutabakat taraflar arasındadır.';
+
+export const QR_CASH_CONTRIBUTION_SUBTITLE =
+  'Teklifte katkı payı nakit olarak belirlenmişti. Katkı payını ilettiğinizi onaylayın.';
+
+export const QR_CARD_CONTRIBUTION_CONFIRM_LABEL =
+  'Kart yoluyla katkı bildirimini onaylıyorum (yakında)';
+
+export const PRICE_MODAL_CONTRIBUTION_SUBTITLE =
+  `Katkı taraflar arasında netleşir. ${CONTRIBUTION_NO_COLLECTION_LINE}`;
+
 export const IBAN_OPTIONAL_NOTICE =
   `IBAN eklemek zorunlu değildir. Yol paylaşım katkısı nakit veya IBAN ile taraflar arasında netleşir; ${LEGAL_PRODUCT_DISPLAY_NAME} platform tahsilat yapmaz.`;
 

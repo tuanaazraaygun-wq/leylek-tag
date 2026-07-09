@@ -32,6 +32,10 @@ import {
 import { tapButtonHaptic } from '../utils/touchHaptics';
 import { perfLog } from '../utils/perfDiagLog';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
+import {
+  QR_CARD_CONTRIBUTION_CONFIRM_LABEL,
+  QR_CASH_CONTRIBUTION_SUBTITLE,
+} from '../lib/legalUxCopy';
 import { PaymentLegalDisclaimer } from './legal/PaymentLegalDisclaimer';
 
 const { width } = Dimensions.get('window');
@@ -432,7 +436,7 @@ export default function QRTripEndModal({
 
   const paymentSubtitle =
     effectiveBookingPaymentMethod === 'cash'
-      ? 'Teklifte katkı payı nakit olarak belirlenmişti. Katkı payını ilettiğinizi onaylayın. LeylekTAG tahsilat yapmaz.'
+      ? QR_CASH_CONTRIBUTION_SUBTITLE
       : effectiveBookingPaymentMethod === 'card'
         ? 'Kart yakında. Şimdilik katkı bildirimini onaylayarak yolculuğu tamamlayın.'
         : isTrustedDirect
@@ -496,7 +500,7 @@ export default function QRTripEndModal({
           >
             <Ionicons name="card-outline" size={24} color={primaryIconColor} />
             <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
-              Kart ile katkıyı ilettiğimi onayla
+              {QR_CARD_CONTRIBUTION_CONFIRM_LABEL}
             </PremiumText>
           </TouchableOpacity>
         )}

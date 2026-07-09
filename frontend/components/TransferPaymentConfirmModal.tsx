@@ -17,6 +17,13 @@ import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
+import {
+  DRIVER_CONTRIBUTION_CONFIRM_APPROVE_LABEL,
+  DRIVER_CONTRIBUTION_CONFIRM_QUESTION_CASH,
+  DRIVER_CONTRIBUTION_CONFIRM_QUESTION_IBAN,
+  DRIVER_TRANSFER_CONFIRM_CAPTION_CASH,
+  DRIVER_TRANSFER_CONFIRM_CAPTION_IBAN,
+} from '../lib/legalUxCopy';
 import { PaymentLegalDisclaimer } from './legal/PaymentLegalDisclaimer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -78,11 +85,11 @@ export default function TransferPaymentConfirmModal({
   const isCash = paymentMethod === 'cash';
   const phaseStep = isCash ? 'Nakit katkı payı mutabakatı' : 'Katkı payı mutabakatı';
   const phaseCaption = isCash
-    ? 'Yolcunun nakit katkı payı bildirimini onaylayın. Mutabakat taraflar arasındadır; LeylekTAG tahsilat yapmaz.'
-    : 'Yolcunun katkı payı bildirimini onaylayın. Mutabakat taraflar arasındadır; LeylekTAG tahsilat yapmaz.';
+    ? DRIVER_TRANSFER_CONFIRM_CAPTION_CASH
+    : DRIVER_TRANSFER_CONFIRM_CAPTION_IBAN;
   const questionText = isCash
-    ? 'Yol paylaşım katkı payını nakit olarak aldınız mı?'
-    : 'Yol paylaşım katkı payını aldınız mı?';
+    ? DRIVER_CONTRIBUTION_CONFIRM_QUESTION_CASH
+    : DRIVER_CONTRIBUTION_CONFIRM_QUESTION_IBAN;
   const nameLine = isCash
     ? passengerName?.trim()
       ? `${passengerName.trim()} nakit katkıyı ilettiğini bildirdi.`
@@ -157,7 +164,7 @@ export default function TransferPaymentConfirmModal({
                     disabled={loading}
                   >
                     <PremiumText variant="body" style={[styles.primaryBtnText, payLt?.primaryBtnText]}>
-                      {loading ? 'Gönderiliyor…' : 'Evet, katkı payını aldım'}
+                      {loading ? 'Gönderiliyor…' : DRIVER_CONTRIBUTION_CONFIRM_APPROVE_LABEL}
                     </PremiumText>
                   </TouchableOpacity>
                   <TouchableOpacity

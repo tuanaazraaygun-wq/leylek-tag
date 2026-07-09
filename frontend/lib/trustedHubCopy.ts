@@ -287,7 +287,7 @@ export const TDM_GENERIC_ERROR = 'İşlem tamamlanamadı. Lütfen tekrar deneyin
 export const TDM_DRIVER_INVITE_TITLE = 'Güven ağından doğrudan istek';
 export const TDM_DRIVER_INVITE_SUBTITLE = 'Güvenilir bağlantınızdan gelen istek.';
 export const TDM_DRIVER_INVITE_POLL_WARNING = 'Bağlantı zayıf, yeniden deneniyor.';
-export const TDM_CONTRIBUTION_DISCLAIMER = 'LeylekTAG katkıyı tahsil etmez.';
+export { TDM_CONTRIBUTION_DISCLAIMER } from './legalUxCopy';
 
 export const TDM_DRIVER_ROLE_BLOCK_TITLE = 'Zaten sürücüsünüz';
 export const TDM_DRIVER_ROLE_BLOCK_BODY =
