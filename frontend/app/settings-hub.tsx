@@ -211,6 +211,13 @@ export default function SettingsHubScreen() {
                   ui={ui}
                   hubSurfaces={hubSurfaces}
                 />
+                <SettingsHubRow
+                  icon="car-outline"
+                  label="Araçlarım"
+                  onPress={() => router.push('/driver-vehicles' as any)}
+                  ui={ui}
+                  hubSurfaces={hubSurfaces}
+                />
               </SettingsHubCard>
               <SettingsHubCard title="Katkı payı / IBAN">
                 <SettingsHubRow
