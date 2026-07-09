@@ -12381,7 +12381,7 @@ function PassengerDashboard({
     
     const message = `🚗 Leylek Yolculuk - Teklif\n\n📍 Nereden: ${activeTag.pickup_location || 'Mevcut konum'}\n📍 Nereye: ${activeTag.dropoff_location}\n💰 Teklif: ${activeTag.offered_price} TL\n⏱️ Tahmini süre: ${activeTag.estimated_minutes || '?'} dk\n\n👉 Sürücü olarak kabul etmek için uygulamayı açın!`;
     
-    const webAppUrl = 'https://leylektag.com/indir';
+    const webAppUrl = 'https://karekodteknoloji.com/urunler/leylektag';
     const deepLink = `leylektag://ride/${activeTag.id}`;
     
     try {
