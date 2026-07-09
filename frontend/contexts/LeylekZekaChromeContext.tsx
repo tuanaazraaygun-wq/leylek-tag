@@ -160,7 +160,7 @@ const STANDALONE_ROUTE_PREFIXES = [
   '/community-guidelines',
   '/privacy',
   '/kvkk',
-  '/driver-verify',
+  '/driver-vehicles',
   '/delete-account',
   '/support',
 ] as const;

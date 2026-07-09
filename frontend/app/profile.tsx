@@ -232,15 +232,13 @@ export default function ProfileScreen() {
         {user.role === 'driver' && (
           <TouchableOpacity
             style={[styles.verifyCard, lt?.verifyCard]}
-            onPress={() => router.push('/driver-verify' as any)}
+            onPress={() => router.push('/driver-vehicles' as any)}
           >
-            <Ionicons name="shield-checkmark" size={40} color={ui.accent} />
+            <Ionicons name="car-outline" size={40} color={ui.accent} />
             <View style={styles.verifyInfo}>
-              <Text style={[styles.verifyTitle, lt?.verifyTitle]}>Sürücü Doğrulama</Text>
+              <Text style={[styles.verifyTitle, lt?.verifyTitle]}>Araçlarım</Text>
               <Text style={[styles.verifySubtitle, lt?.verifySubtitle]}>
-                {user.driver_details?.is_verified
-                  ? '✅ Doğrulandı'
-                  : '⏳ Doğrulama bekliyor'}
+                Sürücü araç kayıtlarınızı görüntüleyin ve yönetin
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color={ui.textMuted} />
