@@ -1,28 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   Modal,
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
-  Alert,
+  Linking,
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { API_BASE_URL } from '../lib/backendConfig';
-
-/** Çok yakında: kart ödemesi / iyzico entegrasyonundan sonra EAS'ta 1 yapılacak */
-const DRIVER_PACKAGE_PURCHASE_ENABLED =
-  typeof process.env.EXPO_PUBLIC_ENABLE_DRIVER_PACKAGE_PURCHASE === 'string' &&
-  process.env.EXPO_PUBLIC_ENABLE_DRIVER_PACKAGE_PURCHASE.trim() === '1';
-
-interface Package {
-  id: string;
-  name: string;
-  hours: number;
-  price_tl: number;
-}
+import { LEGAL_COMPANY_META } from '../lib/legalUxCopy';
 
 interface DriverPackagesModalProps {
   visible: boolean;
@@ -34,153 +21,54 @@ interface DriverPackagesModalProps {
 export default function DriverPackagesModal({
   visible,
   onClose,
-  userId,
-  onPackagePurchased,
 }: DriverPackagesModalProps) {
-  const [packages, setPackages] = useState<Package[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [purchasing, setPurchasing] = useState<string | null>(null);
-  const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (visible) {
-      fetchPackages();
-    }
-  }, [visible]);
-
-  const fetchPackages = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/driver/packages`);
-      const data = await response.json();
-      if (data.success && Array.isArray(data.packages)) {
-        // Sadece geçerli kayıtlar; tercihen 24 saatlik günlük paket
-        const cleaned = data.packages.filter(
-          (p: unknown) =>
-            p &&
-            typeof p === 'object' &&
-            typeof (p as Package).id === 'string' &&
-            typeof (p as Package).hours === 'number'
-        ) as Package[];
-        const daily = cleaned.filter((p) => p.hours === 24);
-        setPackages(daily.length > 0 ? daily : cleaned);
-      } else {
-        setPackages([]);
-      }
-    } catch (error) {
-      console.error('Paket yükleme hatası:', error);
-      setPackages([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePurchase = async (_packageId: string) => {
-    if (!DRIVER_PACKAGE_PURCHASE_ENABLED) {
-      return;
-    }
-    Alert.alert(
-      'Ödeme',
-      'Paket ödemesi kart ile tamamlanacaktır. Ödeme akışı yayımlandığında buradan devam edebileceksiniz.',
-      [{ text: 'Tamam', style: 'default' }]
-    );
-  };
-
-  const getPackageIcon = (hours: number) => {
-    if (hours <= 3) return 'time-outline';
-    if (hours <= 6) return 'timer-outline';
-    if (hours <= 12) return 'sunny-outline';
-    return 'moon-outline';
-  };
-
-  const getPackageColor = (hours: number) => {
-    if (hours <= 3) return '#10B981';
-    if (hours <= 6) return '#3B82F6';
-    if (hours <= 9) return '#8B5CF6';
-    if (hours <= 12) return '#F59E0B';
-    return '#EF4444';
+  const openSupportEmail = () => {
+    void Linking.openURL(`mailto:${LEGAL_COMPANY_META.email}`).catch(() => {});
   };
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <View style={styles.container}>
-          {/* Header */}
-            <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>Sürücü Paketleri</Text>
-              <Text style={styles.subtitle}>
-                {DRIVER_PACKAGE_PURCHASE_ENABLED
-                  ? 'Yolcu bulmak için paket satın alın'
-                  : 'Paket satın alma çok yakında — ödeme altyapısı hazırlanıyor.'}
-              </Text>
+          <View style={styles.header}>
+            <View style={styles.headerTextCol}>
+              <Text style={styles.title}>Sürücü erişimi</Text>
+              <Text style={styles.subtitle}>Sürücü erişiminiz şu anda aktif değil.</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel="Kapat">
               <Ionicons name="close" size={24} color="white" />
             </TouchableOpacity>
           </View>
 
-          {/* Content */}
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#3FA9F5" />
-              <Text style={styles.loadingText}>Paketler yükleniyor...</Text>
-            </View>
-          ) : (
-            <ScrollView style={styles.packagesContainer} showsVerticalScrollIndicator={false}>
-              {packages.map((pkg) => (
-                <TouchableOpacity
-                  key={pkg.id}
-                  style={[
-                    styles.packageCard,
-                    selectedPackage === pkg.id && styles.packageCardSelected,
-                    { borderColor: getPackageColor(pkg.hours) }
-                  ]}
-                  onPress={() => setSelectedPackage(pkg.id)}
-                  disabled={purchasing !== null}
-                >
-                  <View style={[styles.packageIcon, { backgroundColor: getPackageColor(pkg.hours) + '20' }]}>
-                    <Ionicons name={getPackageIcon(pkg.hours) as any} size={28} color={getPackageColor(pkg.hours)} />
-                  </View>
-                  
-                  <View style={styles.packageInfo}>
-                    <Text style={styles.packageName}>{pkg.name}</Text>
-                    <Text style={styles.packageHours}>{pkg.hours} saat aktif kalın</Text>
-                  </View>
-                  
-                  <View style={styles.packagePriceContainer}>
-                    <Text style={styles.packagePrice}>{pkg.price_tl} ₺</Text>
-                    {selectedPackage === pkg.id &&
-                      (DRIVER_PACKAGE_PURCHASE_ENABLED ? (
-                        <TouchableOpacity
-                          style={[styles.buyBtn, { backgroundColor: getPackageColor(pkg.hours) }]}
-                          onPress={() => handlePurchase(pkg.id)}
-                          disabled={purchasing !== null}
-                        >
-                          {purchasing === pkg.id ? (
-                            <ActivityIndicator size="small" color="white" />
-                          ) : (
-                            <Text style={styles.buyBtnText}>Satın Al</Text>
-                          )}
-                        </TouchableOpacity>
-                      ) : (
-                        <View style={[styles.buyBtn, styles.buyBtnDisabled]}>
-                          <Text style={styles.buyBtnTextMuted}>Yakında</Text>
-                        </View>
-                      ))}
-                  </View>
-                </TouchableOpacity>
-              ))}
-              
-              {/* Info */}
-              <View style={styles.infoBox}>
-                <Ionicons name="information-circle-outline" size={20} color="#9CA3AF" />
-                <Text style={styles.infoText}>
-                  Paket süreniz boyunca yolculara görünür olursunuz ve teklif alabilirsiniz.
-                </Text>
+          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+            <View style={styles.statusCard}>
+              <View style={styles.statusIconWrap}>
+                <Ionicons name="shield-outline" size={28} color="#F59E0B" />
               </View>
-            </ScrollView>
-          )}
+              <Text style={styles.statusTitle}>Hesap durumu</Text>
+              <Text style={styles.statusText}>
+                Aktif sürücü erişimi, hesap durumunuza göre tanımlanır. Bu özellik hesap
+                durumunuza göre aktif edilir.
+              </Text>
+            </View>
+
+            <View style={styles.infoBox}>
+              <Ionicons name="information-circle-outline" size={20} color="#9CA3AF" />
+              <Text style={styles.infoText}>
+                Aktif sürücü erişimi gerektiğinde destek ekibi size yardımcı olur. Sürücü
+                erişiminizi kontrol etmek için destek ekibiyle iletişime geçebilirsiniz.
+              </Text>
+            </View>
+
+            <TouchableOpacity style={styles.supportBtn} onPress={openSupportEmail} activeOpacity={0.88}>
+              <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
+              <Text style={styles.supportBtnText}>{LEGAL_COMPANY_META.email}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.dismissBtn} onPress={onClose} activeOpacity={0.88}>
+              <Text style={styles.dismissBtnText}>Kapat</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -202,10 +90,14 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  headerTextCol: {
+    flex: 1,
+    paddingRight: 12,
   },
   title: {
     fontSize: 22,
@@ -216,6 +108,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
     marginTop: 4,
+    lineHeight: 20,
   },
   closeBtn: {
     width: 40,
@@ -225,82 +118,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingContainer: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    color: '#9CA3AF',
-    fontSize: 14,
-  },
-  packagesContainer: {
+  body: {
     padding: 16,
+    paddingBottom: 30,
   },
-  packageCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  statusCard: {
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 16,
-    padding: 16,
+    padding: 18,
     marginBottom: 12,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  packageCardSelected: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  packageIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    justifyContent: 'center',
     alignItems: 'center',
   },
-  packageInfo: {
-    flex: 1,
-    marginLeft: 14,
+  statusIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  packageName: {
-    fontSize: 18,
+  statusTitle: {
+    fontSize: 17,
     fontWeight: '600',
     color: 'white',
+    marginBottom: 8,
   },
-  packageHours: {
-    fontSize: 13,
-    color: '#9CA3AF',
-    marginTop: 2,
-  },
-  packagePriceContainer: {
-    alignItems: 'flex-end',
-  },
-  packagePrice: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  buyBtn: {
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  buyBtnText: {
-    color: 'white',
+  statusText: {
     fontSize: 14,
-    fontWeight: '600',
-  },
-  buyBtnDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  buyBtnTextMuted: {
     color: '#9CA3AF',
-    fontSize: 14,
-    fontWeight: '600',
+    lineHeight: 20,
+    textAlign: 'center',
   },
   infoBox: {
     flexDirection: 'row',
@@ -308,8 +156,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 12,
     padding: 14,
-    marginTop: 8,
-    marginBottom: 30,
+    marginBottom: 16,
   },
   infoText: {
     flex: 1,
@@ -317,5 +164,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9CA3AF',
     lineHeight: 18,
+  },
+  supportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3FA9F5',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    gap: 8,
+  },
+  supportBtnText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dismissBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  dismissBtnText: {
+    color: '#9CA3AF',
+    fontSize: 15,
+    fontWeight: '500',
   },
 });

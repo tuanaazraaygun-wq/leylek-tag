@@ -103,7 +103,7 @@ export default function DriverStatusBar({
         setIsOnline(!isOnline);
         onStatusChange?.(!isOnline && isActive);
       } else {
-        // Hata durumunda paket satın almaya yönlendir
+        // Aktif sürücü erişimi yoksa bilgilendirme modalını aç
         if (data.detail?.includes('paket')) {
           onPurchasePress();
         }
@@ -128,7 +128,7 @@ export default function DriverStatusBar({
       <TouchableOpacity style={styles.container} onPress={onPurchasePress}>
         <View style={styles.inactiveContent}>
           <Ionicons name="flash-outline" size={20} color="#F59E0B" />
-          <Text style={styles.inactiveText}>Paket Satın Al</Text>
+          <Text style={styles.inactiveText}>Sürücü erişimi</Text>
           <Ionicons name="chevron-forward" size={18} color="#F59E0B" />
         </View>
       </TouchableOpacity>
@@ -160,9 +160,9 @@ export default function DriverStatusBar({
           )}
         </TouchableOpacity>
 
-        {/* Paket Ekle */}
-        <TouchableOpacity style={styles.addBtn} onPress={onPurchasePress}>
-          <Ionicons name="add-circle-outline" size={22} color="#3FA9F5" />
+        {/* Erişim bilgisi */}
+        <TouchableOpacity style={styles.addBtn} onPress={onPurchasePress} accessibilityLabel="Sürücü erişimi bilgisi">
+          <Ionicons name="information-circle-outline" size={22} color="#3FA9F5" />
         </TouchableOpacity>
       </View>
     </View>
