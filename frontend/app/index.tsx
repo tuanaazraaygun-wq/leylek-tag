@@ -116,7 +116,6 @@ import {
 import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
 import { callAlertPrompt, isAlertPromptCallable } from '../lib/alertPrompt';
 import { callCheck } from '../lib/callCheck';
-import AdminPanel from '../components/AdminPanel';
 import SplashScreen from '../components/SplashScreen';
 import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
@@ -4745,10 +4744,6 @@ export default function App() {
       roleScreenHaptic();
       router.push('/settings-hub' as never);
     };
-    const handleRoleSelectAdmin = () => {
-      roleScreenHaptic();
-      setShowAdminPanel(true);
-    };
     const handleRoleSelectChangeRole = () => {
       if (roleContinueBusy) return;
       roleScreenHaptic();
@@ -4773,9 +4768,6 @@ export default function App() {
         selectedRole={selectedRole}
         rideVehicleKind={rideVehicleKind}
         roleSelectTripExitBanner={roleSelectTripExitBanner}
-        isAdmin={isAdmin}
-        showAdminPanel={showAdminPanel}
-        adminPhone={user?.phone?.replace(/\D/g, '') || ''}
         rs={rs}
         roleSelectContentWide={roleSelectContentWide}
         roleScale={roleScale}
@@ -4852,8 +4844,6 @@ export default function App() {
         onContinue={() => { void handleContinue(); }}
         onLogoutPress={handleRoleSelectLogout}
         onSettingsPress={handleRoleSelectSettings}
-        onAdminPress={handleRoleSelectAdmin}
-        onCloseAdminPanel={() => setShowAdminPanel(false)}
       />
     );
   }

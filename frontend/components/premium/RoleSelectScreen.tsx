@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Animated,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,7 +10,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import AdminPanel from '../AdminPanel';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
 import { premiumAuthStyles as pap } from '../auth/premiumAuthStyles';
 import { useRoleTheme } from '../../lib/theme/useRoleTheme';
@@ -40,9 +38,6 @@ export type RoleSelectScreenProps = {
   selectedRole: 'passenger' | 'driver' | null;
   rideVehicleKind: 'car' | 'motorcycle' | null;
   roleSelectTripExitBanner: string | null;
-  isAdmin: boolean;
-  showAdminPanel: boolean;
-  adminPhone: string;
   rs: RoleSelectBreakpoints;
   roleSelectContentWide: boolean;
   roleScale: number;
@@ -121,8 +116,6 @@ export type RoleSelectScreenProps = {
   onContinue: () => void;
   onLogoutPress: () => void;
   onSettingsPress: () => void;
-  onAdminPress: () => void;
-  onCloseAdminPanel: () => void;
 };
 
 export function RoleSelectScreen({
@@ -130,9 +123,6 @@ export function RoleSelectScreen({
   selectedRole,
   rideVehicleKind,
   roleSelectTripExitBanner,
-  isAdmin,
-  showAdminPanel,
-  adminPhone,
   rs,
   roleSelectContentWide,
   roleScale,
@@ -194,8 +184,6 @@ export function RoleSelectScreen({
   onContinue,
   onLogoutPress,
   onSettingsPress,
-  onAdminPress,
-  onCloseAdminPanel,
 }: RoleSelectScreenProps) {
   const styles = stylesProp as Record<string, object>;
   const { lightSurfaces: roleLt, roleInput: roleIn } = useRoleTheme();
@@ -344,29 +332,16 @@ export function RoleSelectScreen({
               </View>
             </View>
             
-            {isAdmin ? (
-              <TouchableOpacity
-                style={[
-                  styles.roleAdminBtn,
-                  roleLt?.roleAdminBtn,
-                  { width: roleTopButtonSize, height: roleTopButtonSize, borderRadius: roleTopButtonRadius },
-                ]}
-                onPress={onAdminPress}
-              >
-                <Ionicons name="settings-outline" size={22} color={roleIn.accent} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[
-                  styles.roleAdminBtn,
-                  roleLt?.roleAdminBtn,
-                  { width: roleTopButtonSize, height: roleTopButtonSize, borderRadius: roleTopButtonRadius },
-                ]}
-                onPress={onSettingsPress}
-              >
-                <Ionicons name="person-circle-outline" size={22} color={roleIn.accent} />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[
+                styles.roleAdminBtn,
+                roleLt?.roleAdminBtn,
+                { width: roleTopButtonSize, height: roleTopButtonSize, borderRadius: roleTopButtonRadius },
+              ]}
+              onPress={onSettingsPress}
+            >
+              <Ionicons name="person-circle-outline" size={22} color={roleIn.accent} />
+            </TouchableOpacity>
           </View>
 
           <ScrollView
@@ -955,21 +930,6 @@ export function RoleSelectScreen({
             />
           </View>
         </SafeAreaView>
-        
-        {/* Admin Panel Modal */}
-        {isAdmin && (
-          <Modal
-            visible={showAdminPanel}
-            animationType="slide"
-            presentationStyle="fullScreen"
-            onRequestClose={onCloseAdminPanel}
-          >
-            <AdminPanel 
-              adminPhone={adminPhone} 
-              onClose={onCloseAdminPanel} 
-            />
-          </Modal>
-        )}
       </View>
     );
 }
