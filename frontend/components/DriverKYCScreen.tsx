@@ -33,6 +33,11 @@ import {
   combineAiTier,
   combineAiWarnings,
 } from '../lib/driverKycAiMock';
+import {
+  KYC_ACCOUNT_REVIEW_NOTICE,
+  KYC_DRIVER_RESPONSIBILITY_LINES,
+  KYC_INTRO_PLATFORM_NOTICE,
+} from '../lib/legalUxCopy';
 
 // Türkiye'de popüler araç markaları ve modelleri
 const CAR_BRANDS: { [key: string]: string[] } = {
@@ -881,11 +886,7 @@ function KycIntroCard({ userName }: { userName: string }) {
         <Text style={styles.kycIntroLead}>
           {greeting}Telefon doğrulaman tamamlandı. Sürücü başvurusu için belge ve güven adımlarını tamamla.
         </Text>
-        <Text style={styles.kycIntroBody}>
-          LeylekTAG bir taşıma şirketi veya taksi hizmeti değildir; güvenli yol paylaşımı ve kişi eşleştirme
-          platformudur. Kimlik doğrulama, profil güven rozeti ve topluluk güvenliği içindir — resmi devlet
-          onayı veya sabıka kaydı kontrolü yapılmaz.
-        </Text>
+        <Text style={styles.kycIntroBody}>{KYC_INTRO_PLATFORM_NOTICE}</Text>
       </LinearGradient>
     </View>
   );
@@ -1003,12 +1004,12 @@ function KycDriverResponsibilityNote() {
     <View style={styles.kycResponsibilityCard}>
       <Ionicons name="information-circle-outline" size={20} color="rgba(34,211,238,0.85)" />
       <View style={styles.kycResponsibilityTextCol}>
-        <Text style={styles.kycResponsibilityLine}>
-          Sürücü, paylaştığı belge ve bilgilerin doğruluğundan sorumludur.
-        </Text>
-        <Text style={styles.kycResponsibilityLine}>
-          LeylekTAG platform tahsilatı yapmaz; yol paylaşımı katkı payı taraflar arasındadır.
-        </Text>
+        {KYC_DRIVER_RESPONSIBILITY_LINES.map((line) => (
+          <Text key={line} style={styles.kycResponsibilityLine}>
+            {line}
+          </Text>
+        ))}
+        <Text style={styles.kycResponsibilityLine}>{KYC_ACCOUNT_REVIEW_NOTICE}</Text>
       </View>
     </View>
   );
