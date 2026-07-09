@@ -59,7 +59,7 @@ import TransferPaymentConfirmModal from '../components/TransferPaymentConfirmMod
 import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Teklif Ekranı (Eski)
 import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü KYC Ekranı
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
-import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
+import DriverDashboardPanel from '../components/DriverDashboardPanel'; // Sürücü kokpit paneli
 import PassengerMatchModeCards from '../components/superUx/PassengerMatchModeCards';
 import {
   TDM_DRIVER_ROLE_BLOCK_BODY,

@@ -22,30 +22,9 @@ interface DriverDashboardPanelProps {
 }
 
 interface DashboardData {
-  today: {
-    trips_count: number;
-    earnings: number;
-  };
-  weekly: {
-    trips_count: number;
-    earnings: number;
-  };
   active_time: {
     is_active: boolean;
-    remaining_seconds: number;
-    remaining_text: string;
     is_online: boolean;
-  };
-  daily_goal: {
-    target_trips: number;
-    target_earnings: number;
-    trips_progress: number;
-    earnings_progress: number;
-    overall_progress: number;
-  };
-  stats: {
-    rating: number | null;
-    total_trips: number;
   };
 }
 
@@ -73,49 +52,11 @@ export default function DriverDashboardPanel({
     if (!raw || raw.success !== true || !raw.active_time || typeof raw.active_time !== 'object') {
       return null;
     }
-    let rating: number | null = null;
-    try {
-      const r = raw.stats?.rating;
-      if (r != null && r !== '') {
-        const n = Number(r);
-        if (Number.isFinite(n) && n > 0) rating = n;
-      }
-    } catch {
-      rating = null;
-    }
-    let totalTrips = 0;
-    try {
-      const t = raw.stats?.total_trips;
-      if (t != null && t !== '') totalTrips = Math.max(0, Math.floor(Number(t)));
-      if (!Number.isFinite(totalTrips)) totalTrips = 0;
-    } catch {
-      totalTrips = 0;
-    }
-    const dg = raw.daily_goal || {};
-    const overall = Math.min(100, Math.max(0, Math.floor(Number(dg.overall_progress) || 0)));
     return {
-      today: {
-        trips_count: Math.max(0, Math.floor(Number(raw.today?.trips_count) || 0)),
-        earnings: Math.max(0, Number(raw.today?.earnings) || 0),
-      },
-      weekly: {
-        trips_count: Math.max(0, Math.floor(Number(raw.weekly?.trips_count) || 0)),
-        earnings: Math.max(0, Number(raw.weekly?.earnings) || 0),
-      },
       active_time: {
         is_active: !!raw.active_time.is_active,
-        remaining_seconds: Math.max(0, Math.floor(Number(raw.active_time.remaining_seconds) || 0)),
-        remaining_text: String(raw.active_time.remaining_text || '00:00:00'),
         is_online: !!raw.active_time.is_online,
       },
-      daily_goal: {
-        target_trips: Math.max(1, Math.floor(Number(dg.target_trips) || 10)),
-        target_earnings: Math.max(1, Math.floor(Number(dg.target_earnings) || 500)),
-        trips_progress: Math.min(100, Math.max(0, Math.floor(Number(dg.trips_progress) || 0))),
-        earnings_progress: Math.min(100, Math.max(0, Math.floor(Number(dg.earnings_progress) || 0))),
-        overall_progress: overall,
-      },
-      stats: { rating, total_trips: totalTrips },
     };
   };
 

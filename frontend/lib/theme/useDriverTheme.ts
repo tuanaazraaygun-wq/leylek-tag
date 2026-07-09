@@ -49,18 +49,6 @@ export type DriverDashboardPanelLightSurfaces = {
   panelShellLoading: ViewStyle;
   onlineStatusLabel: TextStyle;
   onlineStatusHint: TextStyle;
-  instrumentAmount: TextStyle;
-  instrumentLabel: TextStyle;
-  instrumentMeta: TextStyle;
-  progressFill: ViewStyle;
-  progressTrack: ViewStyle;
-  footerRow: ViewStyle;
-  footerMetaLabel: TextStyle;
-  footerValue: TextStyle;
-  statIconWrap: ViewStyle;
-  statValue: TextStyle;
-  statLabel: TextStyle;
-  statsRow: ViewStyle;
 };
 
 export type DriverCockpitQuickStripLightSurfaces = {
@@ -233,31 +221,6 @@ function buildDriverDashboardPanelDarkSurfaces(): DriverDashboardPanelLightSurfa
     },
     onlineStatusLabel: { color: 'rgba(243,248,255,0.96)', fontSize: 20, lineHeight: 24, fontWeight: '800' },
     onlineStatusHint: { color: 'rgba(186,201,222,0.82)', fontSize: 12, lineHeight: 16 },
-    instrumentAmount: { color: 'rgba(226,232,240,0.94)' },
-    instrumentLabel: { color: 'rgba(186,201,222,0.82)' },
-    instrumentMeta: { color: 'rgba(186,201,222,0.78)' },
-    progressFill: { backgroundColor: 'rgba(34,211,238,0.72)' },
-    progressTrack: {
-      backgroundColor: 'rgba(8,17,31,0.72)',
-      borderColor: 'rgba(30,58,95,0.38)',
-    },
-    footerRow: {
-      backgroundColor: 'rgba(8,17,31,0.32)',
-      borderColor: 'rgba(30,58,95,0.38)',
-    },
-    footerMetaLabel: { color: 'rgba(186,201,222,0.78)' },
-    footerValue: { color: 'rgba(243,248,255,0.92)' },
-    statIconWrap: {
-      backgroundColor: 'rgba(34,211,238,0.06)',
-      borderColor: 'rgba(34,211,238,0.14)',
-    },
-    statValue: { color: 'rgba(243,248,255,0.94)' },
-    statLabel: { color: 'rgba(186,201,222,0.82)' },
-    statsRow: {
-      backgroundColor: 'rgba(8,17,31,0.48)',
-      borderColor: 'rgba(30,58,95,0.42)',
-      borderTopColor: 'rgba(30,58,95,0.42)',
-    },
   };
 }
 
@@ -307,31 +270,6 @@ function buildDriverDashboardPanelLightSurfaces(tokens: LhThemeTokens): DriverDa
     },
     onlineStatusLabel: { color: tokens.text.primary, fontSize: 20, lineHeight: 24, fontWeight: '800' },
     onlineStatusHint: { color: tokens.text.muted, fontSize: 12, lineHeight: 16 },
-    instrumentAmount: { color: tokens.text.primary },
-    instrumentLabel: { color: tokens.text.muted },
-    instrumentMeta: { color: tokens.text.muted },
-    progressFill: { backgroundColor: tokens.accent.primary },
-    progressTrack: {
-      backgroundColor: tokens.bg.glass,
-      borderColor: tokens.border.default,
-    },
-    footerRow: {
-      backgroundColor: tokens.bg.glass,
-      borderColor: tokens.border.default,
-    },
-    footerMetaLabel: { color: tokens.text.muted },
-    footerValue: { color: tokens.text.primary },
-    statIconWrap: {
-      backgroundColor: tokens.bg.glass,
-      borderColor: tokens.border.default,
-    },
-    statValue: { color: tokens.text.primary },
-    statLabel: { color: tokens.text.muted },
-    statsRow: {
-      backgroundColor: tokens.bg.glassMuted,
-      borderColor: tokens.border.default,
-      borderTopColor: tokens.border.default,
-    },
   };
 }
 
