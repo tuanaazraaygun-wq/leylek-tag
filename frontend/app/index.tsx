@@ -2002,10 +2002,6 @@ export default function App() {
   } | null>(null);
   const [showDestinationPicker, setShowDestinationPicker] = useState(false);
   
-  // Admin Panel state
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
-
   // Push Notifications Hook - Expo Push ile (Firebase olmadan)
   const { registerPushToken, removePushToken, notification, reportPushRegisterDebugSurface } =
     usePushNotifications();
@@ -2335,30 +2331,10 @@ export default function App() {
     };
   }, [user, screen]);
 
-  /** Ağ: UI’yı bloklamaz — admin kontrolü + aktif seans (timeout’lı). */
+  /** Ağ: UI’yı bloklamaz — aktif seans (timeout’lı). */
   const runDeferredSessionBootstrap = useCallback(
-    async (parsedUser: User, isMainAdmin: boolean, legalWasAccepted: boolean) => {
-      const cleanPhone = parsedUser.phone?.replace(/\D/g, '') || '';
-
-      if (!isMainAdmin) {
-        try {
-          const res = await fetchWithTimeout(
-            `${API_URL}/admin/check?phone=${encodeURIComponent(cleanPhone)}`,
-            { timeoutMs: 5000 }
-          );
-          if (res?.ok) {
-            const data = await res.json().catch(() => null);
-            if (data?.success && data?.is_admin) {
-              setIsAdmin(true);
-              setShowAdminPanel(true);
-            }
-          }
-        } catch (e) {
-          console.warn('Admin check (deferred):', e);
-        }
-      }
-
-      if (!legalWasAccepted || isMainAdmin) return;
+    async (parsedUser: User, legalWasAccepted: boolean) => {
+      if (!legalWasAccepted) return;
 
       try {
         const snap = await getActiveTagResumeSnapshot(parsedUser.id, { timeoutMs: 6000 });
@@ -2457,59 +2433,45 @@ export default function App() {
           }
         })();
 
-        const cleanPhone = parsedUser.phone?.replace(/\D/g, '') || '';
-        const isMainAdmin =
-          cleanPhone === '5326497412' ||
-          cleanPhone === '05326497412' ||
-          cleanPhone.endsWith('5326497412');
-
         let resumeResult: TryResumeActiveMatchResult = { resumed: false };
         let driverLoginResume = false;
-        if (!isMainAdmin) {
-          sessionResumeProbedRef.current = true;
-          const mightResume = await probeResumableActiveMatchSession(parsedUser.id);
-          if (mightResume) {
-            setBootSubtitle(BOOT_RESUME_SUBTITLE);
-          }
-          try {
-            resumeResult = await tryResumeActiveMatchSession(parsedUser, {
-              saveUser,
-              setUser,
-              setSelectedRole,
-              setScreen,
-            });
-            if (!resumeResult.resumed) {
-              try {
-                driverLoginResume = await tryDriverResumeFromActiveTagAfterPrimaryFailure(parsedUser, {
-                  saveUser,
-                  setUser,
-                  setSelectedRole,
-                  setScreen,
-                  setRideVehicleKind,
-                  requestLocationPermission,
-                  openDriverVehicleUpgradeKyc: (kind) => {
-                    setDriverKycScreenVehicleKind(kind);
-                    setScreen('driver-kyc');
-                  },
-                });
-              } catch (e) {
-                console.warn('TAG_DRIVER_RESUME_AFTER_LOGIN_ERROR', e);
-              }
+        sessionResumeProbedRef.current = true;
+        const mightResume = await probeResumableActiveMatchSession(parsedUser.id);
+        if (mightResume) {
+          setBootSubtitle(BOOT_RESUME_SUBTITLE);
+        }
+        try {
+          resumeResult = await tryResumeActiveMatchSession(parsedUser, {
+            saveUser,
+            setUser,
+            setSelectedRole,
+            setScreen,
+          });
+          if (!resumeResult.resumed) {
+            try {
+              driverLoginResume = await tryDriverResumeFromActiveTagAfterPrimaryFailure(parsedUser, {
+                saveUser,
+                setUser,
+                setSelectedRole,
+                setScreen,
+                setRideVehicleKind,
+                requestLocationPermission,
+                openDriverVehicleUpgradeKyc: (kind) => {
+                  setDriverKycScreenVehicleKind(kind);
+                  setScreen('driver-kyc');
+                },
+              });
+            } catch (e) {
+              console.warn('TAG_DRIVER_RESUME_AFTER_LOGIN_ERROR', e);
             }
-          } finally {
-            setBootSubtitle(null);
           }
+        } finally {
+          setBootSubtitle(null);
         }
         const resumedMatch = resumeResult.resumed || driverLoginResume;
 
         if (!resumedMatch) {
-          if (isMainAdmin) {
-            setIsAdmin(true);
-            setShowAdminPanel(true);
-            setScreen('role-select');
-          } else {
-            await navigateToPostAuthLanding(parsedUser.id, setScreen);
-          }
+          await navigateToPostAuthLanding(parsedUser.id, setScreen);
         }
 
         setTimeout(() => {
@@ -2523,7 +2485,7 @@ export default function App() {
                 /* keep parsedUser */
               }
             }
-            await runDeferredSessionBootstrap(uForBootstrap, isMainAdmin, legalWasAccepted);
+            await runDeferredSessionBootstrap(uForBootstrap, legalWasAccepted);
           })();
         }, 0);
 
@@ -2608,15 +2570,6 @@ export default function App() {
   const completeLoginWithTagResumeFirst = async (loggedInUser: User): Promise<boolean> => {
     if (!loggedInUser?.id) {
       perfLog('TAG_RESUME_AFTER_LOGIN_MISS', { reason: 'no_user_id' });
-      return false;
-    }
-    const cleanPhone = (loggedInUser.phone || '').replace(/\D/g, '') || '';
-    const isMainAdmin =
-      cleanPhone === '5326497412' ||
-      cleanPhone === '05326497412' ||
-      cleanPhone.endsWith('5326497412');
-    if (isMainAdmin) {
-      perfLog('TAG_RESUME_AFTER_LOGIN_MISS', { userId: loggedInUser.id, reason: 'main_admin' });
       return false;
     }
 
@@ -2762,12 +2715,6 @@ export default function App() {
   useEffect(() => {
     if (screen !== 'role-select' || !user?.id) return;
     if (sessionResumeProbedRef.current) return;
-    const cleanPhone = user.phone?.replace(/\D/g, '') || '';
-    const isMainAdmin =
-      cleanPhone === '5326497412' ||
-      cleanPhone === '05326497412' ||
-      cleanPhone.endsWith('5326497412');
-    if (isMainAdmin) return;
     let cancelled = false;
     void (async () => {
       const resumeRes = await tryResumeActiveMatchSession(user, {
@@ -2802,12 +2749,6 @@ export default function App() {
   /** Rol ekranındayken uygulama ön plana gelince resume tekrar dene (ağ hatası sonrası kurtarma). */
   useEffect(() => {
     if (!user?.id || screen !== 'role-select') return;
-    const cleanPhone = user.phone?.replace(/\D/g, '') || '';
-    const isMainAdmin =
-      cleanPhone === '5326497412' ||
-      cleanPhone === '05326497412' ||
-      cleanPhone.endsWith('5326497412');
-    if (isMainAdmin) return;
 
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -4083,30 +4024,19 @@ export default function App() {
           await persistAccessTokenAndRefreshUser(data as TokenPayload, savedUser?.id);
           await afterAuthAccessTokenPersisted(savedUser?.id);
           await markLoginLegalAccepted();
-          const cleanPhone = (savedUser.phone || phone || '').replace(/\D/g, '');
-          const isMainAdmin =
-            cleanPhone === '5326497412' ||
-            cleanPhone === '05326497412' ||
-            cleanPhone.endsWith('5326497412');
-          if (isMainAdmin) {
-            setIsAdmin(true);
-            setShowAdminPanel(true);
-            setScreen('role-select');
-          } else {
-            const mightResume = savedUser.id
-              ? await probeResumableActiveMatchSession(savedUser.id)
-              : false;
-            if (mightResume) {
-              setPostLoginTagResumePending(true);
+          const mightResume = savedUser.id
+            ? await probeResumableActiveMatchSession(savedUser.id)
+            : false;
+          if (mightResume) {
+            setPostLoginTagResumePending(true);
+          }
+          try {
+            const resumed = await completeLoginWithTagResumeFirst(savedUser);
+            if (!resumed) {
+              await landOnRoleSelectWithThemeChoice(savedUser.id);
             }
-            try {
-              const resumed = await completeLoginWithTagResumeFirst(savedUser);
-              if (!resumed) {
-                await landOnRoleSelectWithThemeChoice(savedUser.id);
-              }
-            } finally {
-              setPostLoginTagResumePending(false);
-            }
+          } finally {
+            setPostLoginTagResumePending(false);
           }
         } else {
           appAlert('Hata', apiErrMsg(data as { message?: string; detail?: unknown }, 'Yanlış şifre'));
