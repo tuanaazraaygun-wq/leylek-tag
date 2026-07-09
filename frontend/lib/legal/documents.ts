@@ -1,16 +1,141 @@
 import type { LegalRegistryDocument, LegalRegistryDocumentId } from './legalDocumentTypes';
+import {
+  LEGAL_DRAFT_VERSION,
+  LEGAL_LAST_UPDATED,
+  LEGAL_PRODUCT_DISPLAY_NAME,
+} from './brand';
+
+const PN = LEGAL_PRODUCT_DISPLAY_NAME;
 
 const DRAFT_META = {
-  version: '0.1.0-draft',
+  version: LEGAL_DRAFT_VERSION,
   lastUpdated: '2026-06',
   company: 'Karekod Teknoloji ve Yazılım A.Ş.',
   lawyerReviewRequired: true,
+} as const;
+
+const PRODUCTION_META = {
+  version: '1.0.0',
+  lastUpdated: LEGAL_LAST_UPDATED,
+  company: 'Karekod Teknoloji ve Yazılım A.Ş.',
+  lawyerReviewRequired: false,
 } as const;
 
 const DRAFT_PREAMBLE =
   'Bu metin taslak niteliğindedir ve nitelikli hukukçu incelemesi tamamlanana kadar bağlayıcı hukuki dayanak olarak kullanılmamalıdır.';
 
 export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegistryDocument> = {
+  kvkk: {
+    id: 'kvkk',
+    title: 'KVKK Aydınlatma Metni',
+    subtitle: 'Kişisel verilerin işlenmesine ilişkin aydınlatma',
+    readingTimeMinutes: 6,
+    ...PRODUCTION_META,
+    sections: [
+      {
+        title: '1. Veri Sorumlusu',
+        body:
+          `${PN} mobil uygulaması kapsamında kişisel verileriniz, 6698 sayılı KVKK uyarınca veri sorumlusu sıfatıyla KAREKOD TEKNOLOJİ VE YAZILIM A.Ş. tarafından işlenmektedir.`,
+      },
+      {
+        title: '2. İşlenen Veriler',
+        body: '',
+        subsections: [
+          {
+            subtitle: 'Yolcu Kullanıcılar:',
+            body:
+              '• Ad, Soyad\n• Telefon numarası\n• Şehir bilgisi\n• Konum verisi (aktif kullanım sırasında)\n• Mesaj içerikleri\n• Yolculuk geçmişi',
+          },
+          {
+            subtitle: 'Sürücü Kullanıcılar (ek olarak):',
+            body:
+              '• Ehliyet görseli\n• Araç ön ve arka fotoğrafları (plaka dahil)\n• Plaka numarası\n• Araç bilgileri',
+          },
+          {
+            subtitle: 'Teknik Veriler:',
+            body:
+              "• IP adresi\n• Cihaz bilgisi\n• Push bildirim token'ı\n• Sistem log ve güvenlik kayıtları",
+          },
+        ],
+      },
+      {
+        title: '3. İşleme Amaçları',
+        body:
+          '• Kullanıcı kaydı ve kimlik doğrulama\n• Yolcu–sürücü eşleştirme\n• Sürücü/yolcu teklif sistemi\n• Leylek Teklifi / Muhabbet mesajlaşma hizmetleri\n• Sesli görüşme / VoIP hizmetleri\n• Sesli mesaj veya ses verisi özellikleri (varsa)\n• Güvenliğin sağlanması\n• Hukuki yükümlülüklerin yerine getirilmesi\n• Dolandırıcılığın önlenmesi\n• Topluluk alanının yönetimi',
+      },
+      {
+        title: '4. Saklama Süreleri',
+        body:
+          '• Hesap bilgileri: Üyelik süresince\n• Trip kayıtları: 5 yıl\n• Muhabbet metin mesajları: sunucuda en fazla 90 gün erişilebilir\n• Muhabbet ses mesajları (varsa): en fazla 30 gün saklanabilir\n• Ehliyet ve araç görselleri: Üyelik süresince\n• Log kayıtları: Mevzuat süresi boyunca\n\nSüre sonunda erişim kapanır; kayıtlar güvenlik, destek ve sistem operasyonları kapsamında silinir, anonimleştirilir veya erişime kapatılır.',
+      },
+      {
+        title: '5. Yurt Dışına Aktarım',
+        body:
+          'Altyapı hizmetleri (Supabase, Google Maps vb.) nedeniyle veriler yurt dışında bulunan sunucularda saklanabilir.',
+      },
+      {
+        title: '6. Haklarınız',
+        body:
+          'KVKK m.11 kapsamındaki haklarınızı info@karekodteknoloji.com adresine başvurarak kullanabilirsiniz. Destek hattı: 0850 307 80 29.',
+      },
+    ],
+  },
+
+  privacy: {
+    id: 'privacy',
+    title: 'Gizlilik Politikası',
+    subtitle: 'Kişisel verilerinizin korunması',
+    readingTimeMinutes: 6,
+    ...PRODUCTION_META,
+    sections: [
+      {
+        title: '1. Genel İlke',
+        body:
+          `${PN}, kullanıcı verilerini yalnızca hizmet sunumu amacıyla işler. Yetkisiz üçüncü kişilerle paylaşılmaz.`,
+      },
+      {
+        title: '2. Konum Verisi',
+        body:
+          'Konum verisi yalnızca:\n• Yolculuk oluşturma\n• Aktif yolculuk süresi\n\nboyunca kullanılır. Sürekli arka plan takibi yapılmaz.',
+      },
+      {
+        title: '3. Ürün Kapsamı (Bilgilendirme)',
+        body:
+          'Uygulama kapsamında aşağıdaki ürün özellikleri kapsamında veri işlenebilir:\n• Sürücü/yolcu eşleşme ve teklif sistemi\n• Leylek Teklifi / Muhabbet mesajlaşma\n• Sesli görüşme / VoIP kullanımı\n• Sesli mesaj veya ses verisi özellikleri (varsa)\n• Cihaz, log ve güvenlik kayıtları',
+      },
+      {
+        title: '4. Sürücü Doğrulama',
+        body:
+          'Ehliyet ve araç görselleri:\n• Kimlik doğrulama\n• Güvenlik\n• Dolandırıcılığı önleme\n\namaçlı işlenir ve kamuya açık paylaşılmaz.',
+      },
+      {
+        title: '5. Muhabbet İçerik Saklama',
+        body:
+          'Muhabbet metin mesajları sunucuda en fazla 90 gün erişilebilir.\n\nSes mesajları en fazla 30 gün saklanabilir.\n\nSüre sonunda erişim kapanır; kayıtlar güvenlik, destek ve sistem operasyonları kapsamında silinir, anonimleştirilir veya erişime kapatılır.',
+      },
+      {
+        title: '6. Güvenlik',
+        body:
+          '• HTTPS şifreleme\n• Yetkilendirme sistemi\n• Rol bazlı erişim\n• Sunucu taraflı güvenlik önlemleri',
+      },
+      {
+        title: '7. Hesap Silme / Veri Silme',
+        body:
+          'Kullanıcılar uygulama içinden hesaplarını silebilir.\n\nSilme sonrası veriler yasal zorunluluklar saklı kalmak kaydıyla silinir veya anonimleştirilir.',
+      },
+      {
+        title: '8. KVKK Başvuru Hakları',
+        body:
+          'KVKK kapsamındaki başvuru haklarınızı kullanmak için aşağıdaki iletişim kanallarını kullanabilirsiniz.',
+      },
+      {
+        title: '9. 5651 Uyum',
+        body:
+          'Şirket, 5651 sayılı Kanun kapsamında hukuka aykırı içerikleri bildirim üzerine kaldırma yükümlülüğünü yerine getirir.',
+      },
+    ],
+  },
+
   'terms-user': {
     id: 'terms-user',
     title: 'Kullanıcı Sözleşmesi',
@@ -22,21 +147,21 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
         title: 'Taraflar ve tanımlar',
         body:
           `${DRAFT_PREAMBLE}\n\n` +
-          'İşbu taslak sözleşme; Karekod Teknoloji ve Yazılım A.Ş. (“Şirket”, “LeylekTAG”) ile LeylekTAG mobil uygulamasını kullanan gerçek kişi kullanıcı (“Kullanıcı”) arasında akdedilir.\n\n' +
+          `İşbu taslak sözleşme; Karekod Teknoloji ve Yazılım A.Ş. (“Şirket”, “${PN}”) ile ${PN} mobil uygulamasını kullanan gerçek kişi kullanıcı (“Kullanıcı”) arasında akdedilir.\n\n` +
           '“Platform”: Yolcu ve sürücü profillerinin eşleştirildiği, teklif ve iletişim altyapısının sunulduğu dijital ortamdır.\n\n' +
           '“Yol paylaşımı”: Tarafların karşılıklı mutabakatıyla gerçekleşen, gönüllü nitelikte ortak rota paylaşımıdır.',
       },
       {
         title: 'Platformun niteliği',
         body:
-          'LeylekTAG; topluluk odaklı gönüllü yol paylaşımı ve kişi eşleştirme teknolojisi sunan bir platformdur.\n\n' +
-          'LeylekTAG bir taksi uygulaması, taşıma şirketi veya ödeme kuruluşu değildir. Platform, ticari yolcu taşımacılığı hizmeti sunmaz ve taşıma sözleşmesi tarafı değildir.',
+          `${PN}; topluluk odaklı gönüllü yol paylaşımı ve kişi eşleştirme teknolojisi sunan bir platformdur.\n\n` +
+          `${PN} bir taksi uygulaması, taşıma şirketi veya ödeme kuruluşu değildir. Platform, ticari yolcu taşımacılığı hizmeti sunmaz ve taşıma sözleşmesi tarafı değildir.`,
       },
       {
         title: 'Gönüllü yol paylaşımı ve kişi eşleştirme',
         body:
           'Platform; kullanıcıların rota, teklif ve iletişim yoluyla birbirleriyle eşleşmesine teknik altyapı sağlar.\n\n' +
-          'Yol paylaşımına ilişkin karar, rota, zaman ve katkı payı (masraf paylaşımı) taraflar arasında serbestçe belirlenir. LeylekTAG bu süreçte aracı teknoloji sağlayıcısıdır.',
+          `Yol paylaşımına ilişkin karar, rota, zaman ve katkı payı (masraf paylaşımı) taraflar arasında serbestçe belirlenir. ${PN} bu süreçte aracı teknoloji sağlayıcısıdır.`,
       },
       {
         title: 'Kullanıcı yükümlülükleri',
@@ -49,10 +174,10 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
           '• Platformu yalnızca amacına uygun kullanır.',
       },
       {
-        title: 'LeylekTAG’in rolü ve sorumluluk sınırları',
+        title: `${PN}'un rolü ve sorumluluk sınırları`,
         body:
-          'LeylekTAG; eşleşme, iletişim, doğrulama katmanları ve güvenlik özellikleri sunar; yol paylaşımının tarafı veya garantörü değildir.\n\n' +
-          'Yol paylaşımı sırasında doğabilecek trafik, maddi/manevi zarar, gecikme veya taraflar arası anlaşmazlıklardan LeylekTAG sorumlu tutulamaz. Platform tahsilat yapmaz; katkı payı mutabakatı kullanıcılar arasındadır.',
+          `${PN}; eşleşme, iletişim, doğrulama katmanları ve güvenlik özellikleri sunar; yol paylaşımının tarafı veya garantörü değildir.\n\n` +
+          `Yol paylaşımı sırasında doğabilecek trafik, maddi/manevi zarar, gecikme veya taraflar arası anlaşmazlıklardan ${PN} sorumlu tutulamaz. Platform tahsilat yapmaz; katkı payı mutabakatı kullanıcılar arasındadır.`,
       },
       {
         title: 'Hesap güvenliği',
@@ -97,19 +222,19 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
       {
         title: 'Gönüllü yol paylaşımı ilkesi',
         body:
-          'Sürücü; LeylekTAG üzerinden sunulan yol paylaşımının gönüllü nitelikte olduğunu, platformun taşıma işletmecisi olmadığını kabul eder.\n\n' +
+          `Sürücü; ${PN} üzerinden sunulan yol paylaşımının gönüllü nitelikte olduğunu, platformun taşıma işletmecisi olmadığını kabul eder.\n\n` +
           'Rota, kapasite ve katkı payı beklentisi teklif aşamasında diğer kullanıcıyla karşılıklı netleştirilir.',
       },
       {
         title: 'Trafik ve güvenlik sorumluluğu',
         body:
           'Trafik kurallarına uyum, yolcu güvenliği, araç bakımı ve yol paylaşımı sırasındaki davranış sürücünün sorumluluğundadır.\n\n' +
-          'LeylekTAG; sürücünün trafik veya ceza geçmişini resmi merciler nezdinde doğrulama taahhüdü vermez (ayrıntılar Kimlik Doğrulama Bilgilendirmesinde).',
+          `${PN}; sürücünün trafik veya ceza geçmişini resmi merciler nezdinde doğrulama taahhüdü vermez (ayrıntılar Kimlik Doğrulama Bilgilendirmesinde).`,
       },
       {
         title: 'Katkı payı mutabakatı',
         body:
-          'Yol paylaşım katkı payı (masraf paylaşımı) taraflar arasında belirlenir. LeylekTAG platform tahsilatı yapmaz; ödeme kuruluşu veya finansal aracı değildir.\n\n' +
+          `Yol paylaşım katkı payı (masraf paylaşımı) taraflar arasında belirlenir. ${PN} platform tahsilatı yapmaz; ödeme kuruluşu veya finansal aracı değildir.\n\n` +
           'Nakit veya IBAN / havale yoluyla katkı, tarafların karşılıklı mutabakatıyla tamamlanır. Ayrıntılar Katkı Payı ve IBAN Bilgilendirmesinde yer alır.',
       },
       {
@@ -139,7 +264,7 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
         body:
           `${DRAFT_PREAMBLE}\n\n` +
           'Kimlik doğrulama; topluluk odaklı yol paylaşımında profil güvenilirliğini artırmak, kötüye kullanımı azaltmak ve sürücü rozetini anlamlı kılmak içindir.\n\n' +
-          'LeylekTAG resmi devlet onayı, sabıka kaydı sorgusu veya taksi/taşımacılık lisansı kontrolü yapmaz.',
+          `${PN} resmi devlet onayı, sabıka kaydı sorgusu veya taksi/taşımacılık lisansı kontrolü yapmaz.`,
       },
       {
         title: 'Toplanan bilgiler ve belgeler',
@@ -196,14 +321,14 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
         title: 'Platform tahsilat yapmaz',
         body:
           `${DRAFT_PREAMBLE}\n\n` +
-          'LeylekTAG bir ödeme kuruluşu değildir; uygulama içinde katkı payı tahsilatı yapmaz, ödeme hesabı işletmez ve finansal aracılık sunmaz.\n\n' +
+          `${PN} bir ödeme kuruluşu değildir; uygulama içinde katkı payı tahsilatı yapmaz, ödeme hesabı işletmez ve finansal aracılık sunmaz.\n\n` +
           'Gösterilen tutarlar bilgilendirme ve taraflar arası mutabakat amaçlıdır.',
       },
       {
         title: 'Katkı payı nedir',
         body:
           'Katkı payı (masraf paylaşımı); gönüllü yol paylaşımında yakıt, otoyol ve benzeri masrafların taraflarca karşılıklı anlaşmayla paylaşılmasıdır.\n\n' +
-          'Tutar ve yöntem teklif / eşleşme aşamasında netleştirilir; LeylekTAG bu anlaşmanın tarafı değildir.',
+          `Tutar ve yöntem teklif / eşleşme aşamasında netleştirilir; ${PN} bu anlaşmanın tarafı değildir.`,
       },
       {
         title: 'Nakit katkı',
@@ -215,7 +340,7 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
         title: 'IBAN / havale katkı',
         body:
           'Sürücü, isteğe bağlı olarak IBAN bilgisini profiline ekleyebilir. IBAN; yalnızca eşleşen tarafa katkı payı iletimi için gösterilir.\n\n' +
-          'Havale/EFT işlemi banka kanallarında taraflar arasında yapılır. LeylekTAG transferi gerçekleştirmez veya garanti etmez.',
+          `Havale/EFT işlemi banka kanallarında taraflar arasında yapılır. ${PN} transferi gerçekleştirmez veya garanti etmez.`,
       },
       {
         title: 'Taraflar arası mutabakat',
@@ -226,7 +351,7 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
       {
         title: 'Uyuşmazlık durumunda destek sınırları',
         body:
-          'Katkı payına ilişkin taraflar arası anlaşmazlıklarda LeylekTAG mahkeme kararı veya resmi belge olmaksızın ödeme iadesi veya zorunlu tahsilat yapamaz.\n\n' +
+          `Katkı payına ilişkin taraflar arası anlaşmazlıklarda ${PN} mahkeme kararı veya resmi belge olmaksızın ödeme iadesi veya zorunlu tahsilat yapamaz.\n\n` +
           'Destek ekibi; teknik kayıtlar ve bildirimler çerçevesinde bilgilendirme sağlayabilir. Hukuki uyuşmazlık çözümü taraflara aittir.',
       },
     ],
@@ -243,7 +368,7 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
         title: 'Saygılı iletişim',
         body:
           `${DRAFT_PREAMBLE}\n\n` +
-          'LeylekTAG topluluğunda tüm kullanıcılar birbirine saygılı, ayrımcılık içermeyen ve güvenli bir dil kullanmalıdır.\n\n' +
+          `${PN} topluluğunda tüm kullanıcılar birbirine saygılı, ayrımcılık içermeyen ve güvenli bir dil kullanmalıdır.\n\n` +
           'Hakaret, tehdit, taciz ve nefret söylemi yasaktır.',
       },
       {
@@ -272,7 +397,7 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
         title: 'Şikayet / raporlama',
         body:
           'Kural ihlali veya güvensiz davranış uygulama içi raporlama ve destek kanallarıyla bildirilebilir.\n\n' +
-          'Acil güvenlik risklerinde yerel acil hatları (112 vb.) aranmalıdır; LeylekTAG acil müdahale birimi değildir.',
+          `Acil güvenlik risklerinde yerel acil hatları (112 vb.) aranmalıdır; ${PN} acil müdahale birimi değildir.`,
       },
       {
         title: 'Yaptırımlar',

@@ -11,6 +11,9 @@ export function LegalRegistryDocumentScreen({ documentId }: LegalRegistryDocumen
   const doc = getLegalRegistryDocument(documentId);
 
   const sections = useMemo((): LegalSection[] => {
+    if (!doc.lawyerReviewRequired) {
+      return doc.sections;
+    }
     const draftNotice: LegalSection = {
       title: 'Taslak — hukukçu incelemesi bekler',
       body:

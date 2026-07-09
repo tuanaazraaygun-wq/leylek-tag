@@ -1,15 +1,17 @@
 import type { LegalSection } from '../../components/legal/LegalDocumentReader';
 
-/** SSOT registry document identifiers (Phase 1 draft docs). */
+/** SSOT registry document identifiers. */
 export type LegalRegistryDocumentId =
   | 'terms-user'
   | 'terms-driver'
   | 'identity-verification'
   | 'contribution-iban'
-  | 'community-guidelines';
+  | 'community-guidelines'
+  | 'kvkk'
+  | 'privacy';
 
-/** Legacy in-app legal routes kept unchanged in Phase 1. */
-export type LegalLegacyRouteId = 'privacy' | 'terms' | 'kvkk' | 'delete-account' | 'support';
+/** In-app legal routes not backed by the registry document store. */
+export type LegalLegacyRouteId = 'terms' | 'delete-account' | 'support';
 
 export type LegalHubLinkId = LegalRegistryDocumentId | LegalLegacyRouteId;
 

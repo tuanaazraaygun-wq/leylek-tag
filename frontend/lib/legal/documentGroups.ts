@@ -1,8 +1,9 @@
 import type { LegalDocumentGroup } from './legalDocumentTypes';
+import { LEGAL_PRODUCT_DISPLAY_NAME } from './brand';
 import { LEGAL_ROUTES } from './routes';
 
 export const TRUST_CENTER_SUMMARY =
-  'LeylekTAG, gönüllü yol paylaşımı ve kişi eşleştirme için güven, iletişim ve eşleşme altyapısı sağlar.';
+  `${LEGAL_PRODUCT_DISPLAY_NAME}, gönüllü yol paylaşımı ve kişi eşleştirme için güven, iletişim ve eşleşme altyapısı sağlar.`;
 
 export const TRUST_CENTER_DRAFT_BANNER =
   'Aşağıdaki taslak belgeler nitelikli hukukçu incelemesi beklemektedir. Mevcut Gizlilik, KVKK ve Hesap Silme sayfaları ayrı sürümlerle yönetilmektedir.';

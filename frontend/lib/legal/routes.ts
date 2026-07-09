@@ -21,6 +21,8 @@ const REGISTRY_ROUTE_MAP: Record<LegalRegistryDocumentId, string> = {
   'identity-verification': LEGAL_ROUTES.identityVerification,
   'contribution-iban': LEGAL_ROUTES.contributionIban,
   'community-guidelines': LEGAL_ROUTES.communityGuidelines,
+  kvkk: LEGAL_ROUTES.kvkk,
+  privacy: LEGAL_ROUTES.privacy,
 };
 
 const HUB_ROUTE_MAP: Record<LegalHubLinkId, string> = {
