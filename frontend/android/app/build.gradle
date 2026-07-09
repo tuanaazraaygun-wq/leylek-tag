@@ -23,6 +23,19 @@ react {
 
 def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBuilds') ?: false).toBoolean()
 
+/** Release signing secret: local gradle property, then env var (CI/EAS). Never commit passwords. */
+def resolveSigningSecret(String name) {
+    def fromProperty = findProperty(name)
+    if (fromProperty != null && fromProperty.toString().trim()) {
+        return fromProperty.toString()
+    }
+    def fromEnv = System.getenv(name)
+    if (fromEnv != null && fromEnv.trim()) {
+        return fromEnv
+    }
+    return ''
+}
+
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
@@ -49,11 +62,12 @@ android {
             keyPassword 'android'
         }
         release {
+            // Passwords: MYAPP_UPLOAD_* env vars, local gradle.properties, CI secrets, or EAS credentials — never in git.
             def uploadStoreFile = findProperty('MYAPP_UPLOAD_STORE_FILE') ?: 'leylektag-release.keystore'
             storeFile file(uploadStoreFile)
-            storePassword findProperty('MYAPP_UPLOAD_STORE_PASSWORD') ?: ''
+            storePassword resolveSigningSecret('MYAPP_UPLOAD_STORE_PASSWORD')
             keyAlias findProperty('MYAPP_UPLOAD_KEY_ALIAS') ?: 'leylektag'
-            keyPassword findProperty('MYAPP_UPLOAD_KEY_PASSWORD') ?: ''
+            keyPassword resolveSigningSecret('MYAPP_UPLOAD_KEY_PASSWORD')
         }
     }
     buildTypes {
