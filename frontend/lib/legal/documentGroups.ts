@@ -17,7 +17,7 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
       {
         id: 'terms-user',
         title: 'Kullanıcı Sözleşmesi',
-        description: 'Gönüllü yol paylaşımı platform koşulları',
+        description: 'Üyelik, roller, katkı payı ve sorumluluklar (avukat taslağı)',
         route: LEGAL_ROUTES.termsUser,
         icon: 'document-text-outline',
         isDraft: true,
@@ -56,7 +56,7 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
       {
         id: 'terms-driver',
         title: 'Sürücü Sözleşmesi',
-        description: 'Sürücü beyanları ve yükümlülükler',
+        description: 'Ehliyet, sigorta, trafik ve belge yükümlülükleri (avukat taslağı)',
         route: LEGAL_ROUTES.termsDriver,
         icon: 'car-outline',
         isDraft: true,
@@ -94,7 +94,7 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
       {
         id: 'community-guidelines',
         title: 'Topluluk Kuralları',
-        description: 'Muhabbet, teklif ve davranış kuralları',
+        description: 'Saygılı davranış, güvenlik ve hukuka uygun kullanım (avukat taslağı)',
         route: LEGAL_ROUTES.communityGuidelines,
         icon: 'people-outline',
         isDraft: true,

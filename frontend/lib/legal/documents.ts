@@ -7,17 +7,24 @@ import {
 
 const PN = LEGAL_PRODUCT_DISPLAY_NAME;
 
+const COMPANY = 'Karekod Teknoloji ve Yazılım A.Ş.';
+
+const SUPPORT_CONTACT = 'info@karekodteknoloji.com · 0850 307 80 29';
+
+const ACCOUNT_ACTION_NOTICE =
+  `Şirket; işbu metin kapsamındaki kuralların ihlali, mevzuata aykırılık şüphesi veya makul güvenlik gerekçesi bulunması halinde hesabı incelemeye alabilir, geçici olarak askıya alabilir veya sonlandırabilir. İşlem gerekçesi mümkün olduğunca kullanıcıya bildirilir. Kullanıcı, ${SUPPORT_CONTACT} üzerinden itiraz ve destek talebinde bulunabilir. Şirket, keyfi veya sınırsız hesap kapatma uygulamaz.`;
+
 const DRAFT_META = {
   version: LEGAL_DRAFT_VERSION,
-  lastUpdated: '2026-06',
-  company: 'Karekod Teknoloji ve Yazılım A.Ş.',
+  lastUpdated: '09/07/2026',
+  company: COMPANY,
   lawyerReviewRequired: true,
 } as const;
 
 const PRODUCTION_META = {
   version: '1.0.0',
   lastUpdated: LEGAL_LAST_UPDATED,
-  company: 'Karekod Teknoloji ve Yazılım A.Ş.',
+  company: COMPANY,
   lawyerReviewRequired: false,
 } as const;
 
@@ -139,58 +146,128 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
   'terms-user': {
     id: 'terms-user',
     title: 'Kullanıcı Sözleşmesi',
-    subtitle: 'Topluluk odaklı gönüllü yol paylaşımı platformu kullanım koşulları (taslak)',
-    readingTimeMinutes: 7,
+    subtitle: 'Platform kullanım koşulları ve kullanıcı yükümlülükleri (avukat taslağı)',
+    readingTimeMinutes: 14,
     ...DRAFT_META,
     sections: [
       {
-        title: 'Taraflar ve tanımlar',
+        title: 'Madde 1 — Taraflar',
         body:
           `${DRAFT_PREAMBLE}\n\n` +
-          `İşbu taslak sözleşme; Karekod Teknoloji ve Yazılım A.Ş. (“Şirket”, “${PN}”) ile ${PN} mobil uygulamasını kullanan gerçek kişi kullanıcı (“Kullanıcı”) arasında akdedilir.\n\n` +
-          '“Platform”: Yolcu ve sürücü profillerinin eşleştirildiği, teklif ve iletişim altyapısının sunulduğu dijital ortamdır.\n\n' +
-          '“Yol paylaşımı”: Tarafların karşılıklı mutabakatıyla gerçekleşen, gönüllü nitelikte ortak rota paylaşımıdır.',
+          `İşbu Kullanıcı Sözleşmesi; ${COMPANY} (“Şirket”) ile ${PN} mobil uygulamasına üye olan ve platformu kullanan gerçek kişi (“Kullanıcı”) arasında elektronik ortamda kurulmuştur.`,
       },
       {
-        title: 'Platformun niteliği',
+        title: 'Madde 2 — Tanımlar',
         body:
-          `${PN}; topluluk odaklı gönüllü yol paylaşımı ve kişi eşleştirme teknolojisi sunan bir platformdur.\n\n` +
-          `${PN} bir taksi uygulaması, taşıma şirketi veya ödeme kuruluşu değildir. Platform, ticari yolcu taşımacılığı hizmeti sunmaz ve taşıma sözleşmesi tarafı değildir.`,
+          `• Platform: ${PN} mobil uygulaması ve ilişkili dijital hizmetler.\n` +
+          '• Şirket: Karekod Teknoloji ve Yazılım A.Ş.\n' +
+          '• Kullanıcı: Platforma kayıt olan veya platformu kullanan gerçek kişi.\n' +
+          '• Sürücü: Gönüllü yol paylaşımı sunan kullanıcı profili.\n' +
+          '• Yolcu: Yol paylaşımı talep eden veya katılan kullanıcı profili.\n' +
+          '• Yol paylaşımı: Tarafların karşılıklı mutabakatıyla gerçekleşen gönüllü ortak rota paylaşımı.\n' +
+          '• Katkı payı: Seyahat masraflarının taraflar arasında karşılıklı anlaşmayla paylaşılması.\n' +
+          '• Hesap: Kullanıcıya özgü platform erişim kaydı.',
       },
       {
-        title: 'Gönüllü yol paylaşımı ve kişi eşleştirme',
+        title: 'Madde 3 — Platformun hukuki niteliği',
         body:
-          'Platform; kullanıcıların rota, teklif ve iletişim yoluyla birbirleriyle eşleşmesine teknik altyapı sağlar.\n\n' +
-          `Yol paylaşımına ilişkin karar, rota, zaman ve katkı payı (masraf paylaşımı) taraflar arasında serbestçe belirlenir. ${PN} bu süreçte aracı teknoloji sağlayıcısıdır.`,
+          `${PN} yalnızca kullanıcıları dijital ortamda eşleştiren ve iletişim kurmalarına teknik altyapı sağlayan bir teknoloji platformudur.\n\n` +
+          'Platform;\n' +
+          '• taşıma veya yolcu taşımacılığı hizmeti sunmaz,\n' +
+          '• taşıma sözleşmesinin tarafı değildir,\n' +
+          '• ödeme kuruluşu veya elektronik para kuruluşu değildir,\n' +
+          '• katkı payını belirlemez, tahsil etmez ve ödemeye aracılık etmez.\n\n' +
+          'Kullanıcılar arasındaki hukuki ilişki, fiili davranışlar ve yolculuk sürecinden doğan sorumluluklar ilgili taraflara aittir.',
       },
       {
-        title: 'Kullanıcı yükümlülükleri',
+        title: 'Madde 4 — Üyelik ve rol kullanımı',
         body:
-          'Kullanıcı;\n' +
-          '• 18 yaşından büyük olduğunu beyan eder,\n' +
-          '• Kayıt ve profil bilgilerini doğru tutar,\n' +
-          '• Yürürlükteki mevzuata ve Topluluk Kurallarına uyar,\n' +
-          '• Diğer kullanıcılara saygılı iletişim kurar,\n' +
-          '• Platformu yalnızca amacına uygun kullanır.',
+          'Kullanıcı; 18 yaşından büyük olduğunu, doğru ve güncel bilgi vereceğini, hesabını koruyacağını ve platformu hukuka uygun şekilde kullanacağını kabul eder.\n\n' +
+          'Aynı hesap kapsamında yolcu ve/veya sürücü rolü seçilebilir. Rol değişiklikleri, ilgili doğrulama ve onay süreçlerine tabidir. Kullanıcı, seçtiği role uygun davranmakla yükümlüdür.',
       },
       {
-        title: `${PN}'un rolü ve sorumluluk sınırları`,
+        title: 'Madde 5 — Kimlik doğrulama',
         body:
-          `${PN}; eşleşme, iletişim, doğrulama katmanları ve güvenlik özellikleri sunar; yol paylaşımının tarafı veya garantörü değildir.\n\n` +
-          `Yol paylaşımı sırasında doğabilecek trafik, maddi/manevi zarar, gecikme veya taraflar arası anlaşmazlıklardan ${PN} sorumlu tutulamaz. Platform tahsilat yapmaz; katkı payı mutabakatı kullanıcılar arasındadır.`,
+          'Platform; güvenlik ve kötüye kullanımın önlenmesi amacıyla kimlik, ehliyet, ruhsat, araç görselleri ve diğer belgeleri talep edebilir. Sunulan belgelerin doğruluğundan kullanıcı sorumludur.\n\n' +
+          'Doğrulama süreçleri profil güvenilirliğini artırmaya yöneliktir; resmi merciler nezdinde mutlak güvenilirlik veya hukuki garanti oluşturmaz.',
       },
       {
-        title: 'Hesap güvenliği',
+        title: 'Madde 6 — Sürücü yükümlülükleri',
         body:
-          'Kullanıcı, hesap erişim bilgilerinin gizliliğinden sorumludur. Şüpheli kullanım durumunda destek kanallarına bildirim yapılmalıdır.\n\n' +
-          'Şirket; güvenlik, kötüye kullanım ve mevzuat uyumu kapsamında hesabı askıya alma veya sonlandırma hakkını saklı tutar.',
+          'Sürücü olarak hareket eden kullanıcı;\n' +
+          '• geçerli sürücü belgesine sahip olduğunu,\n' +
+          '• aracı kullanmaya yetkili olduğunu,\n' +
+          '• zorunlu trafik sigortası ve yasal yükümlülükleri yerine getirdiğini,\n' +
+          '• trafik kurallarına uyacağını,\n' +
+          '• yolcu güvenliğini gözeterek hareket edeceğini\n\n' +
+          'kabul eder. Ayrıntılar Sürücü Sözleşmesinde düzenlenir.',
       },
       {
-        title: 'Uyuşmazlık ve iletişim',
+        title: 'Madde 7 — Yolcu yükümlülükleri',
         body:
-          'Kişisel verilere ilişkin ayrıntılar KVKK Aydınlatma Metni ve Gizlilik Politikasında yer alır.\n\n' +
-          'Destek ve başvuru: info@karekodteknoloji.com · 0850 307 80 29\n\n' +
-          'Uyuşmazlık hükümleri nitelikli hukukçu incelemesi sonrası netleştirilecektir.',
+          'Yolcu olarak hareket eden kullanıcı;\n' +
+          '• güvenlik kurallarına uyacağını,\n' +
+          '• sürücüye ve araca zarar vermeyeceğini,\n' +
+          '• buluşma ve yolculuk sürecinde saygılı davranacağını,\n' +
+          '• doğru iletişim bilgisi kullanacağını\n\n' +
+          'kabul eder.',
+      },
+      {
+        title: 'Madde 8 — Katkı payı',
+        body:
+          'Katkı payı yalnızca seyahat masraflarının (yakıt, otoyol vb.) taraflar arasında karşılıklı anlaşmayla paylaşılması amacıyla belirlenir.\n\n' +
+          'Platform katkı payını belirlemez, tahsil etmez, tutarı garanti etmez ve taraflar arasındaki mutabakatın tarafı değildir.',
+      },
+      {
+        title: 'Madde 9 — Ödemeler',
+        body:
+          'Nakit veya banka transferi / havale yoluyla yapılan ödemeler doğrudan kullanıcılar arasında gerçekleşir. Platform ödeme hesabı işletmez, transfer gerçekleştirmez ve finansal aracılık sunmaz.\n\n' +
+          'Kullanıcılar, katkı tutarı ve alıcı bilgisini kendi sorumluluklarında kontrol etmekle yükümlüdür.',
+      },
+      {
+        title: 'Madde 10 — Yasak davranışlar',
+        body:
+          'Aşağıdaki davranışlar yasaktır:\n' +
+          '• sahte hesap veya yanıltıcı profil oluşturmak,\n' +
+          '• dolandırıcılık, taciz, tehdit, ayrımcılık veya nefret söylemi,\n' +
+          '• hukuka aykırı faaliyet veya eşya taşıma teklifi,\n' +
+          '• başkasının kimlik veya belgelerini kullanmak,\n' +
+          '• platform güvenliğini ihlal eden yazılım, bot veya otomasyon kullanımı,\n' +
+          '• ticari taşımacılık veya korsan taksi faaliyeti,\n' +
+          '• kişisel verileri izinsiz paylaşmak,\n' +
+          '• Topluluk Kurallarına veya mevzuata aykırı kullanım.',
+      },
+      {
+        title: 'Madde 11 — Hesabın askıya alınması ve sonlandırılması',
+        body: ACCOUNT_ACTION_NOTICE,
+      },
+      {
+        title: 'Madde 12 — Kişisel veriler',
+        body:
+          'Kişisel veriler 6698 sayılı KVKK ve ilgili mevzuata uygun olarak işlenir. Ayrıntılı bilgi KVKK Aydınlatma Metni ve Gizlilik Politikasında yer alır.\n\n' +
+          `Başvuru ve talepler: ${SUPPORT_CONTACT}`,
+      },
+      {
+        title: 'Madde 13 — Fikri mülkiyet',
+        body:
+          'Platformun yazılımı, tasarımı, arayüzü, marka unsurları ve içerikleri ilgili mevzuat kapsamında Şirket veya lisans verenlerine aittir. İzinsiz kopyalama, tersine mühendislik veya ticari kullanım yasaktır.',
+      },
+      {
+        title: 'Madde 14 — Sorumluluğun sınırlandırılması',
+        body:
+          `${PN}; yalnızca dijital eşleştirme ve iletişim altyapısı sağlar. Kullanıcılar arasındaki uyuşmazlıklar, trafik kazaları, maddi/manevi zararlar, gecikmeler, ödeme anlaşmazlıkları ve fiili davranışlardan Şirket sorumlu tutulamaz.\n\n` +
+          'Platform, kullanıcı beyanlarının doğruluğunu garanti etmez.',
+      },
+      {
+        title: 'Madde 15 — Uyuşmazlıklar',
+        body:
+          'İşbu sözleşmede Türk Hukuku uygulanır. Uyuşmazlıklarda Şirket merkezinin bulunduğu yer mahkeme ve icra daireleri yetkilidir.\n\n' +
+          `Öncelikle destek kanalları: ${SUPPORT_CONTACT}`,
+      },
+      {
+        title: 'Madde 16 — Yürürlük',
+        body:
+          'Kullanıcı, üyeliği tamamlayarak ve platformu kullanmaya devam ederek işbu sözleşmeyi kabul etmiş sayılır. Güncellemeler uygulama içinde yayımlandığında duyurulur.',
       },
     ],
   },
@@ -198,56 +275,91 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
   'terms-driver': {
     id: 'terms-driver',
     title: 'Sürücü Sözleşmesi',
-    subtitle: 'Gönüllü sürücü profili ve yol paylaşımı yükümlülükleri (taslak)',
-    readingTimeMinutes: 8,
+    subtitle: 'Gönüllü sürücü profili, belge yükümlülükleri ve sorumluluklar (avukat taslağı)',
+    readingTimeMinutes: 12,
     ...DRAFT_META,
     sections: [
       {
-        title: 'Sürücü başvurusu ve beyanlar',
+        title: 'Madde 1 — Taraflar',
         body:
           `${DRAFT_PREAMBLE}\n\n` +
-          'Sürücü profili; Kullanıcı Sözleşmesine ek nitelikte olup gönüllü yol paylaşımı sunmak isteyen kullanıcılar için geçerlidir.\n\n' +
-          'Sürücü; ticari taşımacılık veya taksi hizmeti sunmadığını, yol paylaşımını gönüllü ve topluluk odaklı gerçekleştirdiğini beyan eder.',
+          `İşbu Sürücü Sözleşmesi; ${COMPANY} (“Şirket”) ile ${PN} platformuna sürücü olarak kayıt olan kullanıcı (“Sürücü”) arasında elektronik ortamda kurulmuştur. Kullanıcı Sözleşmesi ile birlikte okunur.`,
       },
       {
-        title: 'Ehliyet, araç ve belge doğruluğu',
+        title: 'Madde 2 — Sözleşmenin konusu',
+        body:
+          'Bu sözleşme; sürücünün platformu kullanırken uyması gereken kuralları, belge ve güvenlik yükümlülüklerini ve tarafların hak ile sorumluluklarını düzenler.',
+      },
+      {
+        title: 'Madde 3 — Sürücü beyanları',
         body:
           'Sürücü;\n' +
-          '• Geçerli sürücü belgesine sahip olduğunu,\n' +
-          '• Aracın trafiğe çıkmaya uygun olduğunu,\n' +
-          '• Zorunlu sigorta ve yasal yükümlülüklerini yerine getirdiğini,\n' +
-          '• Kimlik doğrulama sürecinde sunulan belgelerin güncel ve kendisine ait olduğunu\n\n' +
+          '• geçerli sürücü belgesine (ehliyet) sahip olduğunu,\n' +
+          '• aracı kullanmaya yetkili olduğunu,\n' +
+          '• verdiği profil, araç ve iletişim bilgilerinin doğru olduğunu,\n' +
+          '• ticari taşımacılık veya taksi hizmeti sunmadığını,\n' +
+          '• yol paylaşımını gönüllü ve topluluk odaklı gerçekleştirdiğini\n\n' +
           'beyan ve taahhüt eder.',
       },
       {
-        title: 'Gönüllü yol paylaşımı ilkesi',
+        title: 'Madde 4 — Ehliyet, ruhsat ve belge doğrulama',
         body:
-          `Sürücü; ${PN} üzerinden sunulan yol paylaşımının gönüllü nitelikte olduğunu, platformun taşıma işletmecisi olmadığını kabul eder.\n\n` +
-          'Rota, kapasite ve katkı payı beklentisi teklif aşamasında diğer kullanıcıyla karşılıklı netleştirilir.',
+          'Sürücü, talep edilmesi halinde ehliyet, araç ruhsatı, zorunlu trafik sigortası poliçesi, plaka ve araç görselleri ile diğer belgeleri platforma sunmayı kabul eder.\n\n' +
+          'Belgelerin okunabilir, güncel ve sürücüye ait olması zorunludur. Yanıltıcı veya sahte belge sunulması halinde hesap işlemleri uygulanabilir.',
       },
       {
-        title: 'Trafik ve güvenlik sorumluluğu',
+        title: 'Madde 5 — Sigorta ve araç uygunluğu',
         body:
-          'Trafik kurallarına uyum, yolcu güvenliği, araç bakımı ve yol paylaşımı sırasındaki davranış sürücünün sorumluluğundadır.\n\n' +
-          `${PN}; sürücünün trafik veya ceza geçmişini resmi merciler nezdinde doğrulama taahhüdü vermez (ayrıntılar Kimlik Doğrulama Bilgilendirmesinde).`,
+          'Sürücü; aracın trafik mevzuatına uygun durumda olduğunu, zorunlu sigortasının yürürlükte olduğunu ve periyodik bakım ile teknik gereklilikleri yerine getirdiğini kabul eder.\n\n' +
+          'Araç güvenliği ve yasal uygunluktan sürücü sorumludur.',
       },
       {
-        title: 'Katkı payı mutabakatı',
+        title: 'Madde 6 — Trafik kuralları ve yolcu güvenliği',
         body:
-          `Yol paylaşım katkı payı (masraf paylaşımı) taraflar arasında belirlenir. ${PN} platform tahsilatı yapmaz; ödeme kuruluşu veya finansal aracı değildir.\n\n` +
-          'Nakit veya IBAN / havale yoluyla katkı, tarafların karşılıklı mutabakatıyla tamamlanır. Ayrıntılar Katkı Payı ve IBAN Bilgilendirmesinde yer alır.',
+          'Sürücü;\n' +
+          '• Karayolları Trafik Kanunu ve ilgili mevzuata uymayı,\n' +
+          '• alkollü veya uyuşturucu etkisi altında araç kullanmamayı,\n' +
+          '• emniyet kemeri ve güvenlik önlemlerine riayet etmeyi,\n' +
+          '• yolcuların güvenliğini gözetmeyi,\n' +
+          '• yolculuk sırasında dikkat dağıtıcı ve tehlikeli davranışlardan kaçınmayı\n\n' +
+          'kabul eder.',
       },
       {
-        title: 'Platform kuralları ve yaptırımlar',
+        title: 'Madde 7 — Kaza, ceza ve fiili sorumluluk',
         body:
-          'Sürücü; Topluluk Kuralları, Kullanıcı Sözleşmesi ve mevzuata aykırı davranışlardan sorumludur.\n\n' +
-          'Şirket; güvenlik, şikayet veya belge tutarsızlığı hallerinde sürücü profilini askıya alma veya kapatma hakkını saklı tutar.',
+          'Trafik kazası, idari para cezası, araç hasarı, üçüncü kişilere verilen zarar ve yolculuk sırasındaki fiili davranışlardan sürücü sorumludur.\n\n' +
+          `${PN} taşıma işletmecisi veya taşıma sözleşmesinin tarafı değildir; kaza ve ceza süreçlerinde doğrudan taraf sıfatı taşımaz.`,
       },
       {
-        title: 'Sözleşme kabulü',
+        title: 'Madde 8 — Katkı payı',
         body:
-          'Sürücü başvurusu; belge yükleme, doğrulama adımları ve elektronik onay ile tamamlanır.\n\n' +
-          'Kabul anı ve sürüm bilgisi ürün kayıtlarında tutulabilir. Güncellemeler uygulama içi bildirimle duyurulur; nitelikli hukukçu incelemesi sonrası yürürlük tarihi netleştirilecektir.',
+          'Katkı payı yalnızca seyahat masraflarının paylaşımı amacıyla taraflar arasında belirlenir. Platform katkı payını belirlemez, tahsil etmez, tutarı garanti etmez ve ödemeye aracılık etmez.\n\n' +
+          'Nakit veya banka transferi kullanıcılar arasında doğrudan gerçekleşir.',
+      },
+      {
+        title: 'Madde 9 — Yasak davranışlar',
+        body:
+          'Sürücü için özellikle yasaktır:\n' +
+          '• sahte bilgi veya belge vermek,\n' +
+          '• hukuka aykırı eşya taşımak veya taşıma teklif etmek,\n' +
+          '• yolculara kötü muamele, taciz veya tehdit,\n' +
+          '• ticari taşımacılık veya korsan taksi faaliyeti,\n' +
+          '• platform kurallarını veya mevzuatı ihlal etmek.',
+      },
+      {
+        title: 'Madde 10 — Platformun sorumluluk sınırı',
+        body:
+          `${PN} yalnızca dijital eşleştirme ve iletişim altyapısı sağlar. Sürücünün fiilleri, araç durumu, trafik ihlalleri, ödeme anlaşmazlıkları ve kullanıcılar arası uyuşmazlıklardan Şirket sorumlu tutulamaz.\n\n` +
+          'Platform, sürücünün sabıka veya trafik geçmişini resmi merciler nezdinde doğrulama taahhüdü vermez.',
+      },
+      {
+        title: 'Madde 11 — Hesabın askıya alınması ve sonlandırılması',
+        body: ACCOUNT_ACTION_NOTICE,
+      },
+      {
+        title: 'Madde 12 — Yürürlük',
+        body:
+          'Sürücü, sürücü profilini etkinleştirerek ve platformu sürücü olarak kullanmaya devam ederek işbu sözleşmeyi kabul etmiş sayılır. Belge yükleme ve elektronik onay adımları tamamlandığında kabul kayıt altına alınabilir.',
       },
     ],
   },
@@ -360,50 +472,134 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
   'community-guidelines': {
     id: 'community-guidelines',
     title: 'Topluluk Kuralları',
-    subtitle: 'Muhabbet, teklif ve yol paylaşımı davranış standartları (taslak)',
-    readingTimeMinutes: 6,
+    subtitle: 'Güvenli, saygılı ve hukuka uygun platform kullanımı (avukat taslağı)',
+    readingTimeMinutes: 15,
     ...DRAFT_META,
     sections: [
       {
-        title: 'Saygılı iletişim',
+        title: '1. Amaç',
         body:
           `${DRAFT_PREAMBLE}\n\n` +
-          `${PN} topluluğunda tüm kullanıcılar birbirine saygılı, ayrımcılık içermeyen ve güvenli bir dil kullanmalıdır.\n\n` +
-          'Hakaret, tehdit, taciz ve nefret söylemi yasaktır.',
+          `Bu Topluluk Kuralları; ${PN} platformunun güvenli, saygılı ve hukuka uygun şekilde kullanılmasını sağlamak amacıyla hazırlanmıştır. Platformu kullanan her kullanıcı, bu kuralları okuduğunu, anladığını ve kabul ettiğini beyan eder.\n\n` +
+          `${PN}; aynı güzergâhta seyahat etmek isteyen kullanıcıların birbirleriyle iletişim kurmasına teknik altyapı sağlayan dijital bir platformdur. Amaç; güvenli yol paylaşımını teşvik etmek, saygılı davranışı desteklemek ve hukuka uygun bir topluluk oluşturmaktır.`,
       },
       {
-        title: 'Güvenli yol paylaşımı',
+        title: '2. Saygılı davranış ilkesi',
         body:
-          'Yol paylaşımı kararları bilinçli ve gönüllü verilmelidir. Taraflar rota, buluşma noktası ve katkı payını netleştirmelidir.\n\n' +
-          'QR doğrulama ve uygulama içi onay adımları atlanmamalı; güvenlik uyarıları dikkate alınmalıdır.',
+          'Her kullanıcı;\n' +
+          '• diğer kullanıcılara karşı nazik davranmalı,\n' +
+          '• küçük düşürücü ifade, hakaret, küfür ve tehditten kaçınmalı,\n' +
+          '• psikolojik baskı ve cinsel içerikli rahatsız edici davranışlarda bulunmamalı,\n' +
+          '• nefret söylemi paylaşmamalıdır.\n\n' +
+          'Irk, renk, dil, din, mezhep, cinsiyet, cinsel yönelim, engellilik, yaş, siyasi düşünce veya benzeri herhangi bir nedenle ayrımcılık kesinlikle yasaktır.',
       },
       {
-        title: 'Yasaklı davranışlar',
+        title: '3. Güvenli yolculuk',
         body:
-          'Aşağıdakiler kesinlikle yasaktır:\n' +
-          '• Dolandırıcılık veya yanıltıcı teklif\n' +
-          '• Yasadışı faaliyet veya eşya taşıma teklifi\n' +
-          '• İzinsiz kişisel veri paylaşımı\n' +
-          '• Platform dışına zorla yönlendirme ve ödeme manipülasyonu\n' +
-          '• Spam, bot veya çoklu sahte hesap kullanımı',
+          'Sürücü ve yolcular;\n' +
+          '• trafik kurallarına uymalı,\n' +
+          '• emniyet kemeri kullanımına özen göstermeli,\n' +
+          '• alkollü veya uyuşturucu etkisi altında yolculuk yapmamalı,\n' +
+          '• diğer kullanıcıların güvenliğini tehlikeye düşürecek davranışlardan kaçınmalıdır.\n\n' +
+          'Acil durumlarda 112 Acil Çağrı Merkezi ve ilgili resmi mercilere başvurulmalıdır.',
       },
       {
-        title: 'Yanıltıcı bilgi ve sahte hesap',
+        title: '4. Yasaklanan davranışlar',
         body:
-          'Profil, ehliyet, araç veya kimlik bilgilerinde yanıltıcı içerik sunulamaz. Başkasının adına hesap işletmek yasaktır.\n\n' +
-          'Tespit halinde hesap askıya alınabilir veya kapatılabilir.',
+          'Aşağıdaki davranışlar kesin olarak yasaktır:\n' +
+          '• sahte hesap oluşturmak, başkasının kimlik veya ehliyetini kullanmak,\n' +
+          '• gerçeğe aykırı belge yüklemek, sahte plaka kullanmak,\n' +
+          '• dolandırıcılık, yanıltıcı ilan, sahte güzergâh veya gerçekleşmeyecek teklif oluşturmak,\n' +
+          '• spam, reklam, istenmeyen mesaj ve platform üzerinden ticari reklam,\n' +
+          '• kanuna aykırı ürün/hizmet, kumar, bahis veya yasa dışı faaliyet teklifi,\n' +
+          '• uyuşturucu, silah, yasak eşya veya suç teşkil eden eylemler,\n' +
+          '• kullanıcıları kandırmak veya platform güvenliğini ihlal etmek.',
       },
       {
-        title: 'Şikayet / raporlama',
+        title: '5. Kimlik doğruluğu',
         body:
-          'Kural ihlali veya güvensiz davranış uygulama içi raporlama ve destek kanallarıyla bildirilebilir.\n\n' +
-          `Acil güvenlik risklerinde yerel acil hatları (112 vb.) aranmalıdır; ${PN} acil müdahale birimi değildir.`,
+          'Kullanıcı;\n' +
+          '• doğru kimlik bilgisi vermeyi,\n' +
+          '• güncel iletişim bilgilerini kullanmayı,\n' +
+          '• yalnızca kendi adına hesap oluşturmayı,\n' +
+          '• başkasının hesabını kullanmamayı,\n' +
+          '• doğrulama süreçlerinde doğru belge sunmayı\n\n' +
+          'kabul eder. Yanıltıcı bilgi verilmesi halinde hesap işlemleri uygulanabilir.',
       },
       {
-        title: 'Yaptırımlar',
+        title: '6. Profil ve hesap güvenliği',
         body:
-          'İhlalin niteliğine göre uyarı, geçici askı, özellik kısıtı veya kalıcı hesap kapatma uygulanabilir.\n\n' +
-          'Yaptırım ve itiraz prosedürleri nitelikli hukukçu incelemesi sonrası ayrıntılandırılacaktır.',
+          'Kullanıcı hesabını üçüncü kişilere devredemez, şifresini paylaşamaz ve hesap güvenliğini sağlamakla yükümlüdür. Hesaptan yapılan işlemlerden kullanıcı sorumludur.',
+      },
+      {
+        title: '7. Araç bilgileri',
+        body:
+          'Sürücüler doğru araç ve plaka bilgisi paylaşmalı, aracın trafik mevzuatına uygun durumda olduğunu beyan etmelidir.',
+      },
+      {
+        title: '8. Gizlilik ve kişisel veriler',
+        body:
+          'Kullanıcılar; diğer kullanıcıların telefon numarası, adres, kimlik, fotoğraf ve konum bilgilerini ilgili kişinin açık rızası olmadan paylaşamaz.\n\n' +
+          'Kişisel verilerin hukuka aykırı paylaşımından doğan hukuki ve cezai sorumluluk ilgili kullanıcıya aittir.',
+      },
+      {
+        title: '9. Fotoğraf ve içerik paylaşımı',
+        body:
+          'Platforma yüklenen fotoğraf ve içerikler;\n' +
+          '• gerçeği yansıtmalı,\n' +
+          '• başkasına ait olmamalı,\n' +
+          '• telif hakkını ihlal etmemeli,\n' +
+          '• müstehcen, şiddet içerikli veya nefret söylemi barındırmamalıdır.',
+      },
+      {
+        title: '10. Ticari faaliyet yasağı',
+        body:
+          `${PN} ticari taşımacılık platformu değildir. Kullanıcılar korsan taşımacılık yapamaz, ticari taksi hizmeti sunamaz ve uygulamayı ticari amaçlarla kullanamaz.`,
+      },
+      {
+        title: '11. Şikayet ve bildirim',
+        body:
+          'Her kullanıcı; uygunsuz davranışları, sahte hesapları, dolandırıcılık girişimlerini ve güvenlik risklerini uygulama içinden veya destek kanallarından bildirebilir.\n\n' +
+          `Bildirim: ${SUPPORT_CONTACT}`,
+      },
+      {
+        title: '12. Hesap askıya alma',
+        body:
+          'Şirket; sahte belge, dolandırıcılık, tehdit, taciz, hukuka aykırı faaliyet, topluluk kurallarının ihlali veya kötü niyetli kullanım şüphesi halinde hesabı incelemeye alabilir, geçici veya kalıcı olarak kısıtlayabilir.\n\n' +
+          ACCOUNT_ACTION_NOTICE,
+      },
+      {
+        title: '13. Platformun rolü',
+        body:
+          `${PN};\n` +
+          '• taşıma hizmeti sunmaz,\n' +
+          '• taraflar arasında kurulan hukuki ilişkinin tarafı değildir,\n' +
+          '• sürücü veya yolcu sıfatına sahip değildir,\n' +
+          '• ödeme kuruluşu veya elektronik para kuruluşu değildir,\n' +
+          '• seyahat organizatörü değildir,\n' +
+          '• katkı payını belirlemez, tahsil etmez ve aracılık etmez.\n\n' +
+          'Platform yalnızca kullanıcıların birbirleriyle iletişim kurmasına teknik altyapı sağlar.',
+      },
+      {
+        title: '14. Güvenlik uyarısı',
+        body:
+          'Her kullanıcı; tanımadığı kişilerle yolculuk yaparken gerekli dikkat ve özeni göstermeli, değerli eşyalarını korumalı ve acil durumlarda 112 Acil Çağrı Merkezini aramalıdır.\n\n' +
+          `${PN} acil müdahale birimi değildir; yolculuk sırasındaki fiili risklerden kullanıcılar sorumludur.`,
+      },
+      {
+        title: '15. Hukuka uygun kullanım',
+        body:
+          `Kullanıcılar, ${PN} uygulamasını yalnızca yürürlükteki mevzuata uygun şekilde kullanacaklarını kabul eder. Türk Ceza Kanunu, Karayolları Trafik Kanunu, Kişisel Verilerin Korunması Kanunu ve diğer ilgili mevzuata aykırı kullanımlar yasaktır.`,
+      },
+      {
+        title: '16. Güncellemeler',
+        body:
+          'Şirket, bu Topluluk Kurallarını gerekli gördüğü zaman güncelleyebilir. Güncellenen metin uygulama içerisinde yayımlandığı tarihte yürürlüğe girer.',
+      },
+      {
+        title: '17. İletişim',
+        body:
+          `Her türlü soru, bildirim ve itiraz için:\n${COMPANY}\nE-posta: info@karekodteknoloji.com\nTelefon: 0850 307 80 29`,
       },
     ],
   },
