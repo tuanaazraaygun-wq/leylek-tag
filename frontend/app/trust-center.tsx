@@ -25,7 +25,6 @@ import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LEGAL_COMPANY_META } from '../lib/legalUxCopy';
 import {
   LEGAL_DOCUMENT_GROUPS,
-  TRUST_CENTER_DRAFT_BANNER,
   TRUST_CENTER_SUMMARY,
 } from '../lib/legal/documentGroups';
 import type { LegalHubLink } from '../lib/legal/legalDocumentTypes';
@@ -60,18 +59,9 @@ function TrustCenterDocRow({
           <Ionicons name={link.icon as keyof typeof Ionicons.glyphMap} size={18} color={accent} />
         </View>
         <View style={styles.docTextWrap}>
-          <View style={styles.docTitleRow}>
-            <PremiumText variant="body" style={styles.docTitle} numberOfLines={2}>
-              {link.title}
-            </PremiumText>
-            {link.isDraft ? (
-              <View style={styles.draftPill}>
-                <PremiumText variant="caption" style={styles.draftPillText}>
-                  Taslak
-                </PremiumText>
-              </View>
-            ) : null}
-          </View>
+          <PremiumText variant="body" style={styles.docTitle} numberOfLines={2}>
+            {link.title}
+          </PremiumText>
           {link.description ? (
             <PremiumText variant="caption" muted numberOfLines={2}>
               {link.description}
@@ -137,13 +127,6 @@ export default function TrustCenterScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.draftBanner, lt?.disclaimerBox]}>
-            <Ionicons name="alert-circle-outline" size={20} color="#F59E0B" />
-            <PremiumText variant="caption" style={styles.draftBannerText}>
-              {TRUST_CENTER_DRAFT_BANNER}
-            </PremiumText>
-          </GlassSurface>
-
           <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.metaCard, lt?.companyInfo]}>
             <View style={styles.metaIconRow}>
               <Ionicons name="business-outline" size={18} color={legalUi.backIcon} />
@@ -266,20 +249,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: LDS_SPACING.md,
     gap: LDS_SPACING.sm,
   },
-  draftBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: LDS_SPACING.xs,
-    padding: LDS_SPACING.md,
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(245, 158, 11, 0.35)',
-  },
-  draftBannerText: {
-    flex: 1,
-    color: '#F59E0B',
-    lineHeight: 20,
-  },
   metaCard: {
     padding: LDS_SPACING.md,
     gap: LDS_SPACING.xxs,
@@ -358,31 +327,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  docTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 2,
-  },
   docTitle: {
     fontWeight: '600',
     flexShrink: 1,
-  },
-  draftPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: LDS_RADIUS.full,
-    backgroundColor: 'rgba(245, 158, 11, 0.18)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(245, 158, 11, 0.4)',
-  },
-  draftPillText: {
-    color: '#F59E0B',
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    marginBottom: 2,
   },
   bottomPad: {
     height: LDS_SPACING.xl,

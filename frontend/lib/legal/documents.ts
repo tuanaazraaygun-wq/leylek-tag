@@ -1,10 +1,9 @@
 import type { LegalRegistryDocument, LegalRegistryDocumentId } from './legalDocumentTypes';
 import {
-  LEGAL_DRAFT_VERSION,
   LEGAL_LAST_UPDATED,
   LEGAL_PRODUCT_DISPLAY_NAME,
+  LEGAL_REGISTRY_RELEASE_UPDATED,
 } from './brand';
-
 const PN = LEGAL_PRODUCT_DISPLAY_NAME;
 
 const COMPANY = 'Karekod Teknoloji ve Yazılım A.Ş.';
@@ -14,13 +13,6 @@ const SUPPORT_CONTACT = 'info@karekodteknoloji.com · 0850 307 80 29';
 const ACCOUNT_ACTION_NOTICE =
   `Şirket; işbu metin kapsamındaki kuralların ihlali, mevzuata aykırılık şüphesi veya makul güvenlik gerekçesi bulunması halinde hesabı incelemeye alabilir, geçici olarak askıya alabilir veya sonlandırabilir. İşlem gerekçesi mümkün olduğunca kullanıcıya bildirilir. Kullanıcı, ${SUPPORT_CONTACT} üzerinden itiraz ve destek talebinde bulunabilir. Şirket, keyfi veya sınırsız hesap kapatma uygulamaz.`;
 
-const DRAFT_META = {
-  version: LEGAL_DRAFT_VERSION,
-  lastUpdated: '09/07/2026',
-  company: COMPANY,
-  lawyerReviewRequired: true,
-} as const;
-
 const PRODUCTION_META = {
   version: '1.0.0',
   lastUpdated: LEGAL_LAST_UPDATED,
@@ -28,11 +20,14 @@ const PRODUCTION_META = {
   lawyerReviewRequired: false,
 } as const;
 
-const DRAFT_PREAMBLE =
-  'Bu metin taslak niteliğindedir ve nitelikli hukukçu incelemesi tamamlanana kadar bağlayıcı hukuki dayanak olarak kullanılmamalıdır.';
+const REGISTRY_RELEASE_META = {
+  version: '1.0.0',
+  lastUpdated: LEGAL_REGISTRY_RELEASE_UPDATED,
+  company: COMPANY,
+  lawyerReviewRequired: false,
+} as const;
 
-export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegistryDocument> = {
-  kvkk: {
+export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegistryDocument> = {  kvkk: {
     id: 'kvkk',
     title: 'KVKK Aydınlatma Metni',
     subtitle: 'Kişisel verilerin işlenmesine ilişkin aydınlatma',
@@ -146,16 +141,14 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
   'terms-user': {
     id: 'terms-user',
     title: 'Kullanıcı Sözleşmesi',
-    subtitle: 'Platform kullanım koşulları ve kullanıcı yükümlülükleri (avukat taslağı)',
+    subtitle: 'Platform kullanım koşulları ve kullanıcı yükümlülükleri',
     readingTimeMinutes: 14,
-    ...DRAFT_META,
+    ...REGISTRY_RELEASE_META,
     sections: [
       {
         title: 'Madde 1 — Taraflar',
         body:
-          `${DRAFT_PREAMBLE}\n\n` +
-          `İşbu Kullanıcı Sözleşmesi; ${COMPANY} (“Şirket”) ile ${PN} mobil uygulamasına üye olan ve platformu kullanan gerçek kişi (“Kullanıcı”) arasında elektronik ortamda kurulmuştur.`,
-      },
+          `İşbu Kullanıcı Sözleşmesi; ${COMPANY} (“Şirket”) ile ${PN} mobil uygulamasına üye olan ve platformu kullanan gerçek kişi (“Kullanıcı”) arasında elektronik ortamda kurulmuştur.`,      },
       {
         title: 'Madde 2 — Tanımlar',
         body:
@@ -275,16 +268,14 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
   'terms-driver': {
     id: 'terms-driver',
     title: 'Sürücü Sözleşmesi',
-    subtitle: 'Gönüllü sürücü profili, belge yükümlülükleri ve sorumluluklar (avukat taslağı)',
+    subtitle: 'Gönüllü sürücü profili, belge yükümlülükleri ve sorumluluklar',
     readingTimeMinutes: 12,
-    ...DRAFT_META,
+    ...REGISTRY_RELEASE_META,
     sections: [
       {
         title: 'Madde 1 — Taraflar',
         body:
-          `${DRAFT_PREAMBLE}\n\n` +
-          `İşbu Sürücü Sözleşmesi; ${COMPANY} (“Şirket”) ile ${PN} platformuna sürücü olarak kayıt olan kullanıcı (“Sürücü”) arasında elektronik ortamda kurulmuştur. Kullanıcı Sözleşmesi ile birlikte okunur.`,
-      },
+          `İşbu Sürücü Sözleşmesi; ${COMPANY} (“Şirket”) ile ${PN} platformuna sürücü olarak kayıt olan kullanıcı (“Sürücü”) arasında elektronik ortamda kurulmuştur. Kullanıcı Sözleşmesi ile birlikte okunur.`,      },
       {
         title: 'Madde 2 — Sözleşmenin konusu',
         body:
@@ -367,17 +358,15 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
   'identity-verification': {
     id: 'identity-verification',
     title: 'Kimlik Doğrulama Bilgilendirmesi',
-    subtitle: 'Sürücü profili doğrulama süreci ve veri işleme özeti (taslak)',
+    subtitle: 'Sürücü profili doğrulama süreci ve veri işleme özeti',
     readingTimeMinutes: 6,
-    ...DRAFT_META,
+    ...REGISTRY_RELEASE_META,
     sections: [
       {
         title: 'Doğrulamanın amacı',
         body:
-          `${DRAFT_PREAMBLE}\n\n` +
           'Kimlik doğrulama; topluluk odaklı yol paylaşımında profil güvenilirliğini artırmak, kötüye kullanımı azaltmak ve sürücü rozetini anlamlı kılmak içindir.\n\n' +
-          `${PN} resmi devlet onayı, sabıka kaydı sorgusu veya taksi/taşımacılık lisansı kontrolü yapmaz.`,
-      },
+          `${PN} resmi devlet onayı, sabıka kaydı sorgusu veya taksi/taşımacılık lisansı kontrolü yapmaz.`,      },
       {
         title: 'Toplanan bilgiler ve belgeler',
         body:
@@ -417,7 +406,7 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
         title: 'Kullanıcı hakları',
         body:
           'KVKK m.11 kapsamındaki haklarınızı info@karekodteknoloji.com adresine başvurarak kullanabilirsiniz.\n\n' +
-          'Doğrulama reddi veya belge güncelleme talepleri destek kanalları üzerinden iletilebilir. Detaylı prosedür hukukçu incelemesi sonrası yayımlanacaktır.',
+          'Doğrulama reddi veya belge güncelleme talepleri destek kanalları üzerinden iletilebilir. Detaylı prosedür destek ekibi tarafından paylaşılır.',
       },
     ],
   },
@@ -425,17 +414,15 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
   'contribution-iban': {
     id: 'contribution-iban',
     title: 'Katkı Payı ve IBAN Bilgilendirmesi',
-    subtitle: 'Taraflar arası masraf paylaşımı ve IBAN iletimi (taslak)',
+    subtitle: 'Taraflar arası masraf paylaşımı ve IBAN iletimi',
     readingTimeMinutes: 5,
-    ...DRAFT_META,
+    ...REGISTRY_RELEASE_META,
     sections: [
       {
         title: 'Platform tahsilat yapmaz',
         body:
-          `${DRAFT_PREAMBLE}\n\n` +
           `${PN} bir ödeme kuruluşu değildir; uygulama içinde katkı payı tahsilatı yapmaz, ödeme hesabı işletmez ve finansal aracılık sunmaz.\n\n` +
-          'Gösterilen tutarlar bilgilendirme ve taraflar arası mutabakat amaçlıdır.',
-      },
+          'Gösterilen tutarlar bilgilendirme ve taraflar arası mutabakat amaçlıdır.',      },
       {
         title: 'Katkı payı nedir',
         body:
@@ -472,17 +459,15 @@ export const LEGAL_REGISTRY_DOCUMENTS: Record<LegalRegistryDocumentId, LegalRegi
   'community-guidelines': {
     id: 'community-guidelines',
     title: 'Topluluk Kuralları',
-    subtitle: 'Güvenli, saygılı ve hukuka uygun platform kullanımı (avukat taslağı)',
+    subtitle: 'Güvenli, saygılı ve hukuka uygun platform kullanımı',
     readingTimeMinutes: 15,
-    ...DRAFT_META,
+    ...REGISTRY_RELEASE_META,
     sections: [
       {
         title: '1. Amaç',
         body:
-          `${DRAFT_PREAMBLE}\n\n` +
           `Bu Topluluk Kuralları; ${PN} platformunun güvenli, saygılı ve hukuka uygun şekilde kullanılmasını sağlamak amacıyla hazırlanmıştır. Platformu kullanan her kullanıcı, bu kuralları okuduğunu, anladığını ve kabul ettiğini beyan eder.\n\n` +
-          `${PN}; aynı güzergâhta seyahat etmek isteyen kullanıcıların birbirleriyle iletişim kurmasına teknik altyapı sağlayan dijital bir platformdur. Amaç; güvenli yol paylaşımını teşvik etmek, saygılı davranışı desteklemek ve hukuka uygun bir topluluk oluşturmaktır.`,
-      },
+          `${PN}; aynı güzergâhta seyahat etmek isteyen kullanıcıların birbirleriyle iletişim kurmasına teknik altyapı sağlayan dijital bir platformdur. Amaç; güvenli yol paylaşımını teşvik etmek, saygılı davranışı desteklemek ve hukuka uygun bir topluluk oluşturmaktır.`,      },
       {
         title: '2. Saygılı davranış ilkesi',
         body:

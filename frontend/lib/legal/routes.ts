@@ -42,7 +42,7 @@ export function getRegistryDocumentRoute(id: LegalRegistryDocumentId): string {
   return REGISTRY_ROUTE_MAP[id];
 }
 
-/** Auth consent checkbox → in-app legal route (terms → draft Kullanıcı Sözleşmesi). */
+/** Auth consent checkbox → in-app legal route (Kullanıcı Sözleşmesi). */
 export function getAuthLegalDocRoute(doc: 'kvkk' | 'privacy' | 'terms'): string {
   if (doc === 'terms') return LEGAL_ROUTES.termsUser;
   if (doc === 'privacy') return LEGAL_ROUTES.privacy;

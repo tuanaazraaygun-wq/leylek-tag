@@ -5,9 +5,6 @@ import { LEGAL_ROUTES } from './routes';
 export const TRUST_CENTER_SUMMARY =
   `${LEGAL_PRODUCT_DISPLAY_NAME}, gönüllü yol paylaşımı ve kişi eşleştirme için güven, iletişim ve eşleşme altyapısı sağlar.`;
 
-export const TRUST_CENTER_DRAFT_BANNER =
-  'Aşağıdaki taslak belgeler nitelikli hukukçu incelemesi beklemektedir. Mevcut Gizlilik, KVKK ve Hesap Silme sayfaları ayrı sürümlerle yönetilmektedir.';
-
 export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
   {
     id: 'platform',
@@ -17,10 +14,9 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
       {
         id: 'terms-user',
         title: 'Kullanıcı Sözleşmesi',
-        description: 'Üyelik, roller, katkı payı ve sorumluluklar (avukat taslağı)',
+        description: 'Üyelik, roller, katkı payı ve sorumluluklar',
         route: LEGAL_ROUTES.termsUser,
         icon: 'document-text-outline',
-        isDraft: true,
       },
       {
         id: 'privacy',
@@ -56,10 +52,9 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
       {
         id: 'terms-driver',
         title: 'Sürücü Sözleşmesi',
-        description: 'Ehliyet, sigorta, trafik ve belge yükümlülükleri (avukat taslağı)',
+        description: 'Ehliyet, sigorta, trafik ve belge yükümlülükleri',
         route: LEGAL_ROUTES.termsDriver,
         icon: 'car-outline',
-        isDraft: true,
       },
       {
         id: 'identity-verification',
@@ -67,7 +62,6 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
         description: 'Belge inceleme ve doğrulama süreci',
         route: LEGAL_ROUTES.identityVerification,
         icon: 'shield-checkmark-outline',
-        isDraft: true,
       },
     ],
   },
@@ -82,7 +76,6 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
         description: 'Nakit, havale ve taraflar arası mutabakat',
         route: LEGAL_ROUTES.contributionIban,
         icon: 'wallet-outline',
-        isDraft: true,
       },
     ],
   },
@@ -94,10 +87,9 @@ export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
       {
         id: 'community-guidelines',
         title: 'Topluluk Kuralları',
-        description: 'Saygılı davranış, güvenlik ve hukuka uygun kullanım (avukat taslağı)',
+        description: 'Saygılı davranış, güvenlik ve hukuka uygun kullanım',
         route: LEGAL_ROUTES.communityGuidelines,
         icon: 'people-outline',
-        isDraft: true,
       },
     ],
   },
