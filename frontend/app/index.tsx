@@ -463,13 +463,21 @@ function _approvedVehicleKindsFromDriverDetails(dd: Record<string, unknown>): ('
   return out;
 }
 
-/** Rol seçimi — onaylı sürücü araç türleri (approved_vehicle_kinds SSOT). */
+/** Rol seçimi — onaylı sürücü araç türleri (backend _kyc_approved_vehicle_kinds_from_details ile hizalı). */
 function driverApprovedVehicleKindsForRoleSelect(
   user: User | null | undefined,
 ): ('car' | 'motorcycle')[] {
   const dd = user?.driver_details;
   if (!dd || typeof dd !== 'object' || Array.isArray(dd)) return [];
-  return _approvedVehicleKindsFromDriverDetails(dd as Record<string, unknown>);
+  const d = dd as Record<string, unknown>;
+  const fromList = _approvedVehicleKindsFromDriverDetails(d);
+  if (fromList.length > 0) return fromList;
+  const kycStatus = String(d.kyc_status ?? '').trim().toLowerCase();
+  if (kycStatus === 'approved') {
+    const kycVk = _canonicalDriverVehicleKindForGuard(d.kyc_vehicle_kind);
+    if (kycVk) return [kycVk];
+  }
+  return [];
 }
 
   /** Onaylı sürücü kaydı (yolcu modunda TDM «Sürücülerim» kartı guard). */
@@ -4501,30 +4509,18 @@ export default function App() {
     const handleRoleSelect = (role: 'passenger' | 'driver') => {
       if (roleContinueBusy) return;
       roleScreenHaptic();
-      setSelectedRole(role);
 
       if (role === 'driver') {
         const approvedKinds = driverApprovedVehicleKindsForRoleSelect(user);
         if (approvedKinds.length === 1) {
           const soleKind = approvedKinds[0]!;
           setRideVehicleKind(soleKind);
-          Animated.sequence([
-            Animated.timing(scaleAnim, {
-              toValue: 0.95,
-              duration: 100,
-              useNativeDriver: true,
-            }),
-            Animated.spring(scaleAnim, {
-              toValue: 1,
-              friction: 3,
-              useNativeDriver: true,
-            }),
-          ]).start();
           void continueRoleSelect('driver', soleKind);
           return;
         }
       }
 
+      setSelectedRole(role);
       setRideVehicleKind(null);
 
       Animated.sequence([
