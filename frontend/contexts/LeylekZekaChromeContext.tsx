@@ -148,7 +148,6 @@ export function useLeylekZekaChrome(): Ctx {
 
 /** `app/*.tsx` tam sayfa rotaları — ana `app/index.tsx` shell’i değil */
 const STANDALONE_ROUTE_PREFIXES = [
-  '/admin',
   '/profile',
   '/settings-hub',
   '/history',
