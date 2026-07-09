@@ -12,6 +12,14 @@ export const LEGAL_COMPANY_META = {
 /** Informational badge for in-app legal routes. */
 export const LEGAL_DOC_LAST_UPDATED = LEGAL_LAST_UPDATED;
 
+/** Destek ekranı — iletişim kanalları bilgilendirmesi */
+export const SUPPORT_CHANNELS_INTRO =
+  'KVKK başvuruları, hesap silme, teknik sorunlar ve güvenlik bildirimleri için aşağıdaki kanalları kullanabilirsiniz.';
+
+/** Destek ekranı — 112 uyarısı ve platform sınırı */
+export const SUPPORT_EMERGENCY_NOTICE =
+  `Yaşam veya ciddi güvenlik riski durumunda öncelikle 112 veya yerel acil hatlarını arayın. ${LEGAL_PRODUCT_DISPLAY_NAME} bir acil müdahale veya kolluk kuvveti değildir.`;
+
 export const PAYMENT_LEGAL_DISCLAIMER_LINES = [
   `${LEGAL_PRODUCT_DISPLAY_NAME} platform tahsilat yapmaz.`,
   'Nakit veya IBAN katkı payı mutabakatı taraflar arasındadır.',

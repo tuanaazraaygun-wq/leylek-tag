@@ -15,7 +15,7 @@ import {
 } from '../components/auth/premiumAuthStyles';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
-import { LEGAL_COMPANY_META } from '../lib/legalUxCopy';
+import { LEGAL_COMPANY_META, SUPPORT_CHANNELS_INTRO, SUPPORT_EMERGENCY_NOTICE } from '../lib/legalUxCopy';
 import { useSettingsTheme } from '../lib/theme/useSettingsTheme';
 
 export default function SupportScreen() {
@@ -72,9 +72,7 @@ export default function SupportScreen() {
               {LEGAL_COMPANY_META.address}
             </PremiumText>
             <PremiumText variant="caption" muted style={styles.info}>
-              KVKK başvuruları, hesap silme, teknik sorunlar ve güvenlik bildirimleri için aşağıdaki
-              kanalları kullanabilirsiniz. Acil güvenlik risklerinde 112 veya yerel acil hatları arayın;
-              LeylekTAG acil müdahale birimi değildir.
+              {SUPPORT_CHANNELS_INTRO} {SUPPORT_EMERGENCY_NOTICE}
             </PremiumText>
             <Pressable onPress={() => void openEmail()} style={styles.contactRow}>
               <Ionicons name="mail-outline" size={18} color={legalUi.accent} />
