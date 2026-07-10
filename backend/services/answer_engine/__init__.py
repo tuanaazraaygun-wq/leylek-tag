@@ -4,6 +4,7 @@ Leylek Yolculuk Answer Engine — kural tabanlı deterministic yardım yanıtlar
 from __future__ import annotations
 
 from .coverage import get_coverage_payload
+from .feature_intents import FEATURE_INTENT_DEFINITIONS
 from .matcher import ResolvedAnswer, try_resolve
 from .telemetry import (
     get_answer_engine_telemetry_admin_summary,
@@ -14,6 +15,7 @@ from .telemetry import (
 __all__ = [
     "try_resolve",
     "ResolvedAnswer",
+    "FEATURE_INTENT_DEFINITIONS",
     "get_coverage_payload",
     "get_answer_engine_telemetry_counters",
     "get_answer_engine_telemetry_admin_summary",

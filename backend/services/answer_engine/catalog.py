@@ -1099,3 +1099,8 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
         default_template=SAFETY_AND_TRUST_BASICS,
     ),
 )
+
+# Feature-knowledge intents (manifest-backed) — prepended for tie-break priority on specific phrases.
+from .feature_intents import FEATURE_INTENT_DEFINITIONS  # noqa: E402
+
+INTENT_DEFINITIONS = FEATURE_INTENT_DEFINITIONS + INTENT_DEFINITIONS

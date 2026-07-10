@@ -87,6 +87,84 @@ INTENT_CONTRACT_HINTS: dict[str, dict[str, str]] = {
         "suggested_route": "/support",
         "requires_support": "true",
     },
+    # Feature-knowledge intents
+    "product_identity": {"category": "product"},
+    "vehicle_registry_araclarim": {
+        "category": "product",
+        "suggested_route": "/driver-vehicles",
+    },
+    "driver_panel_map_behavior": {"category": "product"},
+    "card_payment_unavailable": {"category": "unavailable"},
+    "contribution_payment_model": {
+        "category": "product",
+        "suggested_route": "/contribution-iban",
+    },
+    "driver_package_unavailable": {"category": "unavailable"},
+    "earnings_dashboard_unavailable": {
+        "category": "unavailable",
+        "suggested_route": "/history",
+    },
+    "trip_history_operational": {
+        "category": "product",
+        "suggested_route": "/history",
+    },
+    "legal_privacy": {
+        "category": "legal_support",
+        "suggested_route": "/privacy",
+    },
+    "legal_kvkk": {
+        "category": "legal_support",
+        "suggested_route": "/kvkk",
+    },
+    "legal_terms_user": {
+        "category": "legal_support",
+        "suggested_route": "/terms-user",
+    },
+    "legal_terms_driver": {
+        "category": "legal_support",
+        "suggested_route": "/terms-driver",
+    },
+    "legal_identity_verification": {
+        "category": "legal_support",
+        "suggested_route": "/identity-verification",
+    },
+    "legal_contribution_iban": {
+        "category": "legal_support",
+        "suggested_route": "/contribution-iban",
+    },
+    "legal_community_guidelines": {
+        "category": "legal_support",
+        "suggested_route": "/community-guidelines",
+    },
+    "legal_delete_account": {
+        "category": "legal_support",
+        "suggested_route": "/delete-account",
+        "safety_level": "elevated",
+    },
+    "legal_trust_center": {
+        "category": "legal_support",
+        "suggested_route": "/trust-center",
+    },
+    "support_contacts": {
+        "category": "legal_support",
+        "suggested_route": "/support",
+        "requires_support": "true",
+    },
+    "unavailable_features_summary": {"category": "unavailable"},
+    "account_state_unverified": {
+        "category": "account",
+        "requires_support": "true",
+        "suggested_route": "/support",
+        "blocked_claim_reason": "account_state_verified_without_api",
+        "safety_level": "elevated",
+    },
+    "live_trip_state_unverified": {
+        "category": "live_trip",
+        "requires_support": "true",
+        "suggested_route": "/support",
+        "blocked_claim_reason": "trip_state_verified_without_api",
+        "safety_level": "elevated",
+    },
 }
 
 _UNAVAILABLE_CLAIM_REASONS = frozenset(
@@ -352,6 +430,14 @@ def build_leylek_zeka_response_metadata(
             suggested_route = normalize_support_route(hints["suggested_route"])
         if hints.get("requires_support") == "true":
             requires_support = True
+        if hints.get("blocked_claim_reason"):
+            blocked_claim_reason = hints["blocked_claim_reason"]
+        if category == "account":
+            account_used = False
+        if category == "live_trip" and origin == "answer_engine":
+            # Unverified live-state refusals must not claim live context was used.
+            if intent_id == "live_trip_state_unverified":
+                live_used = False
     elif origin == "high_confidence":
         grounded = True
         confidence = "high"

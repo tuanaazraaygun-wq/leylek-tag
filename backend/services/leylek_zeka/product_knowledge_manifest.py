@@ -171,19 +171,19 @@ _FORBIDDEN_CLAIMS: tuple[str, ...] = (
 _UNAVAILABLE_FEATURES: tuple[UnavailableFeature, ...] = (
     UnavailableFeature(
         id="in_app_card_payment",
-        summary="Uygulama içi kart ile katkı tahsilatı yoktur; kart ödeme mevcut değildir.",
+        summary="Uygulama içi kart tahsilatı yoktur; kartla ödeme yapılamaz.",
     ),
     UnavailableFeature(
         id="driver_package_purchase_iap",
-        summary="Sürücü paket satın alma veya uygulama içi ödeme (IAP) mevcut değildir.",
+        summary="Sürücü paketi için uygulama içi ödeme (IAP) mevcut değildir.",
     ),
     UnavailableFeature(
         id="earnings_dashboard",
-        summary="Sürücü kazanç paneli / gelir özeti ekranı yoktur.",
+        summary="Ayrı bir sürücü gelir özeti veya kazanç ekranı yoktur.",
     ),
     UnavailableFeature(
         id="legacy_driver_verify_route",
-        summary="Eski /driver-verify rotası kaldırılmıştır; kullanılmaz.",
+        summary="Eski sürücü doğrulama rotası kaldırılmıştır; kullanılmaz.",
     ),
     UnavailableFeature(
         id="zeka_automatic_action_completion",
@@ -198,7 +198,7 @@ _SUPPORTED_FEATURE_FACTS: tuple[SupportedFeatureFact, ...] = (
     ),
     SupportedFeatureFact(
         id="live_api_host",
-        summary="Canlı API https://api.karekodteknoloji.com adresindedir; api.leylektag.com önerilmez.",
+        summary="Canlı API https://api.karekodteknoloji.com adresindedir; eski host önerilmez.",
     ),
     SupportedFeatureFact(
         id="contribution_cash_iban",
@@ -207,6 +207,14 @@ _SUPPORTED_FEATURE_FACTS: tuple[SupportedFeatureFact, ...] = (
     SupportedFeatureFact(
         id="driver_panel_v2_map_first",
         summary="Sürücü Paneli V2 harita önceliklidir; sokak seviyesi zoom; pan/pinch kullanıcıda; tekrarlayan otomatik zoom yok.",
+    ),
+    SupportedFeatureFact(
+        id="driver_map_camera_control",
+        summary=(
+            "GPS güncellemesi işaretçi/veriyi taşır; kamera pan ve pinch kullanıcı kontrolündedir. "
+            "Yeniden ortala sokak seviyesi merkeze döner. Normal eşleşmede kamera kullanıcıda kalır; "
+            "aktif adım adım navigasyonda dinamik heading/zoom olabilir. Harita her zaman otomatik takip etmez."
+        ),
     ),
     SupportedFeatureFact(
         id="vehicle_registry_araclarim",
