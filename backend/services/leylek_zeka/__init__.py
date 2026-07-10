@@ -13,6 +13,14 @@ from .product_knowledge_manifest import (
     is_forbidden_claim,
     is_forbidden_user_term,
 )
+from .reply_guard import (
+    admin_kb_body_allowed,
+    find_forbidden_claim_hits,
+    find_user_reply_policy_violations,
+    guard_user_visible_reply,
+    is_user_reply_policy_violation,
+    safe_fail_closed_reply,
+)
 
 __all__ = [
     "LeylekZekaProductKnowledgeManifest",
@@ -23,4 +31,10 @@ __all__ = [
     "is_forbidden_claim",
     "get_supported_product_fact",
     "get_unavailable_feature",
+    "admin_kb_body_allowed",
+    "find_forbidden_claim_hits",
+    "find_user_reply_policy_violations",
+    "guard_user_visible_reply",
+    "is_user_reply_policy_violation",
+    "safe_fail_closed_reply",
 ]

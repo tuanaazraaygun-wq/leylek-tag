@@ -1,5 +1,5 @@
 """
-LeylekTag Answer Engine — kural tabanlı deterministic yardım yanıtları.
+Leylek Yolculuk Answer Engine — kural tabanlı deterministic yardım yanıtları.
 """
 from __future__ import annotations
 

@@ -404,7 +404,8 @@ _PHRASE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "taslak",
-        re.compile(r"\btaslak\b", re.IGNORECASE),
+        # Legal draft wording — whole word; allow "taslak değil(dir)".
+        re.compile(r"\btaslak\b(?!\s+de[gğ]il)", re.IGNORECASE),
     ),
 )
 

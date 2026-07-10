@@ -1,5 +1,5 @@
 """
-LeylekTag Answer Engine — intent kataloğu (tanımlar INTENT_DEFINITIONS içinde).
+Leylek Yolculuk Answer Engine — intent kataloğu (tanımlar INTENT_DEFINITIONS içinde).
 Genişletmek için INTENT_DEFINITIONS listesine yeni IntentDefinition eklenir.
 
 Bakım:
@@ -128,7 +128,7 @@ TEKLIF_BRIEF = """Teklif
 
 Eşleşme, yolcunun bir teklifi kabul etmesiyle oluşur."""
 
-GUVEN_AL_EXPLAINED = """Güven Al, normal TAG yolculuğunda yolcu ve sürücünün birbirinden kısa süreli görüntülü görüşme talep edebilmesini sağlar.
+GUVEN_AL_EXPLAINED = """Güven Al, şehir içi Leylek Yolculuk yolculuğunda yolcu ve sürücünün birbirinden kısa süreli görüntülü görüşme talep edebilmesini sağlar.
 
 Butona basıldığında karşı tarafa sizden güven almak istiyor benzeri bir istek gider.
 
@@ -138,7 +138,7 @@ Bu özellik acil servis, polis, çağrı merkezi, resmi güvenlik bildirimi veya
 
 Acil durumda 112 veya ilgili resmi kanallar kullanılmalıdır."""
 
-GUVEN_AL_EXPLAINED_VOICE = """Güven Al, normal TAG yolculuğunda yolcu ve sürücünün birbirinden kısa süreli görüntülü görüşme talep etmesini sağlar.
+GUVEN_AL_EXPLAINED_VOICE = """Güven Al, şehir içi Leylek Yolculuk yolculuğunda yolcu ve sürücünün birbirinden kısa süreli görüntülü görüşme talep etmesini sağlar.
 
 Butona basınca karşı tarafa sizden güven almak istiyor isteği gider. Kabul edilirse yaklaşık 5 dakikalık görüntülü görüşme başlar.
 
@@ -148,13 +148,13 @@ INTERCITY_ROLE_QUESTION = """Şehir dışı Leylek Teklif Sende akışı için y
 
 Yolcu olarak mı şehir dışına gitmek istiyorsunuz, yoksa sürücü olarak teklif vermek/açmak mı istiyorsunuz?"""
 
-INTERCITY_ROLE_QUESTION_VOICE = """Şehir dışı Leylek Teklif Sende, şehir içi TAG’den ayrıdır ve rol ekranının altındaki karttan açılır.
+INTERCITY_ROLE_QUESTION_VOICE = """Şehir dışı Leylek Teklif Sende, şehir içi Leylek Yolculuk akışından ayrıdır ve rol ekranının altındaki karttan açılır.
 
 Yolcu musunuz, sürücü olarak mı teklif vermek istiyorsunuz?"""
 
 PASSENGER_INTERCITY_LEYLEK_OFFER = """Yolcu olarak şehir dışı Leylek Teklif Sende
 
-Şehir dışı yolculuk, şehir içi normal TAG’den ayrıdır.
+Şehir dışı yolculuk, şehir içi Leylek Yolculuk akışından ayrıdır.
 
 1) Rol seçimi ekranının altındaki Leylek Teklif Sende kartına dokunun.
 2) Yolcu olarak şehir dışı talep oluşturun.
@@ -165,7 +165,7 @@ PASSENGER_INTERCITY_LEYLEK_OFFER = """Yolcu olarak şehir dışı Leylek Teklif 
 
 Eşleşme veya süre garantisi verilmez."""
 
-PASSENGER_INTERCITY_LEYLEK_OFFER_VOICE = """Yolcu olarak şehir dışı yolculuk, şehir içi normal TAG’den ayrıdır.
+PASSENGER_INTERCITY_LEYLEK_OFFER_VOICE = """Yolcu olarak şehir dışı yolculuk, şehir içi Leylek Yolculuk akışından ayrıdır.
 
 Rol seçimi ekranının altındaki Leylek Teklif Sende kartını açıp rota, tarih/saat ve notları girersiniz. Eşleşme sonrası Muhabbet/chat ve uygulamadaki QR ile görüşme adımlarını takip edersiniz.
 
@@ -173,7 +173,7 @@ Eşleşme veya süre garantisi verilmez."""
 
 DRIVER_INTERCITY_LEYLEK_OFFER = """Sürücü olarak şehir dışı Leylek Teklif Sende
 
-Şehir dışı yolculuk, şehir içi normal TAG’den ayrıdır.
+Şehir dışı yolculuk, şehir içi Leylek Yolculuk akışından ayrıdır.
 
 1) Rol seçimi ekranının altındaki Leylek Teklif Sende kartına dokunun.
 2) Sürücü olarak şehir dışı teklif/talep alanını kullanın.
@@ -184,41 +184,41 @@ DRIVER_INTERCITY_LEYLEK_OFFER = """Sürücü olarak şehir dışı Leylek Teklif
 
 Bölge yönlendirmesi, garanti kazanç veya garanti eşleşme söylenmez."""
 
-DRIVER_INTERCITY_LEYLEK_OFFER_VOICE = """Sürücü olarak şehir dışı Leylek Teklif Sende, şehir içi normal TAG’den ayrı bir akıştır.
+DRIVER_INTERCITY_LEYLEK_OFFER_VOICE = """Sürücü olarak şehir dışı Leylek Teklif Sende, şehir içi Leylek Yolculuk akışından ayrı bir akıştır.
 
 Rol seçimi ekranının altındaki karttan açılır. Rota, tarih/saat, araç uygunluğu ve yolcu notlarını kontrol edip uygunsa teklif verirsiniz; eşleşme sonrası Muhabbet/chat ve uygulama adımlarını takip edersiniz.
 
 Süre, kazanç veya bölge yönlendirmesi garantisi verilmez."""
 
-TAG_VS_INTERCITY_LEYLEK_OFFER = """Şehir içi TAG ve Leylek Teklif Sende farkı
+TAG_VS_INTERCITY_LEYLEK_OFFER = """Şehir içi Leylek Yolculuk ve Leylek Teklif Sende farkı
 
-Şehir içi normal TAG:
-Yakın mesafe şehir içi yolcu/sürücü eşleşme ve normal TAG yolculuk akışıdır.
+Şehir içi Leylek Yolculuk:
+Yakın mesafe şehir içi yolcu/sürücü eşleşme ve normal şehir içi yolculuk akışıdır.
 
 Leylek Teklif Sende:
 Şehir dışı/şehirler arası yolculuklar için ayrı teklif/talep alanıdır.
 Rol seçimi ekranının altındaki karttan açılır.
 Eşleşme sonrası Muhabbet/chat ve ilgili yolculuk adımları kullanılır."""
 
-TAG_VS_INTERCITY_LEYLEK_OFFER_VOICE = """Şehir içi normal TAG, yakın mesafe şehir içi yolcu/sürücü eşleşme akışıdır.
+TAG_VS_INTERCITY_LEYLEK_OFFER_VOICE = """Şehir içi Leylek Yolculuk, yakın mesafe şehir içi yolcu/sürücü eşleşme akışıdır.
 
 Leylek Teklif Sende ise şehir dışı veya şehirler arası yolculuklar için ayrı teklif alanıdır. Rol seçimi ekranının altındaki karttan açılır ve Muhabbet/chat ile uygulama adımları kullanılır.
 
-Kısaca: şehir içi TAG ve şehir dışı Leylek Teklif Sende ayrı akışlardır."""
+Kısaca: şehir içi Leylek Yolculuk ve şehir dışı Leylek Teklif Sende ayrı akışlardır."""
 
-LEYLEKTAG_COMPANY_INFO = """LeylekTag, Karekod Teknoloji ve Yazılım Anonim Şirketi tarafından geliştirilmektedir.
+LEYLEKTAG_COMPANY_INFO = """Leylek Yolculuk, Karekod Teknoloji ve Yazılım A.Ş. tarafından geliştirilmektedir.
 
 Şirket 2025 yılında Ankara’da, Türkiye’de yolculuk paylaşımı, güvenli dijital eşleşme ve yerli mobil platform teknolojileri geliştirmek amacıyla kurulmuştur.
 
-LeylekTag içinde yapay zeka destekli rehber sistemleri, eşleşme altyapıları, gerçek zamanlı iletişim teknolojileri, QR doğrulama, sesli asistan ve mobil yolculuk deneyimi çözümleri bulunmaktadır.
+Leylek Yolculuk içinde yapay zeka destekli rehber sistemleri, eşleşme altyapıları, gerçek zamanlı iletişim teknolojileri, QR doğrulama, sesli asistan ve mobil yolculuk deneyimi çözümleri bulunmaktadır.
 
 Amaç; Türkiye’de güvenli, erişilebilir ve yerli ulaşım teknolojileri geliştirmektir."""
 
-LEYLEKTAG_COMPANY_INFO_VOICE = """LeylekTag, Karekod Teknoloji ve Yazılım Anonim Şirketi tarafından geliştirilmektedir.
+LEYLEKTAG_COMPANY_INFO_VOICE = """Leylek Yolculuk, Karekod Teknoloji ve Yazılım A.Ş. tarafından geliştirilmektedir.
 
 Şirket 2025 yılında Ankara’da kurulmuştur. Amaç; Türkiye’de güvenli, erişilebilir ve yerli ulaşım teknolojileri geliştirmektir.
 
-LeylekTag’te yapay zeka rehberi, eşleşme altyapısı, gerçek zamanlı iletişim, QR doğrulama, sesli asistan ve mobil yolculuk çözümleri bulunur."""
+Leylek Yolculuk’ta yapay zeka rehberi, eşleşme altyapısı, gerçek zamanlı iletişim, QR doğrulama, sesli asistan ve mobil yolculuk çözümleri bulunur."""
 
 MATCH_NOT_HAPPENING = """Eşleşme veya teklif gecikiyor
 
@@ -544,16 +544,16 @@ _H2SO_PHRASE_WEIGHTS: tuple[tuple[str, int], ...] = (
 INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
     IntentDefinition(
         id="leylektag_company_info",
-        title="LeylekTag şirket bilgisi",
+        title="Leylek Yolculuk şirket bilgisi",
         supported_roles=("any",),
         example_queries=(
-            "LeylekTag kim kurdu?",
+            "Leylek Yolculuk kim kurdu?",
             "LeylekTag kim tarafından geliştirildi?",
             "Hangi firma yaptı?",
             "Neden kuruldu?",
             "Hangi teknolojiler kullanılıyor?",
         ),
-        description="LeylekTag'in şirket, kuruluş amacı ve teknoloji altyapısı bilgisini açıklar.",
+        description="Leylek Yolculuk'un şirket, kuruluş amacı ve teknoloji altyapısı bilgisini açıklar.",
         match_phrases=(
             "leylek tag kim kurdu",
             "leylektag kim kurdu",
@@ -675,14 +675,14 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
     ),
     IntentDefinition(
         id="tag_vs_intercity_leylek_offer",
-        title="Şehir içi TAG ve Leylek Teklif Sende farkı",
+        title="Şehir içi Leylek Yolculuk ve Leylek Teklif Sende farkı",
         supported_roles=("any",),
         example_queries=(
             "Şehir içi TAG ile Leylek Teklifi farkı nedir?",
             "normal TAG ve şehir dışı teklif farkı",
             "şehir içi ile şehir dışı farkı",
         ),
-        description="Normal TAG şehir içi akışı ile Leylek Teklif Sende şehir dışı akışını ayırır.",
+        description="Şehir içi Leylek Yolculuk akışı ile Leylek Teklif Sende şehir dışı akışını ayırır.",
         match_phrases=(
             "şehir içi tag ile leylek teklifi fark",
             "sehir ici tag ile leylek teklifi fark",

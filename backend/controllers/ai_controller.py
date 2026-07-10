@@ -20,6 +20,11 @@ from services.answer_engine.telemetry import emit_answer_engine_resolution
 from services.leylek_zeka.product_knowledge_manifest import (
     get_leylek_zeka_product_manifest,
 )
+from services.leylek_zeka.reply_guard import (
+    brand_identity_snippet,
+    guard_user_visible_reply,
+    unsupported_feature_policy_snippet,
+)
 
 logger = logging.getLogger("server")
 
@@ -156,8 +161,11 @@ _PASSENGER_OPERATION_PHRASES = (
 )
 
 
-# Product display name from SSOT (brand wiring beyond matching is a later patch).
-_PRODUCT_NAME = get_leylek_zeka_product_manifest().product_name
+# Product identity from SSOT.
+_MANIFEST = get_leylek_zeka_product_manifest()
+_PRODUCT_NAME = _MANIFEST.product_name
+_ASSISTANT_NAME = _MANIFEST.assistant_name
+_COMPANY_NAME = _MANIFEST.company_name
 
 # Tek kaynak: system prompt + eşleşme/rol fallback’lerinde aynı kanon (teklif → yolcu kabulü).
 _ESLESME_VE_ROL = (
@@ -196,14 +204,18 @@ _YOLCU_SEC = (
 )
 
 LEYLEK_ZEKA_SYSTEM = (
-    f"Sen {_PRODUCT_NAME} uygulamasının yardımcısı Leylek Zeka'sın. Samimi, saygılı, kısa ve net konuş. "
+    f"Sen {_PRODUCT_NAME} uygulamasının yardımcısı {_ASSISTANT_NAME}'sın. "
+    f"Şirket: {_COMPANY_NAME}. Samimi, saygılı, kısa ve net konuş. "
     "Kullanıcıya uygulama içindeki yolculuk, eşleşme ve kullanım adımlarında yardımcı ol. "
     f"Uygulama dışı genel, hukuki, tıbbi veya kişisel konularda kesin yönlendirme yapma; nazikçe {_PRODUCT_NAME} "
     "içindeki konulara dön. "
-    "Bilmediğin bir şeyi uydurma. Kullanıcıyı azarlama. Gerekirse uygulama içi destek veya geri bildirim paylaşmasını öner. "
+    "Bilmediğin bir şeyi uydurma. Doğrulayamadığın hesap, KYC, yolculuk veya işlem durumunda "
+    "'Doğrulayamadım.' de. Kullanıcıyı azarlama. Gerekirse uygulama içi destek veya geri bildirim paylaşmasını öner. "
     "Eşleşme ve rol sorularında yalnızca tanımlı kanon akışı kullan: yolcu talep oluşturur, sürücü teklif gönderir, "
     "yolcu teklifi kabul eder; eşleşme yolcu kabulüyle tamamlanır. "
-    "Markdown kullanma; yıldızlı kalın başlık yazma. Düz metin ve kısa numaralı adımlar kullan.\n\n"
+    "Markdown kullanma; yıldızlı kalın başlık yazma. Düz metin ve kısa numaralı adımlar kullan.\n"
+    f"{brand_identity_snippet()}\n"
+    f"{unsupported_feature_policy_snippet()}\n\n"
     + _ESLESME_VE_ROL
 )
 
@@ -397,7 +409,7 @@ _REPLIES: dict[str, str] = {
     "eslesme_genel": _ESLESME_VE_ROL,
     "teklif": _ESLESME_VE_ROL,
     "motor_araba": (
-        "LeylekTag’te talebini veya sürücü profilini oluştururken araç tipini (örneğin motor veya otomobil) "
+        f"{_PRODUCT_NAME}'te talebini veya sürücü profilini oluştururken araç tipini (örneğin motor veya otomobil) "
         "ilgili alandan seçebilirsin; böylece sistem seni doğru tekliflerle eşleştirir.\n\n"
         "Şehir içinde trafik, park ve yolcu kapasitesi açısından ihtiyacına en uygun türü işaretlemen "
         "hem eşleşmeyi hem buluşmayı kolaylaştırır.\n\n"
@@ -411,7 +423,7 @@ _REPLIES: dict[str, str] = {
     ),
     "araba": (
         "Otomobil seçimini talep veya profil ekranındaki araç tipi alanından yap; "
-        "LeylekTag şehir içi rotalarda sana uygun sürücü veya yolcu önerilerini buna göre sıralar.\n\n"
+        f"{_PRODUCT_NAME} şehir içi rotalarda sana uygun sürücü veya yolcu önerilerini buna göre sıralar.\n\n"
         "Kapasite veya bagaj ihtiyacın varsa bunu not düşmek eşleşmeyi netleştirir.\n\n"
         "İstersen hangi araç tipinin daha uygun olduğunu söyleyeyim."
     ),
@@ -420,7 +432,7 @@ _REPLIES: dict[str, str] = {
     "kim_teklif": _KIM_TEKLIF,
     "rol_kabul_netligi": _ROL_KABUL_NETLIGI,
     "guvenlik": (
-        "LeylekTag’te yolculuğu uygulama üzerinden takip etmeni, karşı tarafın profil ve araç bilgilerini "
+        f"{_PRODUCT_NAME}'te yolculuğu uygulama üzerinden takip etmeni, karşı tarafın profil ve araç bilgilerini "
         "ekrandan teyit etmeni ve şüpheli bir durumda yolculuğu sonlandırıp bildirimde bulunmanı öneririz.\n\n"
         "Hesap doğrulama ve şikâyet kanalları güvenliği destekler; özel bilgini mesajda paylaşmaman en sağlıklısıdır.\n\n"
         "İstersen adım adım anlatayım."
@@ -438,7 +450,7 @@ _REPLIES: dict[str, str] = {
         "İstersen adım adım anlatayım."
     ),
     "sehir_ici": (
-        "LeylekTag şehir içi kısa mesafeler için optimize edilir: konumunu paylaşırsın, talebini veya "
+        f"{_PRODUCT_NAME} şehir içi kısa mesafeler için optimize edilir: konumunu paylaşırsın, talebini veya "
         "müsaitliğini işaretlersin; harita üzerinden yakın eşleşmeler önerilir.\n\n"
         "Yoğun saatlerde birkaç dakika beklemek normaldir; rota veya çıkış noktanı netleştirmek süreyi kısaltır.\n\n"
         "İstersen bu ekranı birlikte ilerleyelim."
@@ -446,7 +458,7 @@ _REPLIES: dict[str, str] = {
 }
 
 _FALLBACK_GENERIC = (
-    "Şu an sana LeylekTag içindeki yolculuk, eşleşme ve kullanım adımlarına göre kısa yanıtlar veriyorum. "
+    f"Şu an sana {_PRODUCT_NAME} içindeki yolculuk, eşleşme ve kullanım adımlarına göre kısa yanıtlar veriyorum. "
     "Eşleşme, yolculuk, araç tipi, güvenlik, iptal veya şehir içi kullanım için sorunu birkaç kelimeyle yazabilir "
     "veya alttaki önerilen sorulardan birine dokunabilirsin.\n\n"
     "İstersen adım adım anlatayım."
@@ -765,22 +777,40 @@ async def get_leylek_zeka_reply(
 
     Eşleşme/rol için answer_engine isabeti, genel yüksek güven metninden önce gelir;
     katalog kaçırırsa doğru _ESLESME_VE_ROL / rol kabul kanonu kullanılır.
+    Tüm kullanıcıya dönen metinler marka/yasak iddia korumasından geçer (kaynak etiketi korunur).
     """
     text = (user_message or "").strip()
     if not text:
-        return _FALLBACK_GENERIC, "fallback", None
+        return guard_user_visible_reply(_FALLBACK_GENERIC), "fallback", None
+
+    def _emit_and_return(
+        reply: str,
+        source: Source,
+        meta: AnswerEngineMeta | None,
+        *,
+        hit: bool,
+        intent_id: str | None,
+    ) -> tuple[str, Source, AnswerEngineMeta | None]:
+        guarded = guard_user_visible_reply(reply)
+        _emit_answer_engine_telemetry(
+            hit=hit,
+            intent_id=intent_id,
+            response_source=source,
+            context=context,
+            user_message=text,
+        )
+        return guarded, source, meta
 
     op_hit = _try_operation_snapshot_reply(text, context)
     if op_hit is not None:
         reply_text, op_meta = op_hit
-        _emit_answer_engine_telemetry(
+        return _emit_and_return(
+            reply_text,
+            "operation_snapshot",
+            op_meta,
             hit=True,
             intent_id=op_meta["intent_id"],
-            response_source="operation_snapshot",
-            context=context,
-            user_message=text,
         )
-        return reply_text, "operation_snapshot", op_meta
 
     resolved = try_resolve(text, context)
     if resolved is not None:
@@ -788,36 +818,33 @@ async def get_leylek_zeka_reply(
             "intent_id": resolved["intent_id"],
             "deterministic": True,
         }
-        _emit_answer_engine_telemetry(
+        return _emit_and_return(
+            resolved["text"],
+            "answer_engine",
+            meta,
             hit=True,
             intent_id=resolved["intent_id"],
-            response_source="answer_engine",
-            context=context,
-            user_message=text,
         )
-        return resolved["text"], "answer_engine", meta
 
     flow_hit = _high_confidence_flow_reply(text)
     if flow_hit is not None:
-        _emit_answer_engine_telemetry(
+        return _emit_and_return(
+            flow_hit,
+            "fallback",
+            None,
             hit=False,
             intent_id=None,
-            response_source="fallback",
-            context=context,
-            user_message=text,
         )
-        return flow_hit, "fallback", None
 
     kb_hit = try_match_admin_kb(text)
     if kb_hit:
-        _emit_answer_engine_telemetry(
+        return _emit_and_return(
+            kb_hit,
+            "admin_kb",
+            None,
             hit=False,
             intent_id=None,
-            response_source="admin_kb",
-            context=context,
-            user_message=text,
         )
-        return kb_hit, "admin_kb", None
 
     system_extra = _context_system_addon(context)
 
@@ -825,14 +852,13 @@ async def get_leylek_zeka_reply(
     logger.info("Leylek Zeka: OPENAI_API_KEY %s", "var" if api_key else "yok")
     if not api_key:
         logger.info("Leylek Zeka: OPENAI_API_KEY yok — fallback yanıt")
-        _emit_answer_engine_telemetry(
+        return _emit_and_return(
+            fallback_reply(text, context),
+            "fallback",
+            None,
             hit=False,
             intent_id=None,
-            response_source="fallback",
-            context=context,
-            user_message=text,
         )
-        return fallback_reply(text, context), "fallback", None
 
     try:
         reply = await _call_openai(
@@ -841,24 +867,22 @@ async def get_leylek_zeka_reply(
             system_extra=system_extra,
         )
         logger.info("Leylek Zeka: OpenAI request başarılı")
-        _emit_answer_engine_telemetry(
+        return _emit_and_return(
+            reply,
+            "openai",
+            None,
             hit=False,
             intent_id=None,
-            response_source="openai",
-            context=context,
-            user_message=text,
         )
-        return reply, "openai", None
     except LeylekZekaError as e:
         logger.info("Leylek Zeka: OpenAI kullanılamadı (%s) — fallback", e)
-        _emit_answer_engine_telemetry(
+        return _emit_and_return(
+            fallback_reply(text, context),
+            "fallback",
+            None,
             hit=False,
             intent_id=None,
-            response_source="fallback",
-            context=context,
-            user_message=text,
         )
-        return fallback_reply(text, context), "fallback", None
 
 
 async def call_leylek_zeka(

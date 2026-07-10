@@ -13,6 +13,7 @@ import re
 from typing import Any
 
 from services.answer_engine.normalize import normalize_query
+from services.leylek_zeka.reply_guard import admin_kb_body_allowed
 
 logger = logging.getLogger("server")
 
@@ -150,6 +151,12 @@ def try_match_admin_kb(user_message: str) -> str | None:
             continue
         body = (row.get("body") or "").strip()
         if not body:
+            continue
+        if not admin_kb_body_allowed(body):
+            logger.info(
+                "admin_kb: yasaklı marka/iddia içeren gövde atlandı (priority=%s)",
+                row.get("priority"),
+            )
             continue
         for ph in phrases:
             if not isinstance(ph, str):

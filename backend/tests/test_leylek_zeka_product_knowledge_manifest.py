@@ -156,6 +156,7 @@ def test_legal_truth() -> None:
     ):
         assert doc in legal.documents
     assert is_forbidden_user_term("Bu belge taslak durumundadır")
+    assert not is_forbidden_user_term("Belgeler taslak değildir")
     assert is_forbidden_claim("legal_outcome_guaranteed")
 
 
