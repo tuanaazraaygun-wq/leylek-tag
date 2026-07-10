@@ -102,7 +102,7 @@ Talep yayında değilse teklif gelmez; iptal veya yanlış ekrandaysan talep ak�
 Sonraki adım
 Kabul sonrası buluşma ve yolculuk ekranlarını izle; adres için uygulama içi mesajı kullan."""
 
-MATCHING_WORKS = """LeylekTag eşleşme akışı
+MATCHING_WORKS = """Leylek Yolculuk eşleşme akışı
 
 1) Yolcu talep oluşturur.
 2) Sürücüler talepleri görür.
@@ -111,6 +111,7 @@ MATCHING_WORKS = """LeylekTag eşleşme akışı
 
 Notlar
 - Yolcu teklif göndermez.
+- Eşleşme sürücünün talep onayıyla oluşmaz.
 - Eşleşme, yolcunun bir teklifi kabul etmesiyle tamamlanır (sürücü teklifi gönderir; eşleşmeyi yolcu kabulü tamamlar)."""
 
 WHO_SENDS_OFFER_SHORT = """Kim teklif gönderir?

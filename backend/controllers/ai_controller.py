@@ -17,6 +17,9 @@ import httpx
 from services.admin_leylek_zeka_kb import try_match_admin_kb
 from services.answer_engine import try_resolve
 from services.answer_engine.telemetry import emit_answer_engine_resolution
+from services.leylek_zeka.product_knowledge_manifest import (
+    get_leylek_zeka_product_manifest,
+)
 
 logger = logging.getLogger("server")
 
@@ -153,20 +156,53 @@ _PASSENGER_OPERATION_PHRASES = (
 )
 
 
-# Tek kaynak: system prompt + eşleşme/rol ile ilgili fallback’lerde aynı kanon metin (tekrarlanmaz).
+# Product display name from SSOT (brand wiring beyond matching is a later patch).
+_PRODUCT_NAME = get_leylek_zeka_product_manifest().product_name
+
+# Tek kaynak: system prompt + eşleşme/rol fallback’lerinde aynı kanon (teklif → yolcu kabulü).
 _ESLESME_VE_ROL = (
+    f"{_PRODUCT_NAME} eşleşmesi şöyle işler: "
     "Yolcu uygulama üzerinden bir yolculuk talebi oluşturur. Uygun sürücüler bu talebi görür. "
-    "Sürücüler talebi kabul ettiğinde eşleşme sağlanır. Eşleşme sonrasında yolcu ve sürücü, yan yana gelene kadar "
-    "uygulama içi sesli iletişim ve yazılı sohbet özelliklerini kullanabilir. Sürücü tarafında navigasyon desteği bulunur. "
+    "Sürücü yolcuya teklif gönderir. Yolcu gelen tekliflerden birini inceler ve kabul eder. "
+    "Eşleşme yalnızca yolcunun teklifi kabul etmesiyle tamamlanır. "
+    "Eşleşme sürücünün talep onayıyla oluşmaz; talebe ilk bakan veya ilk teklif veren sürücü otomatik eşleşmez. "
+    "Eşleşme sonrasında yolcu ve sürücü, yan yana gelene kadar uygulama içi sesli iletişim ve yazılı sohbet "
+    "özelliklerini kullanabilir. Sürücü tarafında navigasyon desteği bulunur. "
     "Yolcu araca bindiğinde QR doğrulaması ile başlangıç adımı tamamlanır. Süreç bitirilirken yine QR doğrulaması kullanılır."
 )
 
+_ROL_KABUL_NETLIGI = (
+    f"{_PRODUCT_NAME} eşleşmesinde kabul adımı yolcudadır. "
+    "Sürücü uygun talebi görüp teklif gönderir; yolcu gelen tekliflerden birini kabul eder. "
+    "Eşleşme yalnızca yolcunun teklifi kabul etmesiyle tamamlanır. "
+    "Eşleşme sürücünün talep onayıyla oluşmaz; talebe ilk bakan veya ilk teklif veren sürücü otomatik eşleşmez."
+)
+
+_KIM_TEKLIF = (
+    "Teklifi sürücü gönderir. Yolcu talep oluşturur; teklif göndermez. "
+    "Yolcu gelen tekliflerden birini kabul edince eşleşme tamamlanır."
+)
+
+_SURUCU_SEC = (
+    _ESLESME_VE_ROL
+    + "\nSürücüysen uygun talepleri görür ve teklif gönderirsin; eşleşmeyi talep onayıyla bitirmezsin. "
+    "Yolcu gelen tekliflerden birini kabul edince eşleşme tamamlanır."
+)
+
+_YOLCU_SEC = (
+    _ESLESME_VE_ROL
+    + "\nYolcuysan talep oluşturur, gelen sürücü tekliflerini inceler ve uygun olanı kabul edersin. "
+    "Eşleşme, bir teklifi kabul ettikten sonra tamamlanır."
+)
+
 LEYLEK_ZEKA_SYSTEM = (
-    "Sen LeylekTag uygulamasının yardımcısı Leylek Zeka'sın. Samimi, saygılı, kısa ve net konuş. "
+    f"Sen {_PRODUCT_NAME} uygulamasının yardımcısı Leylek Zeka'sın. Samimi, saygılı, kısa ve net konuş. "
     "Kullanıcıya uygulama içindeki yolculuk, eşleşme ve kullanım adımlarında yardımcı ol. "
-    "Uygulama dışı genel, hukuki, tıbbi veya kişisel konularda kesin yönlendirme yapma; nazikçe LeylekTag içindeki konulara dön. "
+    f"Uygulama dışı genel, hukuki, tıbbi veya kişisel konularda kesin yönlendirme yapma; nazikçe {_PRODUCT_NAME} "
+    "içindeki konulara dön. "
     "Bilmediğin bir şeyi uydurma. Kullanıcıyı azarlama. Gerekirse uygulama içi destek veya geri bildirim paylaşmasını öner. "
-    "Eşleşme ve rol sorularında yalnızca tanımlı kanon akışı kullan. "
+    "Eşleşme ve rol sorularında yalnızca tanımlı kanon akışı kullan: yolcu talep oluşturur, sürücü teklif gönderir, "
+    "yolcu teklifi kabul eder; eşleşme yolcu kabulüyle tamamlanır. "
     "Markdown kullanma; yıldızlı kalın başlık yazma. Düz metin ve kısa numaralı adımlar kullan.\n\n"
     + _ESLESME_VE_ROL
 )
@@ -330,10 +366,22 @@ class LeylekZekaError(Exception):
 
 
 def _normalize_for_match(text: str) -> str:
-    """Küçük harf + fazla boşlukları sadeleştir (Türkçe karakterler korunur)."""
-    t = (text or "").strip().lower()
+    """Küçük harf + fazla boşluk; Türkçe İ/I eşleşmesi için güvenli sadeleştirme."""
+    t = (text or "").strip()
+    # Python default lower: 'İ' → 'i̇' (combining), 'I' → 'i' — arama ifadelerini kırar.
+    t = t.replace("İ", "i").replace("I", "i")
+    t = t.lower()
     t = re.sub(r"\s+", " ", t)
     return t
+
+
+def _has_eslesme(t: str) -> bool:
+    return (
+        "eşleş" in t
+        or "esles" in t
+        or "esleş" in t
+        or "eşles" in t
+    )
 
 
 _REPLIES: dict[str, str] = {
@@ -367,12 +415,10 @@ _REPLIES: dict[str, str] = {
         "Kapasite veya bagaj ihtiyacın varsa bunu not düşmek eşleşmeyi netleştirir.\n\n"
         "İstersen hangi araç tipinin daha uygun olduğunu söyleyeyim."
     ),
-    "surucu_sec": _ESLESME_VE_ROL
-    + "\nYolcuysan yolculuk talebini oluşturursun; sürücüysen listedeki talepleri görüp uygun talebi kabul ederek eşleşmeye geçersin.",
-    "yolcu_sec": _ESLESME_VE_ROL
-    + "\nYolcuysan yolculuk talebini oluşturup adımları takip edersin; sürücüysen talepleri görüp uygun talebi kabul ederek eşleşmeye geçersin.",
-    "kim_teklif": _ESLESME_VE_ROL,
-    "rol_kabul_netligi": _ESLESME_VE_ROL,
+    "surucu_sec": _SURUCU_SEC,
+    "yolcu_sec": _YOLCU_SEC,
+    "kim_teklif": _KIM_TEKLIF,
+    "rol_kabul_netligi": _ROL_KABUL_NETLIGI,
     "guvenlik": (
         "LeylekTag’te yolculuğu uygulama üzerinden takip etmeni, karşı tarafın profil ve araç bilgilerini "
         "ekrandan teyit etmeni ve şüpheli bir durumda yolculuğu sonlandırıp bildirimde bulunmanı öneririz.\n\n"
@@ -407,10 +453,6 @@ _FALLBACK_GENERIC = (
 )
 
 
-def _has_eslesme(t: str) -> bool:
-    return "eşleş" in t or "esles" in t
-
-
 def fallback_reply(user_message: str, context: Optional[dict[str, Any]] = None) -> str:
     """OPENAI_API_KEY yokken veya model kullanılamazken doğal Türkçe hazır yanıt."""
     t = _normalize_for_match(user_message)
@@ -431,6 +473,14 @@ def fallback_reply(user_message: str, context: Optional[dict[str, Any]] = None) 
             "surucu onaylar",
             "eşleşmeyi kim",
             "eslesmeyi kim",
+            "ilk kabul",
+            "ilk kabul eden",
+            "talebi kabul",
+            "talep kabul",
+            "kabul edince eşleş",
+            "kabul edince esles",
+            "sürücü talebi kabul",
+            "surucu talebi kabul",
         )
     ):
         return _REPLIES["rol_kabul_netligi"]
@@ -482,7 +532,9 @@ def fallback_reply(user_message: str, context: Optional[dict[str, Any]] = None) 
     ):
         return _REPLIES["eslesme_gelmedi"]
 
-    if _has_eslesme(t) and "nasıl" in t:
+    if _has_eslesme(t) and any(
+        w in t for w in ("nasıl", "nasil", "oluyor", "çalışır", "calisir", "çalış", "calis", "nedir")
+    ):
         return _REPLIES["eslesme_nasil"]
 
     if "teklif" in t:
@@ -500,11 +552,13 @@ def fallback_reply(user_message: str, context: Optional[dict[str, Any]] = None) 
     ):
         return _REPLIES["rol_kabul_netligi"]
 
+    if "yolcu" in t and (
+        "seç" in t or "sec" in t or "nasıl" in t or "nasil" in t or "ne yap" in t
+    ):
+        return _REPLIES["yolcu_sec"]
+
     if "sürücü" in t or "surucu" in t:
         return _REPLIES["surucu_sec"]
-
-    if "yolcu" in t and ("seç" in t or "sec" in t or "nasıl" in t):
-        return _REPLIES["yolcu_sec"]
 
     if "güven" in t or "guven" in t:
         return _REPLIES["guvenlik"]
@@ -526,8 +580,8 @@ def fallback_reply(user_message: str, context: Optional[dict[str, Any]] = None) 
 
 def _high_confidence_flow_reply(user_message: str) -> str | None:
     """
-    Answer engine eşleşmezse bile akış/rol sorularında sabit, doğru Türkçe yanıt.
-    OpenAI çağrılmadan önce get_leylek_zeka_reply içinde kullanılır (hallüsinasyon riskini azaltır).
+    Answer engine kaçırırsa eşleşme/rol sorularında sabit, doğru Türkçe yanıt.
+    get_leylek_zeka_reply içinde answer_engine sonrasında kullanılır (katalog öncelikli).
     """
     t = _normalize_for_match(user_message)
     if not t:
@@ -546,6 +600,14 @@ def _high_confidence_flow_reply(user_message: str) -> str | None:
             "surucu onaylar",
             "eşleşmeyi kim",
             "eslesmeyi kim",
+            "ilk kabul",
+            "ilk kabul eden",
+            "talebi kabul",
+            "talep kabul",
+            "kabul edince eşleş",
+            "kabul edince esles",
+            "sürücü talebi kabul",
+            "surucu talebi kabul",
         )
     ):
         return _REPLIES["rol_kabul_netligi"]
@@ -566,7 +628,17 @@ def _high_confidence_flow_reply(user_message: str) -> str | None:
     ):
         return _REPLIES["kim_teklif"]
     if _has_eslesme(t) and any(
-        w in t for w in ("nasıl", "nasil", "çalışır", "calisir", "çalış", "calis", "nedir")
+        w in t
+        for w in (
+            "nasıl",
+            "nasil",
+            "oluyor",
+            "çalışır",
+            "calisir",
+            "çalış",
+            "calis",
+            "nedir",
+        )
     ):
         return _REPLIES["eslesme_nasil"]
     return None
@@ -688,27 +760,15 @@ async def get_leylek_zeka_reply(
     context: dict[str, Any] | None = None,
 ) -> tuple[str, Source, AnswerEngineMeta | None]:
     """
-    Öncelik: yüksek güven akışı → answer_engine (katalog) → admin KB (feature flag) → OpenAI (anahtar varsa) → Türkçe fallback.
-    context: opsiyonel bağlama duyarlı yardım (USER_HELP_MODE).
-    Üçüncü dönüş: yalnızca Answer Engine eşleşmesinde intent_id + deterministic (HTTP opsiyonel alanları).
+    Öncelik: operation_snapshot → answer_engine (katalog) → yüksek güven eşleşme kanonu →
+    admin KB (feature flag) → OpenAI (anahtar varsa) → Türkçe fallback.
 
-    Kritik eşleşme/rol sorularında answer_engine kataloğundan önce _ESLESME_VE_ROL dönülür
-    (katalog metni farklı olsa bile tek doğru kanon akışı korunur; answer_engine dosyalarına dokunulmadan).
+    Eşleşme/rol için answer_engine isabeti, genel yüksek güven metninden önce gelir;
+    katalog kaçırırsa doğru _ESLESME_VE_ROL / rol kabul kanonu kullanılır.
     """
     text = (user_message or "").strip()
     if not text:
         return _FALLBACK_GENERIC, "fallback", None
-
-    flow_hit = _high_confidence_flow_reply(text)
-    if flow_hit is not None:
-        _emit_answer_engine_telemetry(
-            hit=False,
-            intent_id=None,
-            response_source="fallback",
-            context=context,
-            user_message=text,
-        )
-        return flow_hit, "fallback", None
 
     op_hit = _try_operation_snapshot_reply(text, context)
     if op_hit is not None:
@@ -736,6 +796,17 @@ async def get_leylek_zeka_reply(
             user_message=text,
         )
         return resolved["text"], "answer_engine", meta
+
+    flow_hit = _high_confidence_flow_reply(text)
+    if flow_hit is not None:
+        _emit_answer_engine_telemetry(
+            hit=False,
+            intent_id=None,
+            response_source="fallback",
+            context=context,
+            user_message=text,
+        )
+        return flow_hit, "fallback", None
 
     kb_hit = try_match_admin_kb(text)
     if kb_hit:
