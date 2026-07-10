@@ -26,6 +26,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { displayFirstName } from '../lib/displayName';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { DRIVER_DEFAULT_STREET_ZOOM, driverStreetLatDelta } from '../lib/mapDefaults';
 import {
   ROUTE_LOADING_MIN_VISIBLE_MS,
   ROUTE_LOADING_UI,
@@ -1647,215 +1648,6 @@ function isValidMapCoord(c: { latitude: number; longitude: number } | null | und
   if (Math.abs(la) > 90 || Math.abs(ln) > 180) return false;
   if (Math.abs(la) < 1e-6 && Math.abs(ln) < 1e-6) return false;
   return true;
-}
-
-/** Yolcu matched/trip fit — şehir içi yakınlık; ülke/dünya zoom-out yok */
-const PAX_MAP_FIT_MIN_DELTA = 0.004;
-const PAX_MAP_FIT_MAX_DELTA_IOS = 0.045;
-const PAX_MAP_FIT_MAX_DELTA_ANDROID = 0.08;
-const PAX_MAP_FIT_SINGLE_DELTA = 0.045;
-
-function paxMapFitMaxDelta(): number {
-  return Platform.OS === 'ios' ? PAX_MAP_FIT_MAX_DELTA_IOS : PAX_MAP_FIT_MAX_DELTA_ANDROID;
-}
-
-/** Bbox köşegen tahmini (km) — şehir içi / ~15 km rota tier */
-function bboxMaxSpanKm(bb: { minLat: number; maxLat: number; minLng: number; maxLng: number }): number {
-  const midLat = (bb.minLat + bb.maxLat) / 2;
-  const latKm = Math.abs(bb.maxLat - bb.minLat) * 111;
-  const lngKm = Math.abs(bb.maxLng - bb.minLng) * 111 * Math.cos((midLat * Math.PI) / 180);
-  return Math.max(latKm, lngKm, 0);
-}
-
-function filterValidMapCoords(coords: MapLatLng[]): MapLatLng[] {
-  return coords.filter(isValidMapCoord);
-}
-
-function dedupeMapCoords(coords: MapLatLng[]): MapLatLng[] {
-  const out: MapLatLng[] = [];
-  for (const p of coords) {
-    if (!isValidMapCoord(p)) continue;
-    if (out.some((q) => Math.abs(q.latitude - p.latitude) < 1e-5 && Math.abs(q.longitude - p.longitude) < 1e-5)) {
-      continue;
-    }
-    out.push(p);
-  }
-  return out;
-}
-
-function mapCoordsBBox(points: MapLatLng[]): {
-  minLat: number;
-  maxLat: number;
-  minLng: number;
-  maxLng: number;
-} | null {
-  const valid = filterValidMapCoords(points);
-  if (valid.length === 0) return null;
-  let minLat = valid[0].latitude;
-  let maxLat = valid[0].latitude;
-  let minLng = valid[0].longitude;
-  let maxLng = valid[0].longitude;
-  for (const p of valid) {
-    minLat = Math.min(minLat, p.latitude);
-    maxLat = Math.max(maxLat, p.latitude);
-    minLng = Math.min(minLng, p.longitude);
-    maxLng = Math.max(maxLng, p.longitude);
-  }
-  return { minLat, maxLat, minLng, maxLng };
-}
-
-function filterPolylineNearEndpoints(poly: MapLatLng[], endpoints: MapLatLng[]): MapLatLng[] {
-  const ep = filterValidMapCoords(endpoints);
-  const validPoly = filterValidMapCoords(poly);
-  if (ep.length === 0 || validPoly.length < 2) return validPoly;
-  const bb = mapCoordsBBox(ep);
-  if (!bb) return validPoly;
-  const latSpan = Math.max(bb.maxLat - bb.minLat, 0.003);
-  const lngSpan = Math.max(bb.maxLng - bb.minLng, 0.003);
-  const padLat = Math.max(latSpan * 0.22, 0.008);
-  const padLng = Math.max(lngSpan * 0.22, 0.008);
-  const minLat = bb.minLat - padLat;
-  const maxLat = bb.maxLat + padLat;
-  const minLng = bb.minLng - padLng;
-  const maxLng = bb.maxLng + padLng;
-  const clipped = validPoly.filter(
-    (p) => p.latitude >= minLat && p.latitude <= maxLat && p.longitude >= minLng && p.longitude <= maxLng,
-  );
-  return clipped.length >= 2 ? clipped : validPoly;
-}
-
-function downsampleMapCoords(coords: MapLatLng[], maxPoints: number): MapLatLng[] {
-  if (coords.length <= maxPoints) return coords;
-  const out: MapLatLng[] = [];
-  const step = (coords.length - 1) / (maxPoints - 1);
-  for (let i = 0; i < maxPoints; i++) {
-    out.push(coords[Math.round(i * step)]!);
-  }
-  return out;
-}
-
-/** Polyline outlier’larını kes; endpoint’ler her zaman dahil */
-function passengerRouteFitCoords(endpoints: MapLatLng[], routePoly?: MapLatLng[] | null): MapLatLng[] {
-  const ep = dedupeMapCoords(filterValidMapCoords(endpoints));
-  if (ep.length === 0) return [];
-  if (!routePoly || routePoly.length < 2) return ep;
-  const clipped = filterPolylineNearEndpoints(routePoly, ep);
-  const sampled = downsampleMapCoords(clipped, 28);
-  return dedupeMapCoords([...sampled, ...ep]);
-}
-
-function passengerMapEdgePadding(): { top: number; right: number; bottom: number; left: number } {
-  const H = Dimensions.get('window').height;
-  if (Platform.OS === 'ios') {
-    return {
-      top: Math.round(H * 0.2),
-      right: 44,
-      bottom: Math.round(H * 0.28),
-      left: 44,
-    };
-  }
-  return { top: 210, right: 48, bottom: 300, left: 48 };
-}
-
-function cappedRegionForPassengerMapFit(
-  points: MapLatLng[],
-  edgePadding: { top: number; right: number; bottom: number; left: number },
-): {
-  latitude: number;
-  longitude: number;
-  latitudeDelta: number;
-  longitudeDelta: number;
-} | null {
-  const valid = filterValidMapCoords(points);
-  if (valid.length === 0) return null;
-  if (valid.length === 1) {
-    return {
-      latitude: valid[0]!.latitude,
-      longitude: valid[0]!.longitude,
-      latitudeDelta: PAX_MAP_FIT_SINGLE_DELTA,
-      longitudeDelta: PAX_MAP_FIT_SINGLE_DELTA,
-    };
-  }
-  const bb = mapCoordsBBox(valid);
-  if (!bb) return null;
-  const H = Dimensions.get('window').height;
-  const W = Dimensions.get('window').width;
-  const visibleLatFraction = Math.max(0.44, 1 - edgePadding.top / H - edgePadding.bottom / H);
-  const visibleLngFraction = Math.max(0.52, 1 - edgePadding.left / W - edgePadding.right / W);
-  const latSpan = Math.max(bb.maxLat - bb.minLat, 0.001);
-  const lngSpan = Math.max(bb.maxLng - bb.minLng, 0.001);
-  const spanKm = bboxMaxSpanKm(bb);
-  let maxDelta = paxMapFitMaxDelta();
-  if (Platform.OS === 'ios' && spanKm <= 15) {
-    maxDelta = Math.min(maxDelta, spanKm <= 5 ? 0.038 : 0.045);
-  }
-  const fitInflate = Platform.OS === 'ios' ? 1.12 : 1.22;
-  let latDelta = Math.min(
-    maxDelta,
-    Math.max(PAX_MAP_FIT_MIN_DELTA, (latSpan / visibleLatFraction) * fitInflate),
-  );
-  let lngDelta = Math.min(
-    maxDelta,
-    Math.max(PAX_MAP_FIT_MIN_DELTA, (lngSpan / visibleLngFraction) * fitInflate),
-  );
-  latDelta = Math.max(latDelta, lngDelta * 0.82);
-  lngDelta = Math.max(lngDelta, latDelta * 0.82);
-  return {
-    latitude: (bb.minLat + bb.maxLat) / 2,
-    longitude: (bb.minLng + bb.maxLng) / 2,
-    latitudeDelta: latDelta,
-    longitudeDelta: lngDelta,
-  };
-}
-
-type LiveMapFitInstrLog = {
-  elapsedMs: number;
-  role: 'passenger' | 'driver';
-  reason: string;
-};
-
-/** Yolcu matched/trip: geçerli noktalar + cap’li region; ülke/dünya zoom-out yok */
-function applyPassengerMapFit(
-  map: {
-    fitToCoordinates?: (coords: MapLatLng[], opts: object) => void;
-    animateToRegion?: (region: object, duration?: number) => void;
-  } | null
-  | undefined,
-  endpoints: MapLatLng[],
-  routePoly?: MapLatLng[] | null,
-  fitLog?: LiveMapFitInstrLog | null,
-): boolean {
-  if (!map) return false;
-  const fitPts = passengerRouteFitCoords(endpoints, routePoly);
-  if (fitPts.length === 0) return false;
-  const padding = passengerMapEdgePadding();
-  const capped = cappedRegionForPassengerMapFit(fitPts, padding);
-  if (!capped) return false;
-  const coordinateCount = filterValidMapCoords(fitPts).length;
-  if (fitLog) {
-    perfLog('[LiveMapView] fitToCoordinates', { ...fitLog, coordinateCount });
-  }
-
-  if (
-    fitPts.length >= 2 &&
-    typeof map.fitToCoordinates === 'function' &&
-    Platform.OS !== 'ios'
-  ) {
-    try {
-      map.fitToCoordinates(filterValidMapCoords(fitPts), {
-        edgePadding: padding,
-        animated: true,
-      });
-    } catch {
-      /* capped region fallback */
-    }
-  }
-
-  if (typeof map.animateToRegion === 'function') {
-    map.animateToRegion(capped, Platform.OS === 'ios' ? 380 : 420);
-    return true;
-  }
-  return false;
 }
 
 /** Fit / kamera / marker: önce ref’teki stabil nokta, sonra state, sonra ham GPS */
@@ -3828,11 +3620,13 @@ function LiveMapView({
     meeting: 0,
     destination: 0,
   });
-  /** Haritayı sürekli fit etmek pinch-zoom'u bozar; sadece ilk yüklemede ve hedef ilk geldiğinde */
+  /** Haritayı sürekli fit etmek pinch-zoom'u bozar; yolcu legacy fit bayrağı */
   const mapFitRef = useRef<{ initialDone: boolean; hadDestination: boolean }>({
     initialDone: false,
     hadDestination: false,
   });
+  /** Matched (nav kapalı): STREET_ZOOM bir kez; GPS/rota kameraya dokunmaz */
+  const matchedStreetCameraAppliedRef = useRef(false);
   const lastOsrmAtRef = useRef(0);
   const lastOsrmKeyRef = useRef('');
   /** Sürücü pickup OSRM: küçük GPS oynamasında gereksiz yeniden fetch engeli */
@@ -3864,6 +3658,7 @@ function LiveMapView({
     meetingOsrmRefetchGuardRef.current = null;
     navForceMeetingOsrmOnceRef.current = false;
     mapFitRef.current = { initialDone: false, hadDestination: false };
+    matchedStreetCameraAppliedRef.current = false;
     setNavigationMode(false);
     setNavigationStage('pickup');
     navStagePrevRef.current = 'pickup';
@@ -5562,32 +5357,79 @@ function LiveMapView({
     tagId,
   ]);
 
-  /** Sürücü: harita merkezi araçta — navigasyon modunda kullanıcı rotayı görüyor; otomatik merkezleme yok */
+  /**
+   * Matched (nav kapalı): sokak zoom bir kez veya açık recenter.
+   * GPS / polyline bu fonksiyonu otomatik çağırmaz.
+   */
+  const applyMatchedStreetCamera = useCallback(
+    (options?: { force?: boolean }) => {
+      if (Platform.OS === 'web' || !mapRef.current) return false;
+      if (navigationModeRef.current) return false;
+      const force = options?.force === true;
+      if (!force && matchedStreetCameraAppliedRef.current) return false;
+      if (!userLocation || !isValidMapCoord(userLocation)) return false;
+
+      const center = {
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+      };
+      navProgrammaticCameraRef.current = true;
+      if (navCameraAnimClearTimerRef.current) {
+        clearTimeout(navCameraAnimClearTimerRef.current);
+      }
+      if (typeof mapRef.current.animateCamera === 'function') {
+        mapRef.current.animateCamera(
+          { center, zoom: DRIVER_DEFAULT_STREET_ZOOM, pitch: 0, heading: 0 },
+          { duration: force ? 400 : 420 },
+        );
+      } else {
+        const d = driverStreetLatDelta();
+        mapRef.current.animateToRegion?.(
+          { ...center, latitudeDelta: d, longitudeDelta: d },
+          force ? 400 : 420,
+        );
+      }
+      matchedStreetCameraAppliedRef.current = true;
+      mapFitRef.current.initialDone = true;
+      mapFitRef.current.hadDestination = !!destinationLocation;
+      navCameraAnimClearTimerRef.current = setTimeout(() => {
+        navProgrammaticCameraRef.current = false;
+        navCameraAnimClearTimerRef.current = null;
+      }, 500);
+      lastNavCameraAtRef.current = Date.now();
+      logMapFit({
+        role: isDriver ? 'driver' : 'passenger',
+        coordinateCount: 1,
+        reason: force ? 'matched_street_zoom_recenter' : 'matched_street_zoom_initial',
+      });
+      return true;
+    },
+    [
+      userLocation?.latitude,
+      userLocation?.longitude,
+      destinationLocation,
+      isDriver,
+      logMapFit,
+    ],
+  );
+
+  /** Sürücü matched (nav kapalı): GPS kamerayı hareket ettirmez — yalnız ilk street camera */
   useEffect(() => {
-    if (!isDriver || navigationMode || !mapRef.current || !userLocation || !otherLocation) return;
-    const dLat = Math.abs(userLocation.latitude - otherLocation.latitude);
-    const dLng = Math.abs(userLocation.longitude - otherLocation.longitude);
-    const latDelta = Math.min(0.14, Math.max(0.0028, dLat * 2.35));
-    const lngDelta = Math.min(0.14, Math.max(0.0028, dLng * 2.35));
+    if (navigationMode) return;
+    if (!mapEngineReady) return;
+    if (!userLocation || !isValidMapCoord(userLocation)) return;
+    if (matchedStreetCameraAppliedRef.current) return;
     const t = setTimeout(() => {
-      mapRef.current?.animateToRegion(
-        {
-          latitude: userLocation.latitude,
-          longitude: userLocation.longitude,
-          latitudeDelta: latDelta,
-          longitudeDelta: lngDelta,
-        },
-        420,
-      );
+      applyMatchedStreetCamera();
     }, 140);
     return () => clearTimeout(t);
   }, [
     isDriver,
     navigationMode,
+    mapEngineReady,
     userLocation?.latitude,
     userLocation?.longitude,
-    otherLocation?.latitude,
-    otherLocation?.longitude,
+    applyMatchedStreetCamera,
   ]);
 
   /**
@@ -5655,98 +5497,18 @@ function LiveMapView({
   ]);
 
   /**
-   * Özet / önizleme: rota sınırlarına fit (sürücü navigasyon kapalıyken veya harita genel görünümü).
-   * Aktif navigasyon açıkken fitToCoordinates çağrılmaz — applyDriverActiveFollowViewport kullanılır.
+   * Explicit locate / recenter only (OSRM otomatik çağırmaz).
+   * Nav açıkken turn-by-turn viewport; değilse STREET_ZOOM + user center.
    */
   const fitNavigationViewport = useCallback(
-    (routeCoords?: MapLatLng[] | null) => {
-      const anchor = resolveNavigationAnchor(navDriverStableRef, navDriverMapCoord, userLocation);
-      if (!mapRef.current || !anchor || !otherLocation) return;
-
+    (_routeCoords?: MapLatLng[] | null) => {
       if (isDriver && navigationMode) {
         applyDriverActiveFollowViewport();
         return;
       }
-
-      if (!isDriver) {
-        if (mapFitRef.current.initialDone) return;
-        const ep: MapLatLng[] = [];
-        if (isValidMapCoord(anchor)) ep.push(anchor);
-        if (isValidMapCoord(otherLocation)) ep.push(otherLocation);
-        if (destinationLocation && isValidMapCoord(destinationLocation)) ep.push(destinationLocation);
-        if (applyPassengerMapFit(mapRef.current, ep, routeCoords, {
-          elapsedMs: mapInstrElapsedMs(),
-          role: 'passenger',
-          reason: 'passenger_nav_viewport',
-        })) {
-          mapFitRef.current.initialDone = true;
-        }
-        return;
-      }
-
-      const navMeetingOnly = isDriver && navigationMode && navigationStage === 'pickup';
-      const legKm = straightLineKm(anchor, otherLocation);
-      const polyForSlice =
-        routeCoords && routeCoords.length >= 2 ? routeCoords : [anchor, otherLocation];
-      const hasRichPolyline = polyForSlice.length >= 3;
-      const longPickupLeg = navMeetingOnly && legKm >= 2.2;
-
-      if (longPickupLeg && !hasRichPolyline && !(isDriver && navigationMode)) {
-        mapRef.current.animateCamera(
-          { center: anchor, pitch: 0, heading: 0, zoom: 17.4 },
-          { duration: 480 },
-        );
-        lastNavCameraAtRef.current = Date.now();
-        return;
-      }
-
-      let coords: MapLatLng[] = [...polyForSlice];
-      if (longPickupLeg && hasRichPolyline) {
-        coords = sliceMeetingRouteForNavFit(anchor, polyForSlice, 3400);
-      }
-      if (destinationLocation && !navMeetingOnly) {
-        const last = coords[coords.length - 1];
-        const d = destinationLocation;
-        const same =
-          Math.abs(last.latitude - d.latitude) < 1e-5 &&
-          Math.abs(last.longitude - d.longitude) < 1e-5;
-        if (!same) {
-          coords.push(destinationLocation);
-        }
-      }
-      const edgePadding = navMeetingOnly
-        ? { top: 260, right: 36, bottom: 300, left: 36 }
-        : { top: 120, right: 50, bottom: 350, left: 50 };
-      logMapFit({
-        role: 'driver',
-        coordinateCount: coords.length,
-        reason: navMeetingOnly ? 'driver_meeting_only_preview' : 'driver_preview_viewport',
-      });
-      try {
-        mapRef.current.fitToCoordinates(coords, {
-          edgePadding,
-          animated: true,
-        });
-      } catch {
-        mapRef.current.animateCamera(
-          { center: anchor, pitch: 0, heading: 0, zoom: 16.2 },
-          { duration: 420 },
-        );
-      }
+      applyMatchedStreetCamera({ force: true });
     },
-    [
-      userLocation,
-      otherLocation,
-      destinationLocation,
-      isDriver,
-      navigationMode,
-      navigationStage,
-      navDriverMapCoord?.latitude,
-      navDriverMapCoord?.longitude,
-      applyDriverActiveFollowViewport,
-      logMapFit,
-      mapInstrElapsedMs,
-    ],
+    [isDriver, navigationMode, applyDriverActiveFollowViewport, applyMatchedStreetCamera],
   );
 
   useEffect(() => {
@@ -6044,9 +5806,6 @@ function LiveMapView({
                   pickupNavStepsRef.current = null;
                   lastOsrmKeyRef.current = meetingEndpointsKeyHere();
                   recordOsrmRefetchGuard();
-                  if (!navigationModeRef.current) {
-                    fitNavigationViewportRef.current?.(coords);
-                  }
                   logNavDiag('NAV_ROUTE_SUCCESS', {
                     leg: 'meeting',
                     points: coords.length,
@@ -6166,9 +5925,6 @@ function LiveMapView({
                 pickupNavStepsRef.current = null;
                 lastOsrmKeyRef.current = meetingEndpointsKeyHere();
                 recordOsrmRefetchGuard();
-                if (!navigationModeRef.current) {
-                  fitNavigationViewportRef.current?.(coordsPre);
-                }
                 logNavDiag('NAV_ROUTE_SUCCESS', {
                   leg: 'meeting',
                   points: coordsPre.length,
@@ -6211,9 +5967,6 @@ function LiveMapView({
               pickupNavStepsRef.current = null;
               lastOsrmKeyRef.current = meetingEndpointsKeyHere();
               recordOsrmRefetchGuard();
-              if (!navigationModeRef.current) {
-                fitNavigationViewportRef.current?.(serverPolyline);
-              }
               endMeetingRoadLoadingUi();
               logNavDiag('NAV_ROUTE_SUCCESS', {
                 leg: 'meeting',
@@ -6301,9 +6054,6 @@ function LiveMapView({
               lastOsrmAtRef.current = Date.now();
               lastOsrmKeyRef.current = meetingEndpointsKeyHere();
               recordOsrmRefetchGuard();
-              if (!navigationModeRef.current) {
-                fitNavigationViewportRef.current?.(rw.coordinates);
-              }
             }
           } else {
             perfLog('DRIVER_ROUTE_PREFETCH_EMPTY', {
@@ -6361,27 +6111,7 @@ function LiveMapView({
               lastOsrmAtRef.current = Date.now();
               lastOsrmKeyRef.current = meetingEndpointsKeyHere();
               recordOsrmRefetchGuard();
-              if (!isDriver) {
-                if (!mapFitRef.current.initialDone) {
-                  const paxFitEp: MapLatLng[] = [];
-                  if (isValidMapCoord(start)) paxFitEp.push(start);
-                  if (isValidMapCoord(end)) paxFitEp.push(end);
-                  if (destinationLocation && isValidMapCoord(destinationLocation)) {
-                    paxFitEp.push(destinationLocation);
-                  }
-                  if (
-                    applyPassengerMapFit(mapRef.current, paxFitEp, polyPax, {
-                      elapsedMs: Date.now() - mapInstrMountAtRef.current,
-                      role: 'passenger',
-                      reason: 'passenger_osrm_route_fetch',
-                    })
-                  ) {
-                    mapFitRef.current.initialDone = true;
-                  }
-                }
-              } else if (!navigationModeRef.current) {
-                fitNavigationViewportRef.current?.(polyPax);
-              }
+              // Matched: rota kamerayı hareket ettirmez (street camera ayrı one-shot)
               perfLog('ROUTE FETCH OK', { points: polyPax.length });
             }
           } else {
@@ -6431,29 +6161,16 @@ function LiveMapView({
   ]);
 
   const onDriverNavMapReady = useCallback(() => {
-    if (
-      isDriver &&
-      meetingRouteCoordinates.length > 1 &&
-      mapRef.current &&
-      userLocation &&
-      otherLocation
-    ) {
-      InteractionManager.runAfterInteractions(() => {
-        if (navigationModeRef.current) {
-          applyDriverActiveFollowViewportRef.current?.();
-        } else {
-          fitNavigationViewport(meetingRouteCoordinates);
-        }
-      });
-    }
-  }, [
-    isDriver,
-    meetingRouteCoordinates,
-    fitNavigationViewport,
-    userLocation,
-    otherLocation,
-    applyDriverActiveFollowViewport,
-  ]);
+    if (!mapRef.current || !userLocation) return;
+    InteractionManager.runAfterInteractions(() => {
+      if (isDriver && navigationModeRef.current) {
+        applyDriverActiveFollowViewportRef.current?.();
+        return;
+      }
+      // Matched idle: one-shot street camera (GPS/rota tekrar çağırmaz)
+      applyMatchedStreetCamera();
+    });
+  }, [isDriver, userLocation, applyMatchedStreetCamera]);
 
   const markMapEngineReady = useCallback(
     (source: 'onMapReady' | 'onMapLoaded') => {
@@ -6504,59 +6221,13 @@ function LiveMapView({
     remountMapView('manual');
   }, [remountMapView]);
 
-  // Yolcu: tüm noktaları göster; sürücüde fit yok (merkez araçta)
+  // Yolcu/sürücü matched: otomatik multi-point fit yok — street camera one-shot ayrı effect
   useEffect(() => {
-    if (
-      !mapRef.current ||
-      !isValidRouteEndpoint(userLocation) ||
-      !isValidRouteEndpoint(otherLocation) ||
-      isDriver
-    ) {
-      if (isDriver && isValidRouteEndpoint(userLocation) && isValidRouteEndpoint(otherLocation)) {
-        mapFitRef.current.initialDone = true;
-        mapFitRef.current.hadDestination = !!destinationLocation;
-      }
-      return;
+    if (!isDriver && matchedStreetCameraAppliedRef.current) {
+      mapFitRef.current.initialDone = true;
+      mapFitRef.current.hadDestination = !!destinationLocation;
     }
-
-    const hasDest = !!destinationLocation;
-    const destJustAdded = hasDest && !mapFitRef.current.hadDestination;
-    mapFitRef.current.hadDestination = hasDest;
-
-    if (mapFitRef.current.initialDone && !destJustAdded) {
-      return;
-    }
-
-    const t = setTimeout(() => {
-      const map = mapRef.current;
-      const endpoints: MapLatLng[] = [userLocation, otherLocation];
-      if (destinationLocation && isValidMapCoord(destinationLocation)) {
-        endpoints.push(destinationLocation);
-      }
-      const routePoly =
-        meetingRouteCoordinatesRef.current.length >= 2 ? meetingRouteCoordinatesRef.current : null;
-      perfLog('[PAX_DEBUG] LiveMapView passenger fit', {
-        hasMap: !!map,
-        endpointCount: filterValidMapCoords(endpoints).length,
-        polylinePoints: routePoly?.length ?? 0,
-      });
-      if (
-        applyPassengerMapFit(
-          map,
-          endpoints,
-          routePoly,
-          {
-            elapsedMs: mapInstrElapsedMs(),
-            role: 'passenger',
-            reason: 'passenger_initial_fit_effect',
-          },
-        )
-      ) {
-        mapFitRef.current.initialDone = true;
-      }
-    }, 650);
-    return () => clearTimeout(t);
-  }, [userLocation, otherLocation, destinationLocation, isDriver, mapInstrElapsedMs]);
+  }, [isDriver, destinationLocation]);
 
   const driverNavRouteLayers = useMemo(() => {
     const navPos = resolveNavigationAnchor(navDriverStableRef, navDriverMapCoord, userLocation);
@@ -6755,12 +6426,13 @@ function LiveMapView({
   );
 
   const classicMatchedMapPadding = useMemo(() => {
-    const topBase = compactMatchedLayout ? 96 : 108;
-    const bottomBase = compactMatchedLayout ? 168 : 184;
+    // Google mapPadding: kamera hedefi kalan görünür alanın merkezine oturur.
+    // Üst/alt chrome için güvenli alan korunur; asimetriyi azaltarak marker görsel merkezde kalır.
+    const chromePad = compactMatchedLayout ? 132 : 148;
     return {
-      top: topBase,
+      top: chromePad,
       right: compactMatchedLayout ? 10 : 14,
-      bottom: bottomBase + (!isDriver ? Math.max(insets.bottom, 0) : 0),
+      bottom: chromePad + (!isDriver ? Math.max(insets.bottom, 0) : 0),
       left: compactMatchedLayout ? 10 : 14,
     };
   }, [compactMatchedLayout, insets.bottom, isDriver]);
@@ -6792,7 +6464,7 @@ function LiveMapView({
     );
   }
 
-  /** Üst kart (~alış/hedef/yolcu satırları) + alt sheet yüksekliğine göre harita güvenli alanı */
+  /** Üst kart + alt sheet — mapPadding kamerayı kalan viewport merkezine alır (coğrafi offset yok). */
   const driverRideModernMapPadTop = Math.max(insets.top, 12) + 272;
   const driverRideModernMapPadBottom = 262 + Math.max(insets.bottom, 12);
   const driverRideModernLocateFabBottom = 268 + Math.max(insets.bottom, 10);
@@ -7182,8 +6854,8 @@ function LiveMapView({
           initialRegion={{
             latitude: userLocation?.latitude || 39.9334,
             longitude: userLocation?.longitude || 32.8597,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
+            latitudeDelta: driverStreetLatDelta(),
+            longitudeDelta: driverStreetLatDelta(),
           }}
           onMapReady={handleMapReadyFromReady}
           onMapLoaded={handleMapReadyFromLoaded}
