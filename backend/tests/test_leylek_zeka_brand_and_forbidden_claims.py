@@ -150,7 +150,7 @@ def test_guard_preserves_source_on_openai_violation(monkeypatch: pytest.MonkeyPa
             patch.object(ai_controller, "try_match_admin_kb", return_value=None),
             patch.object(ai_controller, "_call_openai", new=fake_openai),
         ):
-            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+            reply, source, meta, _contract = await ai_controller.get_leylek_zeka_reply(
                 user_message="__brand_guard_openai_probe__",
                 history=[],
                 context=None,

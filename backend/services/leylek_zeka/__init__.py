@@ -14,12 +14,20 @@ from .product_knowledge_manifest import (
     is_forbidden_user_term,
 )
 from .reply_guard import (
+    ReplyGuardResult,
     admin_kb_body_allowed,
+    evaluate_user_visible_reply,
     find_forbidden_claim_hits,
     find_user_reply_policy_violations,
     guard_user_visible_reply,
     is_user_reply_policy_violation,
     safe_fail_closed_reply,
+)
+from .response_contract import (
+    LeylekZekaResponseMetadata,
+    build_leylek_zeka_response_metadata,
+    classify_message_topic,
+    map_support_route_for_topic,
 )
 
 __all__ = [
@@ -31,10 +39,16 @@ __all__ = [
     "is_forbidden_claim",
     "get_supported_product_fact",
     "get_unavailable_feature",
+    "ReplyGuardResult",
     "admin_kb_body_allowed",
+    "evaluate_user_visible_reply",
     "find_forbidden_claim_hits",
     "find_user_reply_policy_violations",
     "guard_user_visible_reply",
     "is_user_reply_policy_violation",
     "safe_fail_closed_reply",
+    "LeylekZekaResponseMetadata",
+    "build_leylek_zeka_response_metadata",
+    "classify_message_topic",
+    "map_support_route_for_topic",
 ]

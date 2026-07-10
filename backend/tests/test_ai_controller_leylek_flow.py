@@ -140,7 +140,7 @@ def test_get_leylek_flow_when_engine_disabled(monkeypatch: pytest.MonkeyPatch) -
 
     async def _run() -> None:
         with patch.object(ai_controller, "try_resolve", return_value=None):
-            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+            reply, source, meta, _contract = await ai_controller.get_leylek_zeka_reply(
                 user_message="Eşleşme nasıl çalışır?",
                 history=[],
                 context=None,
@@ -162,7 +162,7 @@ def test_get_leylek_answer_engine_before_high_confidence(
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     async def _run() -> None:
-        reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+        reply, source, meta, _contract = await ai_controller.get_leylek_zeka_reply(
             user_message="Eşleşme nasıl çalışır?",
             history=[],
             context=None,
@@ -198,7 +198,7 @@ def test_get_leylek_generic_fallback_no_engine_no_openai(monkeypatch: pytest.Mon
 
     async def _run() -> None:
         with patch.object(ai_controller, "try_resolve", return_value=None):
-            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+            reply, source, meta, _contract = await ai_controller.get_leylek_zeka_reply(
                 user_message="__leylek_unique_nohit_xyz_99123__",
                 history=[],
                 context=None,
@@ -224,7 +224,7 @@ def test_admin_kb_after_answer_engine_before_openai(monkeypatch: pytest.MonkeyPa
             patch.object(ai_controller, "_call_openai", new_callable=AsyncMock) as m_openai,
         ):
             m_openai.side_effect = AssertionError("OpenAI çağrılmamalı")
-            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+            reply, source, meta, _contract = await ai_controller.get_leylek_zeka_reply(
                 user_message="özel kb tetik ifadesi",
                 history=[],
                 context=None,
@@ -272,7 +272,7 @@ def test_get_leylek_openai_success_source_openai(monkeypatch: pytest.MonkeyPatch
             patch.object(ai_controller, "try_resolve", return_value=None),
             patch.object(ai_controller, "_call_openai", new=fake_openai),
         ):
-            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+            reply, source, meta, _contract = await ai_controller.get_leylek_zeka_reply(
                 user_message="__leylek_unique_nohit_xyz_openai_src__",
                 history=[],
                 context=None,

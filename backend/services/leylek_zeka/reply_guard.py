@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Iterable
+from dataclasses import dataclass
+from typing import Iterable, Literal
 
 from .product_knowledge_manifest import (
     find_forbidden_user_terms,
@@ -20,6 +21,72 @@ _SAFE_FAIL_CLOSED = (
     "Doğrulayamadım. Bu konuda kesin veya güncel bilgi veremiyorum. "
     "Lütfen uygulama içindeki ilgili ekranı kontrol edin veya destek kanallarını kullanın."
 )
+
+CategoryHint = Literal[
+    "product",
+    "account",
+    "live_trip",
+    "legal_support",
+    "safety",
+    "unavailable",
+    "general",
+]
+SafetyLevelHint = Literal["normal", "elevated", "emergency"]
+
+_UNAVAILABLE_REASONS = frozenset(
+    {
+        "card_payment_available",
+        "card_payment_coming_soon",
+        "package_purchase_available",
+        "earnings_dashboard_available",
+        "earnings_guaranteed",
+    }
+)
+_ACCOUNT_REASONS = frozenset(
+    {
+        "account_state_verified_without_api",
+        "kyc_status_verified_without_api",
+    }
+)
+_LIVE_REASONS = frozenset({"trip_state_verified_without_api"})
+
+
+@dataclass(frozen=True)
+class ReplyGuardResult:
+    """Structured guard outcome — callers may use .reply only (backward compatible)."""
+
+    reply: str
+    blocked: bool
+    blocked_claim_reason: str | None = None
+    category_hint: CategoryHint | None = None
+    requires_support: bool = False
+    suggested_route: str | None = None
+    safety_level_hint: SafetyLevelHint | None = None
+
+
+def _metadata_hints_for_reason(
+    reason: str | None,
+) -> tuple[CategoryHint, bool, str | None, SafetyLevelHint]:
+    if not reason:
+        return "general", False, None, "normal"
+    if reason in _UNAVAILABLE_REASONS:
+        return "unavailable", False, None, "normal"
+    if reason in _ACCOUNT_REASONS:
+        return "account", True, "/support", "elevated"
+    if reason in _LIVE_REASONS:
+        return "live_trip", True, "/support", "elevated"
+    if reason in (
+        "complaint_resolution_invented",
+        "legal_outcome_guaranteed",
+        "refund_outcome_invented",
+    ):
+        return "legal_support", True, "/support", "elevated"
+    lower = reason.lower()
+    if any(x in lower for x in ("leylektag", "leylek tag", "api.leylektag", ".com")):
+        return "product", False, None, "normal"
+    if reason == "TAG" or reason.upper() == "TAG":
+        return "product", False, None, "normal"
+    return "general", False, None, "normal"
 
 # Affirmative claim language only — denials like "yoktur / söylenmez" should not match.
 _FORBIDDEN_CLAIM_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -221,17 +288,36 @@ def safe_fail_closed_reply() -> str:
     return _SAFE_FAIL_CLOSED
 
 
+def evaluate_user_visible_reply(text: str) -> ReplyGuardResult:
+    """
+    Inspect and optionally replace a user-visible reply.
+    Existing callers that only need the string should use guard_user_visible_reply.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return ReplyGuardResult(reply=text or "", blocked=False)
+    violations = find_user_reply_policy_violations(raw)
+    if not violations:
+        return ReplyGuardResult(reply=text, blocked=False)
+    reason = violations[0]
+    category, requires_support, route, safety = _metadata_hints_for_reason(reason)
+    return ReplyGuardResult(
+        reply=_SAFE_FAIL_CLOSED,
+        blocked=True,
+        blocked_claim_reason=reason,
+        category_hint=category,
+        requires_support=requires_support,
+        suggested_route=route,
+        safety_level_hint=safety,
+    )
+
+
 def guard_user_visible_reply(text: str) -> str:
     """
     If reply violates brand/claim policy, replace with fail-closed copy.
     Empty input stays empty (caller handles).
     """
-    raw = (text or "").strip()
-    if not raw:
-        return text or ""
-    if is_user_reply_policy_violation(raw):
-        return _SAFE_FAIL_CLOSED
-    return text
+    return evaluate_user_visible_reply(text).reply
 
 
 def admin_kb_body_allowed(body: str) -> bool:

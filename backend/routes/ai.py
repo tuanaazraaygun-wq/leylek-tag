@@ -159,7 +159,7 @@ async def run_leylek_zeka_chat(body: LeylekZekaRequest, request: Request) -> dic
         logger.warning("Leylek Zeka support_context trip atlandı", exc_info=True)
 
     try:
-        reply, source, engine_meta = await get_leylek_zeka_reply(
+        reply, source, engine_meta, contract = await get_leylek_zeka_reply(
             user_message=body.message,
             history=hist,
             context=ctx_dict,
@@ -174,6 +174,17 @@ async def run_leylek_zeka_chat(body: LeylekZekaRequest, request: Request) -> dic
         "reply": reply,
         "source": source,
         "mode": USER_HELP_MODE,
+        # Additive grounded-response contract (backward-compatible)
+        "grounded": contract["grounded"],
+        "confidence": contract["confidence"],
+        "category": contract["category"],
+        "source_version": contract["source_version"],
+        "requires_support": contract["requires_support"],
+        "suggested_route": contract["suggested_route"],
+        "blocked_claim_reason": contract["blocked_claim_reason"],
+        "live_state_used": contract["live_state_used"],
+        "account_context_used": contract["account_context_used"],
+        "safety_level": contract["safety_level"],
     }
     if engine_meta is not None:
         out["intent_id"] = engine_meta["intent_id"]

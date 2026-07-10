@@ -22,8 +22,13 @@ from services.leylek_zeka.product_knowledge_manifest import (
 )
 from services.leylek_zeka.reply_guard import (
     brand_identity_snippet,
-    guard_user_visible_reply,
+    evaluate_user_visible_reply,
     unsupported_feature_policy_snippet,
+)
+from services.leylek_zeka.response_contract import (
+    LeylekZekaResponseMetadata,
+    ReplyOrigin,
+    build_leylek_zeka_response_metadata,
 )
 
 logger = logging.getLogger("server")
@@ -765,12 +770,20 @@ async def _call_openai(
     return reply
 
 
+def _keyword_reply_is_manifest_backed(reply: str) -> bool:
+    """True when keyword fallback returned a known product canon (not generic unknown)."""
+    raw = (reply or "").strip()
+    if not raw or raw == _FALLBACK_GENERIC.strip():
+        return False
+    return raw in set(_REPLIES.values()) or raw == _ESLESME_VE_ROL.strip()
+
+
 async def get_leylek_zeka_reply(
     *,
     user_message: str,
     history: list[dict[str, Any]] | None,
     context: dict[str, Any] | None = None,
-) -> tuple[str, Source, AnswerEngineMeta | None]:
+) -> tuple[str, Source, AnswerEngineMeta | None, LeylekZekaResponseMetadata]:
     """
     Öncelik: operation_snapshot → answer_engine (katalog) → yüksek güven eşleşme kanonu →
     admin KB (feature flag) → OpenAI (anahtar varsa) → Türkçe fallback.
@@ -778,10 +791,18 @@ async def get_leylek_zeka_reply(
     Eşleşme/rol için answer_engine isabeti, genel yüksek güven metninden önce gelir;
     katalog kaçırırsa doğru _ESLESME_VE_ROL / rol kabul kanonu kullanılır.
     Tüm kullanıcıya dönen metinler marka/yasak iddia korumasından geçer (kaynak etiketi korunur).
+    Dördüncü dönüş: additive grounded response metadata (mevcut alanları değiştirmez).
     """
     text = (user_message or "").strip()
     if not text:
-        return guard_user_visible_reply(_FALLBACK_GENERIC), "fallback", None
+        guard = evaluate_user_visible_reply(_FALLBACK_GENERIC)
+        contract = build_leylek_zeka_response_metadata(
+            source="fallback",
+            origin="empty",
+            guard=guard,
+            user_message=text,
+        )
+        return guard.reply, "fallback", None, contract
 
     def _emit_and_return(
         reply: str,
@@ -790,8 +811,25 @@ async def get_leylek_zeka_reply(
         *,
         hit: bool,
         intent_id: str | None,
-    ) -> tuple[str, Source, AnswerEngineMeta | None]:
-        guarded = guard_user_visible_reply(reply)
+        origin: ReplyOrigin,
+        live_state_used: bool = False,
+        account_context_used: bool = False,
+        source_version_override: str | None = None,
+        manifest_backed_keyword: bool = False,
+    ) -> tuple[str, Source, AnswerEngineMeta | None, LeylekZekaResponseMetadata]:
+        guard = evaluate_user_visible_reply(reply)
+        contract = build_leylek_zeka_response_metadata(
+            source=source,
+            origin=origin,
+            intent_id=intent_id,
+            deterministic=bool(meta and meta.get("deterministic")),
+            guard=guard,
+            live_state_used=live_state_used,
+            account_context_used=account_context_used,
+            source_version_override=source_version_override,
+            manifest_backed_keyword=manifest_backed_keyword,
+            user_message=text,
+        )
         _emit_answer_engine_telemetry(
             hit=hit,
             intent_id=intent_id,
@@ -799,17 +837,23 @@ async def get_leylek_zeka_reply(
             context=context,
             user_message=text,
         )
-        return guarded, source, meta
+        return guard.reply, source, meta, contract
 
     op_hit = _try_operation_snapshot_reply(text, context)
     if op_hit is not None:
         reply_text, op_meta = op_hit
+        operation = _support_operation_from_context(context) or {}
+        op_ver = str(operation.get("schema_version") or "").strip() or None
         return _emit_and_return(
             reply_text,
             "operation_snapshot",
             op_meta,
             hit=True,
             intent_id=op_meta["intent_id"],
+            origin="operation_snapshot",
+            live_state_used=True,
+            account_context_used=True,
+            source_version_override=op_ver,
         )
 
     resolved = try_resolve(text, context)
@@ -824,6 +868,7 @@ async def get_leylek_zeka_reply(
             meta,
             hit=True,
             intent_id=resolved["intent_id"],
+            origin="answer_engine",
         )
 
     flow_hit = _high_confidence_flow_reply(text)
@@ -834,6 +879,7 @@ async def get_leylek_zeka_reply(
             None,
             hit=False,
             intent_id=None,
+            origin="high_confidence",
         )
 
     kb_hit = try_match_admin_kb(text)
@@ -844,6 +890,7 @@ async def get_leylek_zeka_reply(
             None,
             hit=False,
             intent_id=None,
+            origin="admin_kb",
         )
 
     system_extra = _context_system_addon(context)
@@ -852,12 +899,15 @@ async def get_leylek_zeka_reply(
     logger.info("Leylek Zeka: OPENAI_API_KEY %s", "var" if api_key else "yok")
     if not api_key:
         logger.info("Leylek Zeka: OPENAI_API_KEY yok — fallback yanıt")
+        fb = fallback_reply(text, context)
         return _emit_and_return(
-            fallback_reply(text, context),
+            fb,
             "fallback",
             None,
             hit=False,
             intent_id=None,
+            origin="keyword_fallback",
+            manifest_backed_keyword=_keyword_reply_is_manifest_backed(fb),
         )
 
     try:
@@ -873,15 +923,19 @@ async def get_leylek_zeka_reply(
             None,
             hit=False,
             intent_id=None,
+            origin="openai",
         )
     except LeylekZekaError as e:
         logger.info("Leylek Zeka: OpenAI kullanılamadı (%s) — fallback", e)
+        fb = fallback_reply(text, context)
         return _emit_and_return(
-            fallback_reply(text, context),
+            fb,
             "fallback",
             None,
             hit=False,
             intent_id=None,
+            origin="keyword_fallback",
+            manifest_backed_keyword=_keyword_reply_is_manifest_backed(fb),
         )
 
 
@@ -891,7 +945,7 @@ async def call_leylek_zeka(
     history: list[dict[str, Any]] | None,
     context: dict[str, Any] | None = None,
 ) -> str:
-    reply, _src, _meta = await get_leylek_zeka_reply(
+    reply, _src, _meta, _contract = await get_leylek_zeka_reply(
         user_message=user_message, history=history, context=context
     )
     return reply
