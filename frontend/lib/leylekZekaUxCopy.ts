@@ -33,8 +33,8 @@ const LEYLEK_OFFER_GUIDE_PROMPTS = [
 const DEFAULT_COPY: LeylekZekaBaseCopy = {
   stageLabel: 'Uygulama rehberi',
   intentScope: 'general_app_guide',
-  emptyTitle: 'Akıllı eşleşme hazır',
-  emptyBody: 'Yolculuk akışını takip ediyorum. Sana en doğru adımı gösterebilirim.',
+  emptyTitle: 'Eşleşme rehberi hazır',
+  emptyBody: 'Yolculuk akışındaki adımları birlikte netleştirebiliriz. İddiasız ve kısa rehberlik sunarım.',
   placeholder: 'Sorunu yaz veya basılı tutarak konuş…',
   starterPrompts: [
     'Yolcu nasıl yolculuk başlatır?',
@@ -244,7 +244,7 @@ const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaBaseCopy> =
 
 const DEFAULT_OPERATION = {
   operationAwarenessTitle: 'Güvenli akış',
-  operationAwarenessBody: 'Ekrandaki adımlara göre rehberlik; kesin süre veya bölge iddiası yok.',
+  operationAwarenessBody: 'Ekrandaki adımlara göre rehberlik; süre veya bölge iddiası yok.',
   safeChecklist: [
     'Güncel ekranı kontrol et.',
     'Bildirimleri açık tut.',
@@ -261,7 +261,7 @@ function operationForIntent(intentScope: string): Omit<
       return {
         operationAwarenessTitle: 'Eşleşme kontrol listesi',
         operationAwarenessBody:
-          'Eşleşme beklerken yalnız ekrandaki duruma göre rehberlik ederim; kesin süre veya garanti paylaşmam.',
+          'Eşleşme beklerken yalnız ekrandaki duruma göre rehberlik ederim; süre veya garanti paylaşmam.',
         safeChecklist: [
           'Konum, hedef ve araç tercihini kontrol et.',
           'Bildirimlerin açık olduğundan emin ol.',
@@ -406,12 +406,12 @@ export const FLOW_AWARE_PREMIUM_LINES: Record<FlowAwareAmbientKey, readonly Prem
       accents: ['sürüş tipini'],
     },
     {
-      text: 'Senin için en uygun seçeneği birlikte değerlendirebiliriz.',
-      accents: ['en uygun seçeneği'],
+      text: 'Seçenekleri birlikte sakin şekilde değerlendirebiliriz.',
+      accents: ['birlikte'],
     },
     {
-      text: "Leylek'e sor. Sana en iyi seçeneği bulayım.",
-      accents: ['en iyi seçeneği'],
+      text: 'Leylek Zeka’ya sor; adımları birlikte netleştirelim.',
+      accents: ['Leylek Zeka'],
     },
     {
       text: 'İstersen bulunduğun duruma göre birlikte ilerleyebiliriz.',
@@ -420,20 +420,20 @@ export const FLOW_AWARE_PREMIUM_LINES: Record<FlowAwareAmbientKey, readonly Prem
   ],
   driver_idle: [
     {
-      text: 'Yakındaki hareketliliği analiz etmene yardımcı olabilirim.',
-      accents: ['hareketliliği'],
-    },
-    {
-      text: 'Yakındaki talepleri takip ederek sana rehberlik edebilirim.',
+      text: 'Ekrandaki talepleri takip etmene yardımcı olabilirim.',
       accents: ['talepleri'],
     },
     {
-      text: 'Yoğunluk değişimlerini takip etmene yardımcı olabilirim.',
-      accents: ['yoğunluk değişimlerini'],
+      text: 'Açık talepleri incelerken kontrol listesi sunabilirim.',
+      accents: ['kontrol listesi'],
     },
     {
-      text: 'Daha hızlı eşleşme için bazı önerilerim olabilir.',
-      accents: ['önerilerim'],
+      text: 'Yoğunluk iddiası vermeden ekran kullanımını anlatırım.',
+      accents: ['ekran kullanımını'],
+    },
+    {
+      text: 'Bir sonraki adım için kısa rehberlik verebilirim.',
+      accents: ['kısa rehberlik'],
     },
   ],
   driver_offer_list: [
@@ -442,34 +442,34 @@ export const FLOW_AWARE_PREMIUM_LINES: Record<FlowAwareAmbientKey, readonly Prem
       accents: ['yardımcı olabilirim'],
     },
     {
-      text: 'Şu anki duruma göre daha mantıklı bir seçim yapabiliriz.',
-      accents: ['mantıklı bir seçim'],
+      text: 'Şu anki kart bilgisine göre birlikte bakabiliriz.',
+      accents: ['birlikte bakabiliriz'],
     },
     {
-      text: 'Senin için daha verimli bir seçenek olabilir.',
-      accents: ['verimli bir seçenek'],
+      text: 'Teklif öncesi kontrol listesini birlikte okuyabiliriz.',
+      accents: ['kontrol listesini'],
     },
     {
-      text: 'Bir sonraki adımın için sana yardımcı olmaya hazırım.',
-      accents: ['yardımcı olmaya hazırım'],
+      text: 'Bir sonraki adım için kısa rehberlik verebilirim.',
+      accents: ['kısa rehberlik'],
     },
   ],
   passenger_matching: [
     {
-      text: 'Bekleme süreni azaltabilecek seçeneklere birlikte bakalım.',
-      accents: ['azaltabilecek', 'birlikte bakalım'],
+      text: 'Beklerken ekrandaki adımları birlikte kontrol edebiliriz.',
+      accents: ['birlikte kontrol'],
     },
     {
-      text: 'Daha hızlı eşleşme için bazı önerilerim olabilir.',
-      accents: ['önerilerim'],
+      text: 'Süre garantisi vermeden kontrol listesi sunabilirim.',
+      accents: ['kontrol listesi'],
     },
     {
-      text: 'En doğru zamanı yakalamana yardımcı olmaya çalışıyorum.',
-      accents: ['doğru zamanı'],
+      text: 'Konum, rota ve araç tercihini birlikte gözden geçirelim.',
+      accents: ['gözden geçirelim'],
     },
     {
-      text: 'Beklemek yerine daha iyi bir strateji oluşturabiliriz.',
-      accents: ['daha iyi bir strateji'],
+      text: 'Teklif gelirse kart bilgilerini birlikte okuyabiliriz.',
+      accents: ['birlikte okuyabiliriz'],
     },
   ],
   passenger_offer_waiting: [
@@ -478,16 +478,16 @@ export const FLOW_AWARE_PREMIUM_LINES: Record<FlowAwareAmbientKey, readonly Prem
       accents: ['yardımcı olabilirim'],
     },
     {
-      text: 'İstersen sana uygun eşleşme ihtimallerini birlikte değerlendirelim.',
+      text: 'İstersen teklif kartlarını birlikte değerlendirelim.',
       accents: ['birlikte değerlendirelim'],
     },
     {
-      text: 'Şu anki duruma göre daha mantıklı bir seçim yapabiliriz.',
-      accents: ['mantıklı bir seçim'],
+      text: 'Şu anki duruma göre kart bilgilerini birlikte okuyalım.',
+      accents: ['birlikte okuyalım'],
     },
     {
-      text: 'Bir sonraki adımın için sana yardımcı olmaya hazırım.',
-      accents: ['yardımcı olmaya hazırım'],
+      text: 'Bir sonraki adım için kısa rehberlik verebilirim.',
+      accents: ['kısa rehberlik'],
     },
   ],
   default: [
@@ -496,16 +496,16 @@ export const FLOW_AWARE_PREMIUM_LINES: Record<FlowAwareAmbientKey, readonly Prem
       accents: ['yardımcı olabilirim'],
     },
     {
-      text: 'Senin için en uygun seçeneği birlikte değerlendirebiliriz.',
-      accents: ['en uygun seçeneği'],
+      text: 'Seçenekleri birlikte sakin şekilde değerlendirebiliriz.',
+      accents: ['birlikte'],
     },
     {
       text: 'İstersen bulunduğun duruma göre birlikte ilerleyebiliriz.',
       accents: ['birlikte ilerleyebiliriz'],
     },
     {
-      text: 'Bir sonraki adımın için sana yardımcı olmaya hazırım.',
-      accents: ['yardımcı olmaya hazırım'],
+      text: 'Bir sonraki adım için kısa rehberlik verebilirim.',
+      accents: ['kısa rehberlik'],
     },
     {
       text: 'İstersen sesli de sorabilirsin.',
@@ -516,22 +516,22 @@ export const FLOW_AWARE_PREMIUM_LINES: Record<FlowAwareAmbientKey, readonly Prem
 
 /** Bubble içinde cyan vurgu yedek listesi (proactive / accent tanımsız satırlar). */
 export const ORB_BUBBLE_ACCENT_SNIPPETS = [
-  'en iyi seçeneği',
-  'en uygun seçeneği',
-  'hareketliliği',
-  'azaltabilecek',
-  'birlikte bakalım',
-  'birlikte değerlendirelim',
-  'mantıklı bir seçim',
-  'yardımcı olabilirim',
-  'yardımcı olmaya hazırım',
-  'yoğunluk değişimlerini',
-  'doğru zamanı',
-  'önerilerim',
-  'verimli bir seçenek',
+  'Leylek Zeka',
   'sürüş tipini',
+  'birlikte',
+  'birlikte ilerleyebiliriz',
+  'birlikte kontrol',
+  'birlikte değerlendirelim',
+  'birlikte okuyabiliriz',
+  'birlikte okuyalım',
+  'birlikte bakabiliriz',
+  'yardımcı olabilirim',
+  'kısa rehberlik',
+  'kontrol listesi',
+  'kontrol listesini',
+  'ekran kullanımını',
+  'gözden geçirelim',
   'talepleri',
-  "Leylek'e sor",
   'sesli',
 ] as const;
 
@@ -569,12 +569,12 @@ export function resolveAccentSpans(
 
 /** Orb ipuçları — gerçek operasyon verisi olmadan iddialı yoğunluk/talep cümlesi yok. */
 export const ORB_ACTIVITY_HINTS = [
-  'Akıllı eşleşme hazır',
-  'Yolculuk akışını takip ediyorum',
-  'Uygun fırsatları izliyorum',
-  'Sana en doğru adımı gösterebilirim',
-  'Güvenli akış kontrol altında',
+  'Eşleşme rehberi hazır',
+  'Yolculuk adımlarını birlikte netleştirebiliriz',
+  'Ekrandaki akışa göre rehberlik ederim',
   'İstersen sesli de sorabilirsin',
+  'Kısa ve iddiasız yardım sunarım',
+  'Güvenli kullanım adımlarını anlatabilirim',
 ] as const;
 
 const ORB_HINT_MAX_LEN = 48;

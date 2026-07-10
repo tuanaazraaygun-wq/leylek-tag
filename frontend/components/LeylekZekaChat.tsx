@@ -37,13 +37,17 @@ import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
 import { useTheme } from '../hooks/useTheme';
 import {
   type LeylekZekaMessage,
+  type LeylekZekaReplyMeta,
   type LeylekZekaReplySource,
   type LeylekZekaSendOptions,
+  captionForLeylekZekaReply,
 } from '../hooks/useLeylekZeka';
 import { getLeylekZekaContextCopy } from '../lib/leylekZekaUxCopy';
 import LeylekEye, { LEYLEK_EYE_CHAT_HEADER_SIZE } from '../design-system/leylek-eye/LeylekEye';
 
-const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
+const WELCOME_HINT_KEY = 'leylek_zeka_welcome_hint_dismissed_v1';
+/** Eski beta anahtarı — bir kez okunup yeni anahtara taşınır. */
+const LEGACY_BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
 
 /** Küçük ekran — tam ekran / near full-screen sohbet kabuğu */
 const COMPACT_SHELL_MAX_HEIGHT = 740;
@@ -140,6 +144,8 @@ type Props = {
   onSend: (text: string, options?: LeylekZekaSendOptions) => void;
   onClearError: () => void;
   lastReplySource: LeylekZekaReplySource | null;
+  lastReplyMeta?: LeylekZekaReplyMeta | null;
+  lastSourceCaption?: string | null;
 };
 
 const TypingBars = memo(function TypingBars() {
@@ -362,6 +368,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   onSend,
   onClearError,
   lastReplySource,
+  lastReplyMeta = null,
+  lastSourceCaption = null,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -371,7 +379,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const { resolvedTheme, tokens } = useTheme();
   const isLightShell = resolvedTheme === 'light';
   const [input, setInput] = useState('');
-  const [showBetaHint, setShowBetaHint] = useState(false);
+  const [showWelcomeHint, setShowWelcomeHint] = useState(false);
   const [speechEnabled, setSpeechEnabled] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [hasSpeakableAssistant, setHasSpeakableAssistant] = useState(false);
@@ -589,10 +597,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     let cancelled = false;
     void (async () => {
       try {
-        const v = await AsyncStorage.getItem(BETA_HINT_KEY);
-        if (!cancelled && v !== '1') setShowBetaHint(true);
+        const v =
+          (await AsyncStorage.getItem(WELCOME_HINT_KEY)) ??
+          (await AsyncStorage.getItem(LEGACY_BETA_HINT_KEY));
+        if (!cancelled && v !== '1') setShowWelcomeHint(true);
+        if (v === '1') {
+          await AsyncStorage.setItem(WELCOME_HINT_KEY, '1').catch(() => {});
+        }
       } catch {
-        if (!cancelled) setShowBetaHint(true);
+        if (!cancelled) setShowWelcomeHint(true);
       }
     })();
     return () => {
@@ -602,13 +615,13 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   useEffect(() => {
     if (lastReplySource !== 'openai' && lastReplySource !== 'kb') return;
-    void AsyncStorage.setItem(BETA_HINT_KEY, '1').catch(() => {});
-    setShowBetaHint(false);
+    void AsyncStorage.setItem(WELCOME_HINT_KEY, '1').catch(() => {});
+    setShowWelcomeHint(false);
   }, [lastReplySource]);
 
-  const dismissBetaHint = useCallback(() => {
-    setShowBetaHint(false);
-    void AsyncStorage.setItem(BETA_HINT_KEY, '1').catch(() => {});
+  const dismissWelcomeHint = useCallback(() => {
+    setShowWelcomeHint(false);
+    void AsyncStorage.setItem(WELCOME_HINT_KEY, '1').catch(() => {});
   }, []);
 
   const stopSpeech = useCallback(() => {
@@ -1155,17 +1168,20 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   const keyExtractor = useCallback((m: LeylekZekaMessage) => m.id, []);
 
-  const modeCaption =
-    lastReplySource === 'fallback'
-      ? 'Hazır yanıtlarla destekleniyorsunuz.'
-      : lastReplySource === 'openai' || lastReplySource === 'kb'
-        ? 'Yapay zeka yanıtı (Leylek AI).'
-        : lastReplySource === 'answer_engine' || lastReplySource === 'admin_kb'
-          ? 'Resmi adım adım yanıt.'
-          : null;
-
+  const modeCaption = lastReplySource
+    ? lastSourceCaption ||
+      captionForLeylekZekaReply(lastReplySource, lastReplyMeta?.category)
+    : null;
   const headerSubtitle = contextCopy.stageLabel;
-  const headerHeroTagline = 'AI kontrol merkezi';
+  const headerHeroTagline = 'Uygulama rehberi';
+  const supportHint =
+    lastReplyMeta?.requires_support === true
+      ? lastReplyMeta.suggested_route === '/support'
+        ? 'Gerekirse Destek ekranından yardım alabilirsiniz.'
+        : lastReplyMeta.suggested_route
+          ? 'İlgili uygulama ekranını kontrol edebilir veya Destek’e yazabilirsiniz.'
+          : 'Gerekirse Destek ekibine yazabilirsiniz.'
+      : null;
   const voiceStatusTitle = voiceInputError
     ? 'Bas-konuş durdu'
     : isListening
@@ -1379,7 +1395,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                       end={{ x: 1, y: 1 }}
                       style={styles.aiBadge}
                     >
-                      <Text style={styles.aiBadgeText}>AI</Text>
+                      <Text style={styles.aiBadgeText}>Zeka</Text>
                     </LinearGradient>
                   </View>
                   <Text
@@ -1487,14 +1503,20 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             </Pressable>
           </LinearGradient>
 
-          {showBetaHint ? (
+          {showWelcomeHint ? (
             <View style={[styles.betaBanner, isLightShell && styles.betaBannerLight]}>
               <Text style={[styles.betaText, isLightShell && styles.betaTextLight]}>
-                Akıllı rehber aktif · Güvenli akış kontrol altında · Yazı veya sesli sorabilirsiniz.
+                Leylek Zeka uygulama adımlarında rehberlik eder. Yazı veya sesli sorabilirsiniz.
               </Text>
-              <Pressable onPress={dismissBetaHint} hitSlop={8} style={styles.betaDismiss}>
+              <Pressable onPress={dismissWelcomeHint} hitSlop={8} style={styles.betaDismiss}>
                 <Ionicons name="close-circle" size={22} color={Colors.gray500} />
               </Pressable>
+            </View>
+          ) : null}
+
+          {supportHint && !isTyping ? (
+            <View style={[styles.betaBanner, isLightShell && styles.betaBannerLight]}>
+              <Text style={[styles.betaText, isLightShell && styles.betaTextLight]}>{supportHint}</Text>
             </View>
           ) : null}
 

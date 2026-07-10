@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
 import LeylekAIFloating from '../components/LeylekAIFloating';
 
-const FALLBACK_MESSAGE = 'Sana en doğru adımı gösterebilirim';
+const FALLBACK_MESSAGE = 'Ekrandaki adımları birlikte netleştirebiliriz';
 
-/** Son segmentte sık görülen il / ilçe adayı (adres metninden). */
+/** Son segmentte sık görünen il / ilçe adayı (adres metninden). */
 function extractCityFromAddress(raw: string): string | null {
   const t = raw.replace(/\s+/g, ' ').trim();
   if (!t) return null;
@@ -35,7 +35,7 @@ type DriverWaitingLeylekAIFloatingProps = {
   addressContext?: string | null;
 };
 
-/** Sürücü teklif / bekleme haritası — Leylek AI (app/index.tsx sürücü panelinde kullanılır). */
+/** Sürücü teklif / bekleme haritası — Leylek Zeka (app/index.tsx sürücü panelinde kullanılır). */
 export function DriverWaitingLeylekAIFloating({
   profileCity,
   addressContext,
@@ -43,7 +43,7 @@ export function DriverWaitingLeylekAIFloating({
   const message = useMemo(() => {
     const city = resolveCityLabel(profileCity, addressContext);
     if (!city) return FALLBACK_MESSAGE;
-    return `${city} için uygun fırsatları izliyorum`;
+    return `${city} için ekrandaki talepleri birlikte inceleyebiliriz`;
   }, [profileCity, addressContext]);
 
   return (

@@ -27,21 +27,22 @@ const GREETINGS = [
   'Kararsız kaldın gibi 🙂',
   'İstersen yardımcı olayım',
   'Buradayım, sorabilirsin',
-  'Sana en iyi seçeneği bulabilirim',
+  'Adımları birlikte netleştirebiliriz',
 ] as const;
 
 const HINT_ROTATION = [
-  "Leylek'e sor, yardımcı olayım",
-  'Sana en iyi seçeneği bulabilirim',
+  'Leylek Zeka’ya sor, yardımcı olayım',
+  'Adımları birlikte netleştirebiliriz',
   'Kararsızsan birlikte bakalım',
-  'Daha hızlı eşleşme ister misin?',
+  'Ekrandaki seçeneklere birlikte bakabiliriz',
 ] as const;
 
 /** Rol kokpiti: yazarken vurgulanacak alt string’ler (presentation only) */
 const COCKPIT_ACCENT_SNIPPETS = [
-  'en iyi seçeneği bulabilirim',
-  'en iyi seçeneği',
-  'en iyi seçeneği bulmama yardım edeyim',
+  'birlikte netleştirebiliriz',
+  'Leylek Zeka',
+  'birlikte bakalım',
+  'birlikte bakabiliriz',
 ] as const;
 
 const CHAR_MS = 20;
@@ -340,7 +341,7 @@ export default function LeylekAIFloating({
         <Pressable
           onPress={onOpen}
           accessibilityRole="button"
-          accessibilityLabel={hideTooltip ? message : 'Leylek AI asistanı'}
+          accessibilityLabel={hideTooltip ? message : 'Leylek Zeka'}
           accessibilityHint={hideTooltip ? 'Leylek Zeka sohbetini açar' : undefined}
           style={({ pressed }) => [
             cockpit ? st.fabPressable : stylesDefault.fabPressable,

@@ -11,7 +11,29 @@ export type LeylekZekaMessage = {
   text: string;
 };
 
-export type LeylekZekaReplySource = 'openai' | 'fallback' | 'answer_engine' | 'admin_kb' | 'kb';
+export type LeylekZekaReplySource =
+  | 'openai'
+  | 'fallback'
+  | 'answer_engine'
+  | 'admin_kb'
+  | 'kb'
+  | 'operation_snapshot';
+
+/** Kullanıcıya gösterilen kaynak başlığı — ham backend etiketleri asla yazılmaz. */
+export type LeylekZekaSourceCaption =
+  | 'Leylek Zeka'
+  | 'Ürün Bilgisi'
+  | 'Canlı Yolculuk'
+  | 'Bilgi Merkezi';
+
+export type LeylekZekaReplyMeta = {
+  grounded?: boolean;
+  confidence?: string | null;
+  category?: string | null;
+  requires_support?: boolean;
+  suggested_route?: string | null;
+};
+
 export type LeylekZekaSendOptions = {
   voiceMode?: boolean;
   inputMode?: 'text' | 'voice';
@@ -25,15 +47,37 @@ function normalizeReplySource(raw: string | undefined): LeylekZekaReplySource {
     raw === 'answer_engine' ||
     raw === 'fallback' ||
     raw === 'admin_kb' ||
-    raw === 'kb'
+    raw === 'kb' ||
+    raw === 'operation_snapshot'
   ) {
     return raw;
   }
-  // Eski backend uyumu: LLM yanıtı "claude" etiketiyle geliyordu; gerçek sağlayıcı Leylek AI idi.
+  // Eski backend uyumu: LLM yanıtı "claude" etiketiyle geliyordu.
   if (raw === 'claude') {
     return 'openai';
   }
   return 'fallback';
+}
+
+/** Ham source / category → kullanıcıya güvenli başlık. */
+export function captionForLeylekZekaReply(
+  source: LeylekZekaReplySource | null | undefined,
+  category?: string | null,
+): LeylekZekaSourceCaption {
+  const cat = String(category || '').trim().toLowerCase();
+  if (source === 'operation_snapshot' || cat === 'live_trip') return 'Canlı Yolculuk';
+  if (source === 'admin_kb' || source === 'kb') return 'Bilgi Merkezi';
+  if (cat === 'account') return 'Leylek Zeka';
+  if (
+    source === 'answer_engine' ||
+    cat === 'product' ||
+    cat === 'unavailable' ||
+    cat === 'legal_support' ||
+    cat === 'safety'
+  ) {
+    return 'Ürün Bilgisi';
+  }
+  return 'Leylek Zeka';
 }
 
 /** Hızlı öneriler — backend fallback anahtar kelimeleriyle uyumlu kısa ifadeler */
@@ -52,6 +96,11 @@ type LeylekZekaApiJson = {
   source?: string;
   intent_id?: string;
   intentId?: string;
+  grounded?: boolean;
+  confidence?: string;
+  category?: string;
+  requires_support?: boolean;
+  suggested_route?: string | null;
   detail?: string | { detail?: string };
 };
 
@@ -125,7 +174,7 @@ function resolveComplaintCategory(text: string): { category: string; categoryLab
   if (has('platform', 'uygulama')) {
     return { category: 'platform_issue', categoryLabel: 'Platform veya uygulama sorunu' };
   }
-  if (has('odeme', 'para', 'ucret')) {
+  if (has('odeme', 'para', 'ucret', 'katki', 'iban')) {
     return { category: 'payment_issue', categoryLabel: 'Katkı payı sorunu' };
   }
   if (has('konum', 'adres', 'harita')) {
@@ -322,6 +371,7 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastReplySource, setLastReplySource] = useState<LeylekZekaReplySource | null>(null);
+  const [lastReplyMeta, setLastReplyMeta] = useState<LeylekZekaReplyMeta | null>(null);
   const [pendingComplaintFlow, setPendingComplaintFlow] = useState<PendingComplaintFlow | null>(null);
   const inFlightRef = useRef(false);
 
@@ -331,6 +381,13 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
     setMessages((prev) => [...prev, makeMessage('user', userText), makeMessage('assistant', assistantText)]);
     setError(null);
     setLastReplySource('answer_engine');
+    setLastReplyMeta({
+      grounded: true,
+      confidence: 'high',
+      category: 'legal_support',
+      requires_support: false,
+      suggested_route: null,
+    });
   }, []);
 
   const sendMessage = useCallback(async (raw: string, sendOptions?: LeylekZekaSendOptions) => {
@@ -361,7 +418,7 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
         if (!category) {
           appendLocalComplaintExchange(
             text,
-            'Bunu hangi başlık altında değerlendirelim: kullanıcı, sürücü, yolcu, platform, ödeme, konum, eşleşme, teklif veya genel geri bildirim?',
+            'Bunu hangi başlık altında değerlendirelim: kullanıcı, sürücü, yolcu, platform, katkı payı, konum, eşleşme, teklif veya genel geri bildirim?',
           );
           return;
         }
@@ -378,7 +435,7 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
                 ...prev,
                 makeMessage(
                   'assistant',
-                  `Son yolculuğunuzdaki ${counterpartRoleLabel(candidate.role)} ${name} için mi bildirim yapmak istiyorsunuz?`,
+                  `İlgili yolculukta görünen ${counterpartRoleLabel(candidate.role)} ${name} için mi bildirim yapmak istiyorsunuz?`,
                 ),
               ]);
               setPendingComplaintFlow({
@@ -458,7 +515,7 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
         }
         appendLocalComplaintExchange(
           text,
-          'Son yolculuğunuzdaki bu kişiye bağlamamı onaylıyor musunuz? Evet veya hayır yazabilirsiniz.',
+          'İlgili yolculukta görünen bu kişiye bağlamamı onaylıyor musunuz? Evet veya hayır yazabilirsiniz.',
         );
         return;
       }
@@ -504,7 +561,13 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
             reporterRole: resolveReporterRoleForReport(leylekContext),
           });
           if (result.ok) {
-            setMessages((prev) => [...prev, makeMessage('assistant', 'Destek kaydınızı oluşturdum. Admin ekibi inceleyebilir.')]);
+            setMessages((prev) => [
+              ...prev,
+              makeMessage(
+                'assistant',
+                'Destek kaydınızı oluşturdum. Destek ekibi kaydı inceleyebilir.',
+              ),
+            ]);
             setPendingComplaintFlow(null);
           } else {
             setMessages((prev) => [...prev, makeMessage('assistant', result.message)]);
@@ -613,6 +676,16 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
       }
 
       setLastReplySource(normalizeReplySource(typeof data?.source === 'string' ? data.source : undefined));
+      setLastReplyMeta({
+        grounded: typeof data?.grounded === 'boolean' ? data.grounded : undefined,
+        confidence: typeof data?.confidence === 'string' ? data.confidence : null,
+        category: typeof data?.category === 'string' ? data.category : null,
+        requires_support: data?.requires_support === true,
+        suggested_route:
+          typeof data?.suggested_route === 'string' && data.suggested_route.trim()
+            ? data.suggested_route.trim()
+            : null,
+      });
 
       const assistantMsg: LeylekZekaMessage = {
         id: `a-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -641,5 +714,19 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
     }
   }, [appendLocalComplaintExchange, isAdminUser, leylekContext, pendingComplaintFlow]);
 
-  return { messages, isTyping, error, sendMessage, clearError, lastReplySource };
+  const lastSourceCaption = useMemo(
+    () => captionForLeylekZekaReply(lastReplySource, lastReplyMeta?.category),
+    [lastReplySource, lastReplyMeta?.category],
+  );
+
+  return {
+    messages,
+    isTyping,
+    error,
+    sendMessage,
+    clearError,
+    lastReplySource,
+    lastReplyMeta,
+    lastSourceCaption,
+  };
 }

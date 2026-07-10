@@ -237,7 +237,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     setLeylekZekaChatOpen,
     passengerWaitInsight,
   } = useLeylekZekaChrome();
-  const { messages, isTyping, error, sendMessage, clearError, lastReplySource } = useLeylekZeka();
+  const { messages, isTyping, error, sendMessage, clearError, lastReplySource, lastReplyMeta, lastSourceCaption } =
+    useLeylekZeka();
   const { resolvedTheme } = useTheme();
   const eyeThemeVariant = resolvedTheme === 'light' ? 'light' : 'dark';
   const isLightFabChrome = eyeThemeVariant === 'light';
@@ -1134,6 +1135,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
             onSend={sendMessage}
             onClearError={clearError}
             lastReplySource={lastReplySource}
+            lastReplyMeta={lastReplyMeta}
+            lastSourceCaption={lastSourceCaption}
           />
         </React.Suspense>
       ) : null}
