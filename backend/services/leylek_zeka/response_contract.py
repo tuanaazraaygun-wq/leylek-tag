@@ -165,7 +165,47 @@ INTENT_CONTRACT_HINTS: dict[str, dict[str, str]] = {
         "blocked_claim_reason": "trip_state_verified_without_api",
         "safety_level": "elevated",
     },
+    # Verified personal context intents
+    "verified_role": {"category": "account"},
+    "verified_current_trip_state": {"category": "live_trip"},
+    "verified_driver_kyc_state": {
+        "category": "account",
+        "suggested_route": "/driver-vehicles",
+    },
+    "verified_car_approval_state": {
+        "category": "account",
+        "suggested_route": "/driver-vehicles",
+    },
+    "verified_motorcycle_approval_state": {
+        "category": "account",
+        "suggested_route": "/driver-vehicles",
+    },
+    "verified_vehicle_summary": {
+        "category": "account",
+        "suggested_route": "/driver-vehicles",
+    },
+    "verified_active_vehicle_type": {
+        "category": "account",
+        "suggested_route": "/driver-vehicles",
+    },
+    "verified_driver_access_state": {"category": "account"},
 }
+
+_VERIFIED_ACCOUNT_INTENTS = frozenset(
+    {
+        "verified_role",
+        "verified_driver_kyc_state",
+        "verified_car_approval_state",
+        "verified_motorcycle_approval_state",
+        "verified_vehicle_summary",
+        "verified_active_vehicle_type",
+        "verified_driver_access_state",
+    }
+)
+_VERIFIED_TRIP_INTENTS = frozenset({"verified_current_trip_state"})
+_UNVERIFIED_REFUSAL_INTENTS = frozenset(
+    {"account_state_unverified", "live_trip_state_unverified"}
+)
 
 _UNAVAILABLE_CLAIM_REASONS = frozenset(
     {
@@ -432,12 +472,22 @@ def build_leylek_zeka_response_metadata(
             requires_support = True
         if hints.get("blocked_claim_reason"):
             blocked_claim_reason = hints["blocked_claim_reason"]
-        if category == "account":
+        # Fail-closed refusals must not claim verified context was used.
+        if intent_id in _UNVERIFIED_REFUSAL_INTENTS:
             account_used = False
-        if category == "live_trip" and origin == "answer_engine":
-            # Unverified live-state refusals must not claim live context was used.
             if intent_id == "live_trip_state_unverified":
                 live_used = False
+        elif intent_id in _VERIFIED_ACCOUNT_INTENTS:
+            account_used = bool(account_context_used)
+            if source_version_override:
+                source_version = source_version_override.strip() or source_version
+        elif intent_id in _VERIFIED_TRIP_INTENTS:
+            live_used = bool(live_state_used)
+            account_used = bool(account_context_used)
+            if source_version_override:
+                source_version = source_version_override.strip() or source_version
+        elif category == "account":
+            account_used = False
     elif origin == "high_confidence":
         grounded = True
         confidence = "high"
@@ -448,7 +498,8 @@ def build_leylek_zeka_response_metadata(
         confidence = "high"
         category = "live_trip"
         live_used = True
-        account_used = True
+        # Ops demand/availability is live ops data — not account/KYC/vehicle context.
+        account_used = False
         source_version = (source_version_override or "").strip() or manifest_ver
     elif origin == "admin_kb":
         grounded = True

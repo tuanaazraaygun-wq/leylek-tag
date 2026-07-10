@@ -16,6 +16,9 @@ from .catalog import IntentDefinition
 _m = get_leylek_zeka_product_manifest()
 
 # --- Fail-closed (account / live state without verified API context) ---
+# When Bearer + verified_context is present, controllers.ai_controller resolves
+# verified_* personal intents first (see services.leylek_zeka.verified_context).
+# These catalog intents remain the fail-closed fallback when verified data is absent.
 
 ACCOUNT_STATE_UNVERIFIED = (
     "Doğrulayamadım. Hesap, araç onayı, KYC veya erişim durumunu doğrulanmış veri olmadan "
@@ -314,10 +317,19 @@ FEATURE_INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
             "aktif yolculuğum var mı",
             "aktif yolculugum var mi",
             "yolculuk durumum ne",
+            "yolculuk hangi aşamada",
+            "yolculuk hangi asamada",
             "şu anki eşleşmem",
             "su anki eslesmem",
             "mevcut yolculuğum",
             "mevcut yolculugum",
+            "teklif geldi mi",
+            "biniş doğrulandı mı",
+            "binis dogrulandi mi",
+            "yolculuk başladı mı",
+            "yolculuk basladi mi",
+            "yolculuk tamamlandı mı",
+            "yolculuk tamamlandi mi",
         ),
         phrase_weights=(
             ("şu an eşleşmem var mı", 28),
@@ -325,6 +337,9 @@ FEATURE_INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
             ("aktif yolculuğum var mı", 28),
             ("aktif yolculugum var mi", 28),
             ("yolculuk durumum ne", 24),
+            ("yolculuk hangi aşamada", 24),
+            ("yolculuk hangi asamada", 24),
+            ("teklif geldi mi", 22),
             ("eşleşmem var mı", 22),
             ("eslesmem var mi", 22),
         ),

@@ -25,6 +25,13 @@ from services.operation_snapshot import (
     is_operation_snapshot_ai_enabled,
     snapshot_to_llm_context,
 )
+from services.leylek_zeka.verified_context import (
+    VERIFIED_CONTEXT_SOURCE_VERSION,
+    build_verified_context,
+    fetch_user_verified_account_row_sync,
+    guest_verified_context,
+    verified_context_to_public_dict,
+)
 from services.trip_lifecycle_support_context import (
     build_support_context_trip_payload,
     fetch_active_tag_minimal_sync,
@@ -101,7 +108,8 @@ async def run_leylek_zeka_chat(body: LeylekZekaRequest, request: Request) -> dic
     hist = [h.model_dump() for h in (body.history or [])]
     ctx_dict = body.context.model_dump(exclude_none=True) if body.context else None
 
-    # Opsiyonel Bearer: varsa minimal aktif tag → support_context.trip (PII yok). Yoksa veya hata: sessizce atla.
+    # Opsiyonel Bearer: varsa minimal aktif tag + verified account context (PII yok).
+    # Yoksa veya hata: guest verified context; frontend ipuçları otorite değildir.
     try:
         auth_hdr = request.headers.get("authorization") or request.headers.get("Authorization")
         token_uid: str | None = None
@@ -109,19 +117,34 @@ async def run_leylek_zeka_chat(body: LeylekZekaRequest, request: Request) -> dic
             parts = str(auth_hdr).strip().split(None, 1)
             if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
                 token_uid = verify_access_token_optional(parts[1].strip())
+        if ctx_dict is None:
+            ctx_dict = {}
+        else:
+            ctx_dict = dict(ctx_dict)
+
         if token_uid:
             gen_at = utc_now_iso_z()
 
             def _load_tag() -> dict[str, Any] | None:
                 return fetch_active_tag_minimal_sync(token_uid)
 
+            def _load_account() -> dict[str, Any] | None:
+                return fetch_user_verified_account_row_sync(token_uid)
+
             tag_min = await asyncio.to_thread(_load_tag)
+            user_row = await asyncio.to_thread(_load_account)
             support_payload = build_support_context_trip_payload(tag_min, generated_at=gen_at)
-            if ctx_dict is None:
-                ctx_dict = {}
-            else:
-                ctx_dict = dict(ctx_dict)
             ctx_dict["support_context"] = support_payload
+
+            trip_part = support_payload.get("trip") if isinstance(support_payload, dict) else None
+            verified = build_verified_context(
+                authenticated=True,
+                user_row=user_row,
+                trip_payload=trip_part if isinstance(trip_part, dict) else None,
+                source_version=str(support_payload.get("schema_version") or "")
+                or VERIFIED_CONTEXT_SOURCE_VERSION,
+            )
+            ctx_dict["verified_context"] = verified_context_to_public_dict(verified)
 
             if is_operation_snapshot_ai_enabled():
                 try:
@@ -155,8 +178,23 @@ async def run_leylek_zeka_chat(body: LeylekZekaRequest, request: Request) -> dic
                         "Leylek Zeka support_context operation atlandı",
                         exc_info=True,
                     )
+        else:
+            ctx_dict["verified_context"] = verified_context_to_public_dict(
+                guest_verified_context()
+            )
     except Exception:
         logger.warning("Leylek Zeka support_context trip atlandı", exc_info=True)
+        try:
+            if ctx_dict is None:
+                ctx_dict = {}
+            else:
+                ctx_dict = dict(ctx_dict)
+            if "verified_context" not in ctx_dict:
+                ctx_dict["verified_context"] = verified_context_to_public_dict(
+                    guest_verified_context()
+                )
+        except Exception:
+            pass
 
     try:
         reply, source, engine_meta, contract = await get_leylek_zeka_reply(

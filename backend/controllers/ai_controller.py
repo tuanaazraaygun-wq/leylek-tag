@@ -30,6 +30,7 @@ from services.leylek_zeka.response_contract import (
     ReplyOrigin,
     build_leylek_zeka_response_metadata,
 )
+from services.leylek_zeka.verified_context import try_resolve_verified_personal
 
 logger = logging.getLogger("server")
 
@@ -228,7 +229,11 @@ USER_HELP_MODE = "USER_HELP_MODE"
 
 
 def _context_system_addon(ctx: dict[str, Any] | None) -> str:
-    """İstemciden gelen opsiyonel bağlam — PII yok; yalnızca ekran/rol ipuçları."""
+    """İstemciden gelen opsiyonel bağlam — PII yok; yalnızca ekran/rol ipuçları.
+
+    Ham support_trip / verified_context OpenAI'ye enjekte edilmez (kişisel durum
+    uydurma yolu kapatılır). Operasyon özeti yalnızca ops short-circuit kaçarsa kalır.
+    """
     if not ctx or not isinstance(ctx, dict):
         return ""
     parts: list[str] = []
@@ -257,15 +262,7 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
     sc = ctx.get("support_context")
     operation_addon = ""
     if isinstance(sc, dict):
-        trip = sc.get("trip")
-        if isinstance(trip, dict):
-            try:
-                parts.append(
-                    "support_trip="
-                    + json.dumps(trip, ensure_ascii=False, separators=(",", ":"))
-                )
-            except Exception:
-                parts.append("support_trip=(serialize_error)")
+        # support_trip intentionally omitted — personal trip state is deterministic-only
         operation = sc.get("operation")
         if isinstance(operation, dict) and operation:
             try:
@@ -279,9 +276,10 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
     if not parts:
         return operation_addon
     return (
-        "\n[Kullanıcı bağlamı — kişisel veri yok] "
+        "\n[Kullanıcı bağlamı — kişisel veri yok; hesap/KYC/yolculuk durumu uydurma] "
         + ", ".join(parts)
         + "\nBu bağlama uygun, kısa yardım ver. Markdown kullanma."
+        + "\nDoğrulanmış hesap veya yolculuk durumu yoksa 'Doğrulayamadım.' de; uydurma."
         + operation_addon
         + (
             "\nvoiceMode=true ise konuşma diliyle yanıt ver: 2-4 kısa cümle kur, gereksiz liste yapma; "
@@ -785,8 +783,9 @@ async def get_leylek_zeka_reply(
     context: dict[str, Any] | None = None,
 ) -> tuple[str, Source, AnswerEngineMeta | None, LeylekZekaResponseMetadata]:
     """
-    Öncelik: operation_snapshot → answer_engine (katalog) → yüksek güven eşleşme kanonu →
-    admin KB (feature flag) → OpenAI (anahtar varsa) → Türkçe fallback.
+    Öncelik: operation_snapshot → verified personal context → answer_engine (katalog) →
+    yüksek güven eşleşme kanonu → admin KB (feature flag) → OpenAI (anahtar varsa) →
+    Türkçe fallback.
 
     Eşleşme/rol için answer_engine isabeti, genel yüksek güven metninden önce gelir;
     katalog kaçırırsa doğru _ESLESME_VE_ROL / rol kabul kanonu kullanılır.
@@ -816,6 +815,10 @@ async def get_leylek_zeka_reply(
         account_context_used: bool = False,
         source_version_override: str | None = None,
         manifest_backed_keyword: bool = False,
+        category_override: Any = None,
+        suggested_route_override: str | None = None,
+        requires_support_override: bool | None = None,
+        blocked_claim_reason_override: str | None = None,
     ) -> tuple[str, Source, AnswerEngineMeta | None, LeylekZekaResponseMetadata]:
         guard = evaluate_user_visible_reply(reply)
         contract = build_leylek_zeka_response_metadata(
@@ -829,6 +832,10 @@ async def get_leylek_zeka_reply(
             source_version_override=source_version_override,
             manifest_backed_keyword=manifest_backed_keyword,
             user_message=text,
+            category_override=category_override,
+            suggested_route_override=suggested_route_override,
+            requires_support_override=requires_support_override,
+            blocked_claim_reason_override=blocked_claim_reason_override,
         )
         _emit_answer_engine_telemetry(
             hit=hit,
@@ -852,8 +859,33 @@ async def get_leylek_zeka_reply(
             intent_id=op_meta["intent_id"],
             origin="operation_snapshot",
             live_state_used=True,
-            account_context_used=True,
+            account_context_used=False,
             source_version_override=op_ver,
+        )
+
+    verified_raw = None
+    if isinstance(context, dict):
+        verified_raw = context.get("verified_context")
+    verified_hit = try_resolve_verified_personal(text, verified_raw)
+    if verified_hit is not None:
+        v_meta: AnswerEngineMeta = {
+            "intent_id": verified_hit["intent_id"],
+            "deterministic": True,
+        }
+        return _emit_and_return(
+            verified_hit["text"],
+            "answer_engine",
+            v_meta,
+            hit=True,
+            intent_id=verified_hit["intent_id"],
+            origin="answer_engine",
+            live_state_used=bool(verified_hit["live_state_used"]),
+            account_context_used=bool(verified_hit["account_context_used"]),
+            source_version_override=verified_hit.get("source_version"),
+            category_override=verified_hit["category"],
+            suggested_route_override=verified_hit.get("suggested_route"),
+            requires_support_override=bool(verified_hit["requires_support"]),
+            blocked_claim_reason_override=verified_hit.get("blocked_claim_reason"),
         )
 
     resolved = try_resolve(text, context)

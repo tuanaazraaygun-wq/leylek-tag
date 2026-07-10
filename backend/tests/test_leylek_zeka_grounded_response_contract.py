@@ -103,14 +103,14 @@ def test_builder_operation_snapshot() -> None:
         source="operation_snapshot",
         origin="operation_snapshot",
         live_state_used=True,
-        account_context_used=True,
+        account_context_used=True,  # caller may pass True; ops must not claim account context
         source_version_override="1",
     )
     assert meta["grounded"] is True
     assert meta["confidence"] == "high"
     assert meta["category"] == "live_trip"
     assert meta["live_state_used"] is True
-    assert meta["account_context_used"] is True
+    assert meta["account_context_used"] is False
     assert meta["source_version"] == "1"
 
 
@@ -334,7 +334,7 @@ def test_controller_operation_snapshot_contract(monkeypatch: pytest.MonkeyPatch)
         assert contract["confidence"] == "high"
         assert contract["category"] == "live_trip"
         assert contract["live_state_used"] is True
-        assert contract["account_context_used"] is True
+        assert contract["account_context_used"] is False
         assert contract["source_version"] == "1"
 
     asyncio.run(_run())
