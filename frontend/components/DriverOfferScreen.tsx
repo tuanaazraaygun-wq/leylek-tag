@@ -25,6 +25,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { DRIVER_DEFAULT_STREET_ZOOM, driverStreetLatDelta } from '../lib/mapDefaults';
 import { appAlert } from '../contexts/AppAlertContext';
 import { playFeedbackErrorSound, playUiTapSound } from '../utils/sound';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
@@ -75,26 +76,8 @@ const FIELD_DEFAULT_RADIUS_KM = 10;
 /** Embedded kokpit — liste peek yüksekliği (drag sheet yok) */
 const EMBEDDED_LIST_PEEK_HEIGHT = Math.min(Math.max(Math.round(SCREEN_HEIGHT * 0.36), 220), 320);
 
-/** Map-first gesture pause — kullanıcı pan/pinch sonrası auto-fit susturma */
+/** Map-first gesture pause — LOD band için kullanıcı pan/pinch işareti */
 const FIELD_MAP_GESTURE_PAUSE_MS = 30_000;
-const FIELD_MAP_MIN_AUTO_FIT_INTERVAL_MS = 3_000;
-/** GPS sıçraması bu eşiği geçerse pause bypass (km) */
-const FIELD_MAP_GPS_JUMP_BYPASS_KM = 0.4;
-
-/** Legacy (non-embedded) saha haritası — bölge/şehir zoom */
-const FIELD_INITIAL_DELTA_LEGACY = 0.12;
-const FIELD_FALLBACK_DELTA_LEGACY = 0.15;
-const FIELD_SINGLE_POINT_MIN_DELTA_LEGACY = 0.14;
-const FIELD_FIT_CAP_KM_LEGACY = 45;
-const FIELD_FIT_RADIUS_FACTOR_LEGACY = 1.2;
-
-/** Embedded map-first — sokak/mahalle zoom */
-const FIELD_INITIAL_DELTA_MAP_FIRST = 0.016;
-const FIELD_FALLBACK_DELTA_MAP_FIRST = 0.02;
-const FIELD_SINGLE_POINT_MIN_DELTA_MAP_FIRST = 0.018;
-const FIELD_SINGLE_POINT_MAX_DELTA_MAP_FIRST = 0.022;
-const FIELD_FIT_CAP_KM_MAP_FIRST = 4;
-const FIELD_FIT_RADIUS_FACTOR_MAP_FIRST = 0.35;
 
 /** Zoom LOD — latitudeDelta eşikleri (client-only, backend yok) */
 const FIELD_ZOOM_NEAR_MAX_DELTA = 0.04;
@@ -115,65 +98,6 @@ type FieldMapZoomBand = 'near' | 'mid' | 'far';
 function resolveFieldRadiusKm(radius: number | undefined | null): number {
   const n = Number(radius);
   return Number.isFinite(n) && n > 0 ? Math.round(n) : FIELD_DEFAULT_RADIUS_KM;
-}
-
-function resolveFieldInitialMapDelta(mapFirstLayout: boolean): number {
-  return mapFirstLayout ? FIELD_INITIAL_DELTA_MAP_FIRST : FIELD_INITIAL_DELTA_LEGACY;
-}
-
-function resolveFieldFallbackMapDelta(mapFirstLayout: boolean): number {
-  return mapFirstLayout ? FIELD_FALLBACK_DELTA_MAP_FIRST : FIELD_FALLBACK_DELTA_LEGACY;
-}
-
-function resolveFieldFitCapKm(radiusKm: number, mapFirstLayout: boolean): number {
-  const rk = resolveFieldRadiusKm(radiusKm);
-  if (mapFirstLayout) {
-    return Math.min(FIELD_FIT_CAP_KM_MAP_FIRST, rk * FIELD_FIT_RADIUS_FACTOR_MAP_FIRST);
-  }
-  return Math.min(FIELD_FIT_CAP_KM_LEGACY, rk * FIELD_FIT_RADIUS_FACTOR_LEGACY);
-}
-
-function resolveFieldSinglePointDeltas(
-  driverLocation: { latitude: number; longitude: number },
-  radiusKm: number,
-  mapFirstLayout: boolean,
-): { latitudeDelta: number; longitudeDelta: number } {
-  const rk = resolveFieldRadiusKm(radiusKm);
-  const cosLat = Math.cos((driverLocation.latitude * Math.PI) / 180);
-  if (mapFirstLayout) {
-    const latDelta = Math.min(
-      FIELD_SINGLE_POINT_MAX_DELTA_MAP_FIRST,
-      Math.max(FIELD_SINGLE_POINT_MIN_DELTA_MAP_FIRST, (rk / 111) * 0.35),
-    );
-    const lngDelta = Math.min(
-      FIELD_SINGLE_POINT_MAX_DELTA_MAP_FIRST,
-      Math.max(FIELD_SINGLE_POINT_MIN_DELTA_MAP_FIRST, (rk / (111 * Math.max(cosLat, 0.2))) * 0.35),
-    );
-    return { latitudeDelta: latDelta, longitudeDelta: lngDelta };
-  }
-  const latDelta = Math.max(FIELD_SINGLE_POINT_MIN_DELTA_LEGACY, (rk / 111) * 1.1);
-  const lngDelta = Math.max(
-    FIELD_SINGLE_POINT_MIN_DELTA_LEGACY,
-    (rk / (111 * Math.max(cosLat, 0.2))) * 1.1,
-  );
-  return { latitudeDelta: latDelta, longitudeDelta: lngDelta };
-}
-
-function resolveFieldMapEdgePadding(mapFirstLayout: boolean): {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-} {
-  if (mapFirstLayout) {
-    return {
-      top: 128,
-      right: 28,
-      bottom: EMBEDDED_LIST_PEEK_HEIGHT + 28,
-      left: 28,
-    };
-  }
-  return { top: 44, right: 36, bottom: 36, left: 36 };
 }
 
 function resolveFieldMapZoomBand(
@@ -2020,11 +1944,8 @@ export default function DriverOfferScreen({
   const fieldListedCountRef = useRef(0);
   const userGestureUntilMsRef = useRef(0);
   const programmaticMoveActiveRef = useRef(false);
-  const lastAutoFitAtMsRef = useRef(0);
-  const initialFieldMapFitDoneRef = useRef(false);
-  const lastAutoFitCenterRef = useRef<{ latitude: number; longitude: number } | null>(null);
-  const refitRequestedRef = useRef(false);
-  const fieldMapFitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** true after one-shot street camera (or explicit recenter) */
+  const initialCameraAppliedRef = useRef(false);
   const programmaticMoveClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const markProgrammaticMapMove = useCallback(() => {
@@ -2038,117 +1959,49 @@ export default function DriverOfferScreen({
     }, 1200);
   }, []);
 
-  const applyFieldMapAutoFit = useCallback(
+  /**
+   * Kokpit kamera — yalnız ilk map-ready veya açık recenter.
+   * GPS / pin güncellemeleri kameraya dokunmaz.
+   */
+  const applyFieldMapStreetCamera = useCallback(
     (options?: { force?: boolean }) => {
       const force = options?.force === true;
       if (!mapExpanded || !mapReady || !mapRef.current || !driverLocation) return false;
-
-      const now = Date.now();
-      const forceRecenter = force || refitRequestedRef.current;
-      refitRequestedRef.current = false;
-
-      let gpsJumpBypass = false;
-      if (lastAutoFitCenterRef.current) {
-        const jumpKm = resolveFieldHaversineKm(
-          lastAutoFitCenterRef.current.latitude,
-          lastAutoFitCenterRef.current.longitude,
-          driverLocation.latitude,
-          driverLocation.longitude,
-        );
-        if (jumpKm >= FIELD_MAP_GPS_JUMP_BYPASS_KM) {
-          gpsJumpBypass = true;
-        }
-      }
-
-      const allowPauseBypass =
-        forceRecenter || !initialFieldMapFitDoneRef.current || gpsJumpBypass;
-
-      if (mapFirstLayout && !allowPauseBypass) {
-        if (now < userGestureUntilMsRef.current) return false;
-        if (now - lastAutoFitAtMsRef.current < FIELD_MAP_MIN_AUTO_FIT_INTERVAL_MS) return false;
-      }
-
-      const rk = resolveFieldRadiusKm(mapHud.radius);
-      const fitKm = resolveFieldFitCapKm(rk, mapFirstLayout);
-      const edgePadding = resolveFieldMapEdgePadding(mapFirstLayout);
-
-      const coordinates: { latitude: number; longitude: number }[] = [{ ...driverLocation }];
-
-      mapSeekingPins.forEach((p) => {
-        const pk = Number(p.pickup_distance_km ?? p.distance_km);
-        if (Number.isFinite(pk) && pk <= fitKm) {
-          coordinates.push({ latitude: p.pickup_lat, longitude: p.pickup_lng });
-        }
-      });
-      mapLightPins.forEach((p) => {
-        const dk = Number(p.distance_km);
-        if (Number.isFinite(dk) && dk <= fitKm) {
-          coordinates.push({ latitude: p.latitude, longitude: p.longitude });
-        }
-      });
+      if (!force && initialCameraAppliedRef.current) return false;
 
       markProgrammaticMapMove();
-      lastAutoFitAtMsRef.current = now;
-      lastAutoFitCenterRef.current = {
+      initialCameraAppliedRef.current = true;
+
+      const center = {
         latitude: driverLocation.latitude,
         longitude: driverLocation.longitude,
       };
-      initialFieldMapFitDoneRef.current = true;
 
-      if (fieldMapFitTimeoutRef.current != null) {
-        clearTimeout(fieldMapFitTimeoutRef.current);
-        fieldMapFitTimeoutRef.current = null;
-      }
-
-      if (coordinates.length === 1) {
-        const { latitudeDelta, longitudeDelta } = resolveFieldSinglePointDeltas(
-          driverLocation,
-          rk,
-          mapFirstLayout,
+      if (typeof mapRef.current.animateCamera === 'function') {
+        mapRef.current.animateCamera(
+          { center, zoom: DRIVER_DEFAULT_STREET_ZOOM, pitch: 0, heading: 0 },
+          { duration: force ? 400 : 420 },
         );
-        mapRef.current.animateToRegion(
-          {
-            latitude: driverLocation.latitude,
-            longitude: driverLocation.longitude,
-            latitudeDelta,
-            longitudeDelta,
-          },
-          400,
+      } else {
+        const d = driverStreetLatDelta();
+        mapRef.current.animateToRegion?.(
+          { ...center, latitudeDelta: d, longitudeDelta: d },
+          force ? 400 : 420,
         );
-        return true;
       }
-
-      fieldMapFitTimeoutRef.current = setTimeout(() => {
-        fieldMapFitTimeoutRef.current = null;
-        mapRef.current?.fitToCoordinates(coordinates, {
-          edgePadding,
-          animated: true,
-        });
-      }, 350);
 
       return true;
     },
-    [
-      mapExpanded,
-      mapReady,
-      driverLocation,
-      mapSeekingPins,
-      mapLightPins,
-      mapHud.radius,
-      mapFirstLayout,
-      markProgrammaticMapMove,
-    ],
+    [mapExpanded, mapReady, driverLocation, markProgrammaticMapMove],
   );
 
   const handleRecenterFieldMap = useCallback(() => {
     userGestureUntilMsRef.current = 0;
-    refitRequestedRef.current = true;
-    applyFieldMapAutoFit({ force: true });
-  }, [applyFieldMapAutoFit]);
+    applyFieldMapStreetCamera({ force: true });
+  }, [applyFieldMapStreetCamera]);
 
   useEffect(() => {
     return () => {
-      if (fieldMapFitTimeoutRef.current != null) clearTimeout(fieldMapFitTimeoutRef.current);
       if (programmaticMoveClearTimeoutRef.current != null) {
         clearTimeout(programmaticMoveClearTimeoutRef.current);
       }
@@ -2210,8 +2063,7 @@ export default function DriverOfferScreen({
     if (!mapExpanded) {
       setMapReady(false);
       setMapZoomBand('mid');
-      initialFieldMapFitDoneRef.current = false;
-      lastAutoFitCenterRef.current = null;
+      initialCameraAppliedRef.current = false;
       userGestureUntilMsRef.current = 0;
     }
   }, [mapExpanded]);
@@ -2485,20 +2337,12 @@ export default function DriverOfferScreen({
     }
   }, [driverId, driverLocation?.latitude, driverLocation?.longitude]);
 
-  // Harita sınırları: sürücü + yalnızca tarama yarıçapı içindeki pinler (şehir grid zoom’u şişirmez)
+  // Kamera: yalnız ilk map-ready (GPS/pin deps yok — marker güncellemeleri kameraya dokunmaz)
   useEffect(() => {
-    applyFieldMapAutoFit();
-  }, [
-    mapExpanded,
-    mapReady,
-    driverLocation?.latitude,
-    driverLocation?.longitude,
-    mapSeekingPins,
-    mapLightPins,
-    mapHud.radius,
-    mapFirstLayout,
-    applyFieldMapAutoFit,
-  ]);
+    if (!mapExpanded || !mapReady || !driverLocation) return;
+    if (initialCameraAppliedRef.current) return;
+    applyFieldMapStreetCamera();
+  }, [mapExpanded, mapReady, driverLocation, applyFieldMapStreetCamera]);
 
   const listedTagIdKey = useMemo(() => {
     const ids: string[] = [];
@@ -2635,14 +2479,14 @@ export default function DriverOfferScreen({
             ? {
                 latitude: driverLocation.latitude,
                 longitude: driverLocation.longitude,
-                latitudeDelta: resolveFieldInitialMapDelta(mapFirstLayout),
-                longitudeDelta: resolveFieldInitialMapDelta(mapFirstLayout),
+                latitudeDelta: driverStreetLatDelta(),
+                longitudeDelta: driverStreetLatDelta(),
               }
             : {
                 latitude: 39.92,
                 longitude: 32.85,
-                latitudeDelta: resolveFieldFallbackMapDelta(mapFirstLayout),
-                longitudeDelta: resolveFieldFallbackMapDelta(mapFirstLayout),
+                latitudeDelta: driverStreetLatDelta(),
+                longitudeDelta: driverStreetLatDelta(),
               }
         }
         onMapReady={() => setMapReady(true)}
