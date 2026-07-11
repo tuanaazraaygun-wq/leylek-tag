@@ -79,8 +79,10 @@ INTENT_CONTRACT_HINTS: dict[str, dict[str, str]] = {
     "leylektag_company_info": {"category": "product"},
     "how_to_cancel_request_or_trip": {"category": "product"},
     "how_in_app_messaging_works": {"category": "product"},
-    "guven_al_explained": {"category": "safety", "safety_level": "emergency"},
+    "guven_al_explained": {"category": "safety", "safety_level": "elevated"},
+    "immediate_danger_emergency": {"category": "safety", "safety_level": "emergency"},
     "safety_and_trust_basics": {"category": "safety", "safety_level": "elevated"},
+
     "complaint_feedback_intake": {
         "category": "legal_support",
         "safety_level": "elevated",
@@ -556,8 +558,11 @@ def build_leylek_zeka_response_metadata(
                 if topic_cat:
                     category = topic_cat
         elif origin == "answer_engine" and topic == "guven_al":
+            # Informational Güven Al keeps intent hint (elevated); only force
+            # emergency when the matched intent is immediate danger.
             category = "safety"
-            safety_level = "emergency"
+            if intent_id == "immediate_danger_emergency":
+                safety_level = "emergency"
 
     # Guard / policy refusal overlay (fail-closed reply keeps source label; metadata reflects refusal)
     if guard is not None and guard.blocked:

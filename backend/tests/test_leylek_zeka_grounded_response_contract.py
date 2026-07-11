@@ -240,11 +240,22 @@ def test_builder_unverified_overrides() -> None:
     assert meta["account_context_used"] is False
 
 
-def test_safety_guven_al_emergency() -> None:
+def test_safety_guven_al_elevated_informational() -> None:
     meta = build_leylek_zeka_response_metadata(
         source="answer_engine",
         origin="answer_engine",
         intent_id="guven_al_explained",
+        deterministic=True,
+    )
+    assert meta["category"] == "safety"
+    assert meta["safety_level"] == "elevated"
+
+
+def test_safety_immediate_danger_emergency() -> None:
+    meta = build_leylek_zeka_response_metadata(
+        source="answer_engine",
+        origin="answer_engine",
+        intent_id="immediate_danger_emergency",
         deterministic=True,
     )
     assert meta["category"] == "safety"

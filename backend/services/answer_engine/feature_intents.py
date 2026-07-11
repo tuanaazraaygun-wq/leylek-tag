@@ -30,6 +30,25 @@ LIVE_TRIP_STATE_UNVERIFIED = (
     "söyleyemem. Aktif yolculuk ekranını kontrol edin; gerekirse Destek’e yazın."
 )
 
+# --- Immediate danger (deterministic; never OpenAI / never claim action completed) ---
+
+IMMEDIATE_DANGER_EMERGENCY = """Acil güvenlik
+
+Şu an tehlikedeyseniz hemen 112’yi arayın.
+
+Mümkünse güvenli bir yere geçin. Çevrenizdeki insanlardan yardım isteyin.
+
+Uygulamadaki Güven Al yalnızca kısa süreli görüntülü görüşme talebi için bir destek aracıdır; acil servis, polis veya ambulans yerine geçmez.
+
+Bu asistan polis, ambulans veya platform müdahalesi başlatmaz; sürekli izleme yapmaz ve güvenlik garantisi vermez. Otomatik ihbar veya tamamlanmış işlem iddiası yoktur.
+
+Önce 112. Güvenli olduğunuzda uygulama içi Destek’e de yazabilirsiniz."""
+
+IMMEDIATE_DANGER_EMERGENCY_VOICE = (
+    "Tehlikedeyseniz hemen 112’yi arayın. Mümkünse güvenli bir yere geçin. "
+    "Güven Al acil servis yerine geçmez. Bu asistan müdahale başlatmaz."
+)
+
 # --- Manifest-backed templates ---
 
 _fact_identity = get_supported_product_fact("product_identity")
@@ -252,6 +271,116 @@ def _intent(
 
 
 FEATURE_INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
+    _intent(
+        id="immediate_danger_emergency",
+        title="Acil tehlike / 112 yönlendirme",
+        description=(
+            "Anlık tehlike ifadelerinde deterministik güvenlik yanıtı; OpenAI yok; "
+            "112 öncelikli; Güven Al acil servis yerine geçmez; işlem tamamlandı iddiası yok."
+        ),
+        example_queries=(
+            "Tehlikedeyim",
+            "Acil durum",
+            "Yardım edin",
+            "112",
+            "Biri beni takip ediyor",
+            "Sürücüden korkuyorum",
+        ),
+        match_phrases=(
+            "tehlikedeyim",
+            "tehlikedeyiz",
+            "can güvenliğim tehlikede",
+            "can guvenligim tehlikede",
+            "acil durum",
+            "yardım edin",
+            "yardim edin",
+            "yardıma ihtiyacım var",
+            "yardima ihtiyacim var",
+            "kendimi güvende hissetmiyorum",
+            "kendimi guvende hissetmiyorum",
+            "biri beni takip ediyor",
+            "biri peşimde",
+            "biri pesimde",
+            "sürücüden korkuyorum",
+            "surucuden korkuyorum",
+            "yolcudan korkuyorum",
+            "şiddet var",
+            "siddet var",
+            "saldırı var",
+            "saldiri var",
+            "tehdit ediliyorum",
+            "zorla tutuluyorum",
+            "araçtan inemiyorum",
+            "aractan inemiyorum",
+            "polis çağır",
+            "polis cagir",
+            "ambulans çağır",
+            "ambulans cagir",
+            "112",
+            "güvenlik sorunu yaşıyorum",
+            "guvenlik sorunu yasiyorum",
+            "güvenlik sorunum var",
+            "guvenlik sorunum var",
+            "güven al",
+            "guven al",
+            "hemen tehlike",
+            "acil yardım",
+            "acil yardim",
+            "tehlike var",
+            "yardım çağır",
+            "yardim cagir",
+            "yardım çağrıldı",
+            "yardim cagrildi",
+            "yardım çağırıldı",
+            "yardim cagirildi",
+        ),
+        phrase_weights=(
+            ("tehlikedeyim", 40),
+            ("can güvenliğim tehlikede", 40),
+            ("can guvenligim tehlikede", 40),
+            ("acil durum", 38),
+            ("yardım edin", 38),
+            ("yardim edin", 38),
+            ("yardıma ihtiyacım var", 38),
+            ("yardima ihtiyacim var", 38),
+            ("biri beni takip ediyor", 38),
+            ("sürücüden korkuyorum", 36),
+            ("surucuden korkuyorum", 36),
+            ("yolcudan korkuyorum", 36),
+            ("zorla tutuluyorum", 38),
+            ("araçtan inemiyorum", 36),
+            ("aractan inemiyorum", 36),
+            ("tehdit ediliyorum", 36),
+            ("şiddet var", 36),
+            ("siddet var", 36),
+            ("saldırı var", 36),
+            ("saldiri var", 36),
+            ("polis çağır", 36),
+            ("polis cagir", 36),
+            ("ambulans çağır", 36),
+            ("ambulans cagir", 36),
+            ("yardım çağrıldı", 36),
+            ("yardim cagrildi", 36),
+            ("yardım çağırıldı", 36),
+            ("yardim cagirildi", 36),
+            ("yardım çağır", 34),
+            ("yardim cagir", 34),
+            ("güvenlik sorunu yaşıyorum", 34),
+            ("guvenlik sorunu yasiyorum", 34),
+            ("kendimi güvende hissetmiyorum", 34),
+            ("kendimi guvende hissetmiyorum", 34),
+            ("112", 32),
+            ("hemen tehlike", 32),
+            ("acil yardım", 32),
+            ("acil yardim", 32),
+            ("tehlike var", 28),
+            # Below guven_al_explained bare "güven al" (12) so product Qs stay informational
+            ("güven al", 10),
+            ("guven al", 10),
+        ),
+        default_template=IMMEDIATE_DANGER_EMERGENCY,
+        voice_default_template=IMMEDIATE_DANGER_EMERGENCY_VOICE,
+    ),
     _intent(
         id="account_state_unverified",
         title="Hesap/KYC durumu doğrulanamadı",
