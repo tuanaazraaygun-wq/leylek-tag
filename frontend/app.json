@@ -3,7 +3,7 @@
     "name": "Leylek Yolculuk",
     "slug": "leylektag-app",
     "owner": "leylektagappp",
-    "version": "1.0.42",
+    "version": "1.0.43",
     "orientation": "portrait",
     "icon": "./assets/images/leylek-logo-premium.png",
     "scheme": "leylektag",
@@ -15,7 +15,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.leylektag.app",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "46",
+      "buildNumber": "80",
       "config": {
         "googleMapsApiKey": "AIzaSyAUwOL1mLrOW_6qXmDZHiCeq552QJiSItw"
       },
@@ -36,7 +36,7 @@
     },
     "android": {
       "package": "com.leylektag.app",
-      "versionCode": 45,
+      "versionCode": 50,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
