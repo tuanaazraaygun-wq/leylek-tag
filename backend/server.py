@@ -45,14 +45,12 @@ if str(_ROOT) not in sys.path:
 ROOT_DIR = _ROOT
 # Env MUST load before importing local modules (they read os.environ at import time).
 # Order (requested):
-# - /etc/leylektag.env
+# - /etc/leylektag.env (skipped when APP_ENV is exactly staging)
 # - backend/.env
 # Use override=True so values replace existing ones.
-try:
-    load_dotenv("/etc/leylektag.env", override=True)
-except Exception:
-    pass
-load_dotenv(str(ROOT_DIR / ".env"), override=True)
+from runtime_env_loading import load_backend_dotenv_files
+
+load_backend_dotenv_files(load_dotenv, local_env_path=ROOT_DIR / ".env", override=True)
 
 # Supabase — tek service role client: backend/supabase_client.py (VPS'te server.py ile aynı klasörde olmalı)
 from supabase import Client
