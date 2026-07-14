@@ -15,15 +15,11 @@ import jwt
 from dotenv import load_dotenv
 from jwt.exceptions import InvalidTokenError
 
+from runtime_env_loading import load_backend_dotenv_files
+
 _ROOT = Path(__file__).resolve().parent
-try:
-    load_dotenv("/etc/leylektag.env", override=True)
-except Exception:
-    pass
-try:
-    load_dotenv(_ROOT / ".env", override=True)
-except Exception:
-    pass
+# Production fallback /etc/leylektag.env skipped when APP_ENV is exactly staging.
+load_backend_dotenv_files(load_dotenv, local_env_path=_ROOT / ".env", override=True)
 
 logger = logging.getLogger(__name__)
 
