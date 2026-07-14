@@ -185,6 +185,8 @@ from services import socketio_cluster
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
 from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
+from routes.admin_kyc_queue_safe import router as admin_kyc_queue_safe_router
+from routes.internal_enterprise_kyc_queue import router as internal_enterprise_kyc_queue_router
 
 # Logger setup
 logging.basicConfig(level=logging.INFO)
@@ -7268,6 +7270,8 @@ async def health_check():
 app.include_router(admin_ai_router, prefix="/api")
 app.include_router(admin_answer_engine_router, prefix="/api")
 app.include_router(admin_leylek_zeka_kb_router, prefix="/api")
+app.include_router(admin_kyc_queue_safe_router, prefix="/api")
+app.include_router(internal_enterprise_kyc_queue_router, prefix="/api")
 
 api_router = APIRouter(prefix="/api")
 
