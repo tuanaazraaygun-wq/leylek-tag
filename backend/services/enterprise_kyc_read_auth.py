@@ -17,7 +17,9 @@ from fastapi import Header, HTTPException
 logger = logging.getLogger("server")
 
 ENTERPRISE_KYC_READ_TOKEN_ENV = "KAREKOD_ENTERPRISE_KYC_READ_TOKEN"
+ENTERPRISE_KYC_REVIEW_TOKEN_ENV = "KAREKOD_ENTERPRISE_KYC_REVIEW_TOKEN"
 SERVICE_IDENTITY = "karekod_enterprise_kyc_read"
+REVIEW_SERVICE_IDENTITY = "karekod_enterprise_kyc_review"
 
 _ACTOR_HEADER = "X-Karekod-Actor-Id"
 _REQUEST_ID_HEADER = "X-Karekod-Request-Id"
@@ -27,6 +29,11 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 def configured_enterprise_kyc_read_token() -> Optional[str]:
     value = (os.getenv(ENTERPRISE_KYC_READ_TOKEN_ENV) or "").strip()
+    return value or None
+
+
+def configured_enterprise_kyc_review_token() -> Optional[str]:
+    value = (os.getenv(ENTERPRISE_KYC_REVIEW_TOKEN_ENV) or "").strip()
     return value or None
 
 
@@ -67,6 +74,41 @@ def parse_optional_kyc_audit_headers(
     }
 
 
+def _generate_kyc_request_id() -> str:
+    import uuid
+
+    return f"kycd-{uuid.uuid4().hex[:24]}"
+
+
+def sanitize_required_kyc_actor_header(raw: Optional[str]) -> str:
+    """Mandatory actor audit context after successful service authentication."""
+    actor = sanitize_kyc_audit_header(raw, field="actor")
+    if actor is None:
+        logger.info("enterprise_kyc_review: invalid_actor_metadata")
+        raise HTTPException(status_code=400, detail="invalid_audit_metadata")
+    return actor
+
+
+def parse_detail_kyc_audit_headers(
+    *,
+    actor_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+) -> dict[str, str]:
+    """
+    Detail-route audit headers: actor required; request ID sanitized or server-generated.
+    Call only after review service authentication succeeds.
+    """
+    actor = sanitize_required_kyc_actor_header(actor_id)
+    if request_id is None or not str(request_id).strip():
+        resolved_request_id = _generate_kyc_request_id()
+    else:
+        sanitized = sanitize_kyc_audit_header(request_id, field="request_id")
+        if sanitized is None:
+            raise HTTPException(status_code=400, detail="invalid_audit_metadata")
+        resolved_request_id = sanitized
+    return {"actor_id": actor, "request_id": resolved_request_id}
+
+
 def require_enterprise_kyc_read_service(
     authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
 ) -> str:
@@ -99,3 +141,34 @@ def require_enterprise_kyc_read_service(
         raise HTTPException(status_code=403, detail="forbidden")
 
     return SERVICE_IDENTITY
+
+
+def require_enterprise_kyc_review_service(
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+) -> str:
+    """
+    Fail-closed scoped service auth for Enterprise → Leylek KYC detail review.
+
+    Uses dedicated KAREKOD_ENTERPRISE_KYC_REVIEW_TOKEN only (no queue-read fallback).
+    """
+    expected = configured_enterprise_kyc_review_token()
+    if expected is None:
+        logger.warning("enterprise_kyc_review: service_auth_disabled env_missing=1")
+        raise HTTPException(status_code=503, detail="service_auth_disabled")
+
+    if not authorization or not str(authorization).strip():
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    parts = str(authorization).strip().split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    presented = parts[1].strip()
+    if not presented:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    if not service_tokens_equal(presented, expected):
+        logger.info("enterprise_kyc_review: forbidden")
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    return REVIEW_SERVICE_IDENTITY
