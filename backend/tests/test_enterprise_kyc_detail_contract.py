@@ -49,11 +49,17 @@ def test_forbidden_exact_keys_without_redaction_false_positive() -> None:
     assert detail.kyc_detail_contract_contains_forbidden_keys({"url": "https://example.invalid"})
 
 
-def test_runtime_wiring_disabled() -> None:
-    assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["runtime_wired"] is False
+def test_runtime_wiring_enabled_for_detail_only() -> None:
+    assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["runtime_wired"] is True
     assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["implementation_ready"] is False
+    assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["document_access_ready"] is False
+    assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["decision_ready"] is False
     assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["signed_urls_allowed"] is False
-    assert detail.may_wire_enterprise_kyc_detail_contract() is False
+    assert detail.may_wire_enterprise_kyc_detail_contract() is True
+    assert (
+        detail.PREFERRED_INTERNAL_KYC_DETAIL_PATH
+        == "/api/internal/enterprise/kyc/applications/{application_id}/safe-detail"
+    )
 
 
 def test_display_labels_deterministic() -> None:

@@ -65,8 +65,10 @@ KYC_REVIEW_REQUIRED_PERMISSION: Final = "kyc.review"
 KYC_DOCUMENT_ACCESS_MIN_TTL_SECONDS: Final = 60
 KYC_DOCUMENT_ACCESS_MAX_TTL_SECONDS: Final = 120
 
-# Future internal route (Phase 2) — not registered in this phase.
-PREFERRED_INTERNAL_KYC_DETAIL_PATH = "/api/internal/enterprise/kyc/detail-safe"
+# Internal safe-detail route (Phase 2).
+PREFERRED_INTERNAL_KYC_DETAIL_PATH = (
+    "/api/internal/enterprise/kyc/applications/{application_id}/safe-detail"
+)
 PREFERRED_INTERNAL_KYC_DOCUMENT_ACCESS_PATH = (
     "/api/internal/enterprise/kyc/document-access-safe"
 )
@@ -75,7 +77,7 @@ ENTERPRISE_KYC_DETAIL_CONTRACT: Final[dict[str, object]] = {
     "implementation_ready": False,
     "document_access_ready": False,
     "decision_ready": False,
-    "runtime_wired": False,
+    "runtime_wired": True,
     "product_db_mutation": False,
     "signed_urls_allowed": False,
     "public_urls_on_wire": False,

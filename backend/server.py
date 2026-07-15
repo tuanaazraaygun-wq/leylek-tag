@@ -67,6 +67,7 @@ from routes.admin_answer_engine import router as admin_answer_engine_router
 from routes.admin_leylek_zeka_train import router as admin_leylek_zeka_train_router
 from routes.admin_kyc_queue_safe import router as admin_kyc_queue_safe_router
 from routes.internal_enterprise_kyc_queue import router as internal_enterprise_kyc_queue_router
+from routes.internal_enterprise_kyc_detail import router as internal_enterprise_kyc_detail_router
 
 # Logger setup
 logging.basicConfig(level=logging.INFO)
@@ -2437,6 +2438,7 @@ app.include_router(admin_answer_engine_router, prefix="/api")
 app.include_router(admin_leylek_zeka_train_router, prefix="/api")
 app.include_router(admin_kyc_queue_safe_router, prefix="/api")
 app.include_router(internal_enterprise_kyc_queue_router, prefix="/api")
+app.include_router(internal_enterprise_kyc_detail_router, prefix="/api")
 
 api_router = APIRouter(prefix="/api")
 
