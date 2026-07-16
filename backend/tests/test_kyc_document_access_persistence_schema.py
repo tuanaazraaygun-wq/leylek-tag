@@ -395,6 +395,7 @@ def test_python_constants_mirror_sql_enums() -> None:
 
 
 def test_all_readiness_flags_remain_false() -> None:
+    assert persistence.KYC_DOCUMENT_ACCESS_GRANT_PERSISTENCE_CONTRACT_DEFINED is True
     assert persistence.KYC_DOCUMENT_ACCESS_SCHEMA_READY is False
     assert persistence.KYC_DOCUMENT_ACCESS_AUDIT_READY is False
     assert persistence.KYC_DOCUMENT_ACCESS_RPC_READY is False
