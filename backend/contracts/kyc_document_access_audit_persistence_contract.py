@@ -19,6 +19,7 @@ KYC_DOCUMENT_ACCESS_AUDIT_EVENT_TYPES: Final[tuple[str, ...]] = (
     "kyc.document.access_requested",
     "kyc.document.access_denied",
     "kyc.document.grant_issued",
+    "kyc.document.viewed",
     "kyc.document.redeemed",
     "kyc.document.view_failed",
     "kyc.document.grant_expired",

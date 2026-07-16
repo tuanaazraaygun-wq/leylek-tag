@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS public.kyc_document_access_events (
       'kyc.document.access_requested',
       'kyc.document.access_denied',
       'kyc.document.grant_issued',
+      'kyc.document.viewed',
       'kyc.document.redeemed',
       'kyc.document.view_failed',
       'kyc.document.grant_expired',
@@ -110,6 +111,7 @@ CREATE TABLE IF NOT EXISTS public.kyc_document_access_events (
     CHECK (
       event_type NOT IN (
         'kyc.document.grant_issued',
+        'kyc.document.viewed',
         'kyc.document.redeemed',
         'kyc.document.grant_expired',
         'kyc.document.grant_revoked'

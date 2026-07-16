@@ -272,6 +272,7 @@ def test_grant_lifecycle_events_require_grant_hash() -> None:
     assert re.search(
         r"event_type\s+NOT\s+IN\s*\(\s*"
         r"'kyc\.document\.grant_issued'\s*,\s*"
+        r"'kyc\.document\.viewed'\s*,\s*"
         r"'kyc\.document\.redeemed'\s*,\s*"
         r"'kyc\.document\.grant_expired'\s*,\s*"
         r"'kyc\.document\.grant_revoked'\s*\)\s+"
@@ -621,4 +622,4 @@ def test_phase_5b1_static_tests_remain_importable() -> None:
 
 def test_phase_5a_contract_remains_importable() -> None:
     assert access_5a.document_access_runtime_ready() is False
-    assert len(access_5a.KYC_DOCUMENT_ACCESS_AUDIT_EVENT_TYPES) == 7
+    assert len(access_5a.KYC_DOCUMENT_ACCESS_AUDIT_EVENT_TYPES) == 8
