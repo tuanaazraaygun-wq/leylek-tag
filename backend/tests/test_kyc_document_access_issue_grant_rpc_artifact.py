@@ -157,3 +157,39 @@ def test_no_production_ref_or_credential() -> None:
 def test_revoke_public_in_rpc_artifact() -> None:
     sql = _rpc_sql()
     assert "REVOKE ALL ON FUNCTION public.kyc_document_access_issue_grant" in sql
+
+
+def _grant_insert_returning_block(sql: str) -> str:
+    match = re.search(
+        r"INSERT\s+INTO\s+public\.kyc_document_access_grants\b.*?INTO\s+v_grant_id\s*,\s*v_issued_at\s*,\s*v_state\s*;",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    assert match is not None, "expected grant INSERT ... RETURNING ... INTO block"
+    return match.group(0)
+
+
+def test_grant_insert_uses_qualified_returning_to_avoid_output_variable_shadowing() -> None:
+    sql = _executable(_rpc_sql())
+    block = _grant_insert_returning_block(sql)
+
+    assert re.search(
+        r"INSERT\s+INTO\s+public\.kyc_document_access_grants\s+AS\s+inserted_grant\s*\(",
+        block,
+        flags=re.IGNORECASE,
+    )
+    assert re.search(
+        r"RETURNING\s+inserted_grant\.id\s*,\s*inserted_grant\.issued_at\s*,\s*inserted_grant\.state",
+        block,
+        flags=re.IGNORECASE,
+    )
+    assert not re.search(
+        r"RETURNING\s+id\s*,\s*issued_at\s*,\s*state",
+        block,
+        flags=re.IGNORECASE,
+    )
+    assert re.search(
+        r"INTO\s+v_grant_id\s*,\s*v_issued_at\s*,\s*v_state\s*;",
+        block,
+        flags=re.IGNORECASE,
+    )

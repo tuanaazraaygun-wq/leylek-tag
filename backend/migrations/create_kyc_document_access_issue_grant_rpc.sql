@@ -246,7 +246,7 @@ BEGIN
   v_expires_at := v_now + make_interval(secs => v_ttl);
 
   BEGIN
-    INSERT INTO public.kyc_document_access_grants (
+    INSERT INTO public.kyc_document_access_grants AS inserted_grant (
       grant_reference_hash,
       token_version,
       application_id,
@@ -275,7 +275,10 @@ BEGIN
       p_source_binding_hash,
       p_application_record_version
     )
-    RETURNING id, issued_at, state
+    RETURNING
+      inserted_grant.id,
+      inserted_grant.issued_at,
+      inserted_grant.state
       INTO v_grant_id, v_issued_at, v_state;
 
     INSERT INTO public.kyc_document_access_events (
