@@ -614,7 +614,7 @@ def test_prohibited_terms_not_in_column_declarations() -> None:
 
 
 def test_phase_5b1_static_tests_remain_importable() -> None:
-    from tests import test_kyc_document_access_persistence_schema as grants_tests  # noqa: WPS433
+    import test_kyc_document_access_persistence_schema as grants_tests  # noqa: WPS433
 
     assert grants_tests.MIGRATION_PATH.is_file()
 
