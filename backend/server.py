@@ -36,14 +36,16 @@ if str(_ROOT) not in sys.path:
 ROOT_DIR = _ROOT
 # Env MUST load before importing local modules (they read os.environ at import time).
 # Order (requested):
-# - /etc/leylektag.env
+# - /etc/leylektag.env (skipped when APP_ENV is exactly staging)
 # - backend/.env
 # Use override=True so values replace existing ones.
-try:
-    load_dotenv("/etc/leylektag.env", override=True)
-except Exception:
-    pass
-load_dotenv(str(ROOT_DIR / ".env"), override=True)
+from runtime_env_loading import load_backend_dotenv_files
+
+load_backend_dotenv_files(
+    load_dotenv,
+    local_env_path=ROOT_DIR / ".env",
+    override=True,
+)
 print("NETGSM_MSGHEADER:", os.getenv("NETGSM_MSGHEADER"))
 
 # Supabase — tek service role client: backend/supabase_client.py (VPS'te server.py ile aynı klasörde olmalı)
@@ -63,6 +65,9 @@ import trust_service as _trust_service
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
 from routes.admin_leylek_zeka_train import router as admin_leylek_zeka_train_router
+from routes.admin_kyc_queue_safe import router as admin_kyc_queue_safe_router
+from routes.internal_enterprise_kyc_queue import router as internal_enterprise_kyc_queue_router
+from routes.internal_enterprise_kyc_detail import router as internal_enterprise_kyc_detail_router
 
 # Logger setup
 logging.basicConfig(level=logging.INFO)
@@ -2431,6 +2436,9 @@ app = fastapi_app
 app.include_router(admin_ai_router, prefix="/api")
 app.include_router(admin_answer_engine_router, prefix="/api")
 app.include_router(admin_leylek_zeka_train_router, prefix="/api")
+app.include_router(admin_kyc_queue_safe_router, prefix="/api")
+app.include_router(internal_enterprise_kyc_queue_router, prefix="/api")
+app.include_router(internal_enterprise_kyc_detail_router, prefix="/api")
 
 api_router = APIRouter(prefix="/api")
 
