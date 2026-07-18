@@ -13,13 +13,12 @@ from typing import Optional
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
+from runtime_env_loading import load_backend_dotenv_files
+
 _ROOT = Path(__file__).parent
-# Keep env loading consistent with server.py (ops may use /etc/leylektag.env)
-try:
-    load_dotenv("/etc/leylektag.env", override=True)
-except Exception:
-    pass
-load_dotenv(_ROOT / ".env", override=True)
+# Keep env loading consistent with server.py (ops may use /etc/leylektag.env;
+# skipped when APP_ENV is exactly staging).
+load_backend_dotenv_files(load_dotenv, local_env_path=_ROOT / ".env", override=True)
 
 logger = logging.getLogger(__name__)
 
