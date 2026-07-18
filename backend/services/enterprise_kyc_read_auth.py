@@ -18,8 +18,10 @@ logger = logging.getLogger("server")
 
 ENTERPRISE_KYC_READ_TOKEN_ENV = "KAREKOD_ENTERPRISE_KYC_READ_TOKEN"
 ENTERPRISE_KYC_REVIEW_TOKEN_ENV = "KAREKOD_ENTERPRISE_KYC_REVIEW_TOKEN"
+ENTERPRISE_KYC_DECISION_TOKEN_ENV = "KAREKOD_ENTERPRISE_KYC_DECISION_TOKEN"
 SERVICE_IDENTITY = "karekod_enterprise_kyc_read"
 REVIEW_SERVICE_IDENTITY = "karekod_enterprise_kyc_review"
+DECISION_SERVICE_IDENTITY = "karekod_enterprise_kyc_decision"
 
 _ACTOR_HEADER = "X-Karekod-Actor-Id"
 _REQUEST_ID_HEADER = "X-Karekod-Request-Id"
@@ -34,6 +36,11 @@ def configured_enterprise_kyc_read_token() -> Optional[str]:
 
 def configured_enterprise_kyc_review_token() -> Optional[str]:
     value = (os.getenv(ENTERPRISE_KYC_REVIEW_TOKEN_ENV) or "").strip()
+    return value or None
+
+
+def configured_enterprise_kyc_decision_token() -> Optional[str]:
+    value = (os.getenv(ENTERPRISE_KYC_DECISION_TOKEN_ENV) or "").strip()
     return value or None
 
 
@@ -172,3 +179,34 @@ def require_enterprise_kyc_review_service(
         raise HTTPException(status_code=403, detail="forbidden")
 
     return REVIEW_SERVICE_IDENTITY
+
+
+def require_enterprise_kyc_decision_service(
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+) -> str:
+    """
+    Fail-closed scoped service auth for Enterprise → Leylek KYC approve/reject.
+
+    Uses dedicated KAREKOD_ENTERPRISE_KYC_DECISION_TOKEN only.
+    """
+    expected = configured_enterprise_kyc_decision_token()
+    if expected is None:
+        logger.warning("enterprise_kyc_decision: service_auth_disabled env_missing=1")
+        raise HTTPException(status_code=503, detail="service_auth_disabled")
+
+    if not authorization or not str(authorization).strip():
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    parts = str(authorization).strip().split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    presented = parts[1].strip()
+    if not presented:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    if not service_tokens_equal(presented, expected):
+        logger.info("enterprise_kyc_decision: forbidden")
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    return DECISION_SERVICE_IDENTITY

@@ -628,4 +628,4 @@ def test_ready_review_block(detail_route_mod, monkeypatch) -> None:
     review = client.get(_DETAIL_PATH, headers=_auth_headers()).json()["result"]["detail"]["review"]
     assert review["required_permission"] == "kyc.review"
     assert review["may_request_document_access"] is True
-    assert review["may_decide"] is False
+    assert review["may_decide"] is True

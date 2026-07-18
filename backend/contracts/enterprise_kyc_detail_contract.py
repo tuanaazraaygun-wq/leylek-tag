@@ -76,7 +76,7 @@ PREFERRED_INTERNAL_KYC_DOCUMENT_ACCESS_PATH = (
 ENTERPRISE_KYC_DETAIL_CONTRACT: Final[dict[str, object]] = {
     "implementation_ready": False,
     "document_access_ready": False,
-    "decision_ready": False,
+    "decision_ready": True,
     "runtime_wired": True,
     "product_db_mutation": False,
     "signed_urls_allowed": False,

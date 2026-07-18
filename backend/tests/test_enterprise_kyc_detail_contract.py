@@ -53,7 +53,7 @@ def test_runtime_wiring_enabled_for_detail_only() -> None:
     assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["runtime_wired"] is True
     assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["implementation_ready"] is False
     assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["document_access_ready"] is False
-    assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["decision_ready"] is False
+    assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["decision_ready"] is True
     assert detail.ENTERPRISE_KYC_DETAIL_CONTRACT["signed_urls_allowed"] is False
     assert detail.may_wire_enterprise_kyc_detail_contract() is True
     assert (

@@ -214,7 +214,7 @@ def map_user_row_to_safe_detail(row: dict[str, Any]) -> dict[str, Any]:
         "review": {
             "required_permission": KYC_REVIEW_REQUIRED_PERMISSION,
             "may_request_document_access": True,
-            "may_decide": False,
+            "may_decide": status == "pending",
         },
         "redaction": {
             "pii_minimized": True,
