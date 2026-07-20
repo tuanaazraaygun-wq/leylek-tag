@@ -52,9 +52,9 @@ def test_unavailable_reasons_closed() -> None:
     assert not access.is_kyc_document_access_unavailable_reason("bad")
 
 
-def test_runtime_flags_remain_false() -> None:
+def test_runtime_flags_remain_false_except_grant_issuance() -> None:
     contract = access.ENTERPRISE_KYC_DOCUMENT_ACCESS_CONTRACT
-    assert contract["grant_issuance_ready"] is False
+    assert contract["grant_issuance_ready"] is True
     assert contract["grant_redemption_ready"] is False
     assert contract["streaming_ready"] is False
     assert contract["audit_persistence_ready"] is False

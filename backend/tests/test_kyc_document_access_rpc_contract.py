@@ -66,9 +66,13 @@ def test_issue_outcomes_closed() -> None:
         "issued",
         "duplicate_request",
         "request_conflict",
-        "rate_limited",
         "invalid_input",
+        "application_not_found",
+        "record_version_stale",
+        "document_not_reviewable",
+        "document_missing",
         "audit_unavailable",
+        "rate_limited",
     )
 
 
@@ -230,9 +234,9 @@ def test_no_url_path_bucket_output() -> None:
         assert not any(fragment in lowered for fragment in forbidden_fragments)
 
 
-def test_all_readiness_flags_false() -> None:
+def test_all_readiness_flags_posture() -> None:
     assert rpc.KYC_DOCUMENT_ACCESS_RPC_CONTRACT_READY is False
-    assert rpc.KYC_DOCUMENT_ACCESS_ISSUE_RPC_READY is False
+    assert rpc.KYC_DOCUMENT_ACCESS_ISSUE_RPC_READY is True
     assert rpc.KYC_DOCUMENT_ACCESS_REDEEM_RPC_READY is False
-    assert rpc.KYC_DOCUMENT_ACCESS_RPC_ADAPTER_READY is False
+    assert rpc.KYC_DOCUMENT_ACCESS_RPC_ADAPTER_READY is True
     assert rpc.KYC_DOCUMENT_ACCESS_GRANT_RUNTIME_READY is False

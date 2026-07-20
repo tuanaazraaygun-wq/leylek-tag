@@ -20,10 +20,16 @@ KYC_DOCUMENT_ACCESS_ISSUE_OUTCOMES: Final[tuple[str, ...]] = (
     "issued",
     "duplicate_request",
     "request_conflict",
-    "rate_limited",
     "invalid_input",
+    "application_not_found",
+    "record_version_stale",
+    "document_not_reviewable",
+    "document_missing",
     "audit_unavailable",
+    "rate_limited",
 )
+
+# rate_limited is reserved for service/API guard only; the issue-grant RPC must not emit it.
 
 # duplicate_request is metadata-only duplicate prevention for an existing grant row.
 # It does not recover or re-emit the original raw grant token.
@@ -92,9 +98,9 @@ KYC_DOCUMENT_ACCESS_REDEEM_RPC_OUTPUT_FIELDS: Final[tuple[str, ...]] = (
 )
 
 KYC_DOCUMENT_ACCESS_RPC_CONTRACT_READY: Final = False
-KYC_DOCUMENT_ACCESS_ISSUE_RPC_READY: Final = False
+KYC_DOCUMENT_ACCESS_ISSUE_RPC_READY: Final = True
 KYC_DOCUMENT_ACCESS_REDEEM_RPC_READY: Final = False
-KYC_DOCUMENT_ACCESS_RPC_ADAPTER_READY: Final = False
+KYC_DOCUMENT_ACCESS_RPC_ADAPTER_READY: Final = True
 KYC_DOCUMENT_ACCESS_GRANT_RUNTIME_READY: Final = False
 
 __all__ = [
