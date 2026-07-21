@@ -430,6 +430,12 @@ BEGIN
        SET status = 'completed',
            terminal_outcome_code = 'grant_revoked',
            failure_reason_code = 'terminal_state_block',
+           result_grant_id = v_grant.id,
+           result_application_id = v_grant.application_id,
+           result_document_type = v_grant.document_type,
+           result_state = v_grant.state,
+           result_source_binding_hash = v_grant.source_binding_hash,
+           result_application_record_version = v_grant.application_record_version,
            completed_at = v_now
      WHERE cmd.id = v_ledger.id;
 

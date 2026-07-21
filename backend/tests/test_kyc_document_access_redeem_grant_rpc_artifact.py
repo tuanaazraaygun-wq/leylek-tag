@@ -251,6 +251,107 @@ def test_completed_ledger_replay_without_second_audit() -> None:
     assert "INSERT INTO public.kyc_document_access_events" not in completed_block.group(0)
 
 
+def _revoked_ledger_update_block(sql: str) -> str:
+    match = re.search(
+        r"IF\s+v_grant\.state\s*=\s*'revoked'\s+THEN.*?UPDATE\s+public\.kyc_document_access_redemption_commands\s+AS\s+cmd\s+SET\s+(.*?)\s+WHERE\s+cmd\.id\s*=\s*v_ledger\.id\s*;",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    assert match is not None, "missing grant_revoked ledger UPDATE block"
+    return match.group(1)
+
+
+def test_grant_revoked_ledger_persists_result_snapshot_fields() -> None:
+    block = _revoked_ledger_update_block(_rpc_sql())
+    assert "status = 'completed'" in block
+    assert "terminal_outcome_code = 'grant_revoked'" in block
+    assert "failure_reason_code = 'terminal_state_block'" in block
+    assert "result_grant_id = v_grant.id" in block
+    assert "result_application_id = v_grant.application_id" in block
+    assert "result_document_type = v_grant.document_type" in block
+    assert "result_state = v_grant.state" in block
+    assert "result_source_binding_hash = v_grant.source_binding_hash" in block
+    assert "result_application_record_version = v_grant.application_record_version" in block
+    assert "completed_at = v_now" in block
+    assert "result_redeemed_at" not in block
+    assert "INSERT INTO public.kyc_document_access_events" not in block
+    for forbidden in (
+        "grant_token",
+        "raw_token",
+        "signed_url",
+        "storage/",
+        "bucket",
+        "document_bytes",
+        "https://",
+        "jsonb",
+    ):
+        assert forbidden not in block.lower()
+
+
+def test_completed_ledger_replay_returns_result_snapshot_fields() -> None:
+    body = _function_body(_rpc_sql())
+    replay_block = re.search(
+        r"IF\s+v_ledger\.status\s*=\s*'completed'\s+THEN\s+"
+        r"v_outcome_code\s*:=\s*v_ledger\.terminal_outcome_code\s*;"
+        r".*?RETURN;\s*END IF;",
+        body,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    assert replay_block is not None
+    block = replay_block.group(0)
+    assert "v_out_grant_id := v_ledger.result_grant_id" in block
+    assert "v_out_application_id := v_ledger.result_application_id" in block
+    assert "v_out_document_type := v_ledger.result_document_type" in block
+    assert "v_out_state := v_ledger.result_state" in block
+    assert "v_out_redeemed_at := v_ledger.result_redeemed_at" in block
+    assert "v_out_source_binding_hash := v_ledger.result_source_binding_hash" in block
+    assert "v_out_application_record_version := v_ledger.result_application_record_version" in block
+    assert "INSERT INTO public.kyc_document_access_events" not in block
+    assert "invalid_input" not in block
+
+
+def test_terminal_result_snapshots_remain_for_expired_and_redeemed() -> None:
+    body = _function_body(_rpc_sql())
+    expired_sets = re.findall(
+        r"terminal_outcome_code\s*=\s*'grant_expired'\s*,(.*?)completed_at\s*=\s*v_now",
+        body,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    assert expired_sets
+    for block in expired_sets:
+        assert "result_grant_id" in block
+        assert "result_application_id" in block
+        assert "result_document_type" in block
+        assert "result_state" in block
+        assert "result_source_binding_hash" in block
+        assert "result_application_record_version" in block
+
+    redeemed_block = re.search(
+        r"terminal_outcome_code\s*=\s*'grant_redeemed'\s*,(.*?)completed_at\s*=\s*v_now",
+        body,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    assert redeemed_block is not None
+    rb = redeemed_block.group(1)
+    assert "result_grant_id = v_grant.id" in rb
+    assert "result_application_id = v_grant.application_id" in rb
+    assert "result_document_type = v_grant.document_type" in rb
+    assert "result_state = v_grant.state" in rb
+    assert "result_redeemed_at = v_grant.redeemed_at" in rb
+    assert "result_source_binding_hash = v_grant.source_binding_hash" in rb
+    assert "result_application_record_version = v_grant.application_record_version" in rb
+
+    success_block = re.search(
+        r"terminal_outcome_code\s*=\s*'redeemed'\s*,(.*?)completed_at\s*=\s*v_now",
+        body,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    assert success_block is not None
+    sb = success_block.group(1)
+    assert "result_grant_id = v_out_grant_id" in sb
+    assert "result_redeemed_at = v_out_redeemed_at" in sb
+
+
 def test_exactly_one_success_transition_and_audit() -> None:
     sql = _rpc_sql()
     assert "SET state = 'redeemed'" in sql
