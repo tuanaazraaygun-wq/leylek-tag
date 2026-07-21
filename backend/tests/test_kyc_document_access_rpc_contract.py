@@ -148,6 +148,8 @@ def test_redeem_input_names_exact() -> None:
         "p_actor_admin_id",
         "p_request_id",
         "p_source_channel",
+        "p_observed_source_binding_hash",
+        "p_observed_application_record_version",
     )
 
 

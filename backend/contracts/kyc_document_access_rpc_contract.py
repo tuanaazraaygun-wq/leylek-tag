@@ -73,6 +73,8 @@ KYC_DOCUMENT_ACCESS_REDEEM_RPC_INPUT_NAMES: Final[tuple[str, ...]] = (
     "p_actor_admin_id",
     "p_request_id",
     "p_source_channel",
+    "p_observed_source_binding_hash",
+    "p_observed_application_record_version",
 )
 
 KYC_DOCUMENT_ACCESS_ISSUE_RPC_OUTPUT_FIELDS: Final[tuple[str, ...]] = (
