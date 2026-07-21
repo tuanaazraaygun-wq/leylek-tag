@@ -190,6 +190,9 @@ from routes.internal_enterprise_kyc_decision import router as internal_enterpris
 from routes.internal_enterprise_kyc_document_access_grant import (
     router as internal_enterprise_kyc_document_access_grant_router,
 )
+from routes.internal_enterprise_kyc_document_access_stream import (
+    router as internal_enterprise_kyc_document_access_stream_router,
+)
 
 # Logger setup
 logging.basicConfig(level=logging.INFO)
@@ -7278,6 +7281,7 @@ app.include_router(internal_enterprise_kyc_queue_router, prefix="/api")
 app.include_router(internal_enterprise_kyc_detail_router, prefix="/api")
 app.include_router(internal_enterprise_kyc_decision_router, prefix="/api")
 app.include_router(internal_enterprise_kyc_document_access_grant_router, prefix="/api")
+app.include_router(internal_enterprise_kyc_document_access_stream_router, prefix="/api")
 
 api_router = APIRouter(prefix="/api")
 
