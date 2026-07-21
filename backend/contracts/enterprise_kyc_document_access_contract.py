@@ -102,7 +102,7 @@ PREFERRED_INTERNAL_KYC_DOCUMENT_ACCESS_STREAM_PATH = (
 )
 
 ENTERPRISE_KYC_DOCUMENT_ACCESS_CONTRACT: Final[dict[str, object]] = {
-    "grant_issuance_ready": False,
+    "grant_issuance_ready": True,
     "grant_redemption_ready": False,
     "streaming_ready": False,
     "audit_persistence_ready": False,

@@ -61,6 +61,38 @@ def test_baseline_must_precede_grants_for_fk() -> None:
     assert "public.users" in grants
 
 
+def test_redemption_commands_fk_targets_grants() -> None:
+    redemption = _read("create_kyc_document_access_redemption_commands.sql")
+    assert "REFERENCES public.kyc_document_access_grants" in redemption
+    assert "ON DELETE RESTRICT" in redemption
+
+
+def test_redeem_rpc_preflight_requires_redemption_commands() -> None:
+    redeem_rpc = _read("create_kyc_document_access_redeem_grant_rpc.sql")
+    assert "create_kyc_document_access_redemption_commands.sql applied" in redeem_rpc
+    assert "public.kyc_document_access_redemption_commands" in redeem_rpc
+
+
+def test_redeem_rpc_grants_preflight_requires_redeem_rpc() -> None:
+    redeem_grants = _read("create_kyc_document_access_redeem_grant_rpc_grants.sql")
+    assert "create_kyc_document_access_redeem_grant_rpc.sql first" in redeem_grants
+    assert "GRANT EXECUTE" in redeem_grants
+    assert "TO service_role" in redeem_grants
+
+
+def test_d7_redemption_artifact_order_documented() -> None:
+    grants = _read("create_kyc_document_access_grants.sql")
+    events = _read("create_kyc_document_access_events.sql")
+    redemption = _read("create_kyc_document_access_redemption_commands.sql")
+    redeem_rpc = _read("create_kyc_document_access_redeem_grant_rpc.sql")
+    redeem_grants = _read("create_kyc_document_access_redeem_grant_rpc_grants.sql")
+    assert "kyc_document_access_grants" in grants
+    assert "kyc_document_access_events" in events
+    assert "kyc_document_access_redemption_commands" in redemption
+    assert "kyc_document_access_redeem_grant" in redeem_rpc
+    assert "kyc_document_access_redeem_grant" in redeem_grants
+
+
 def _resolve_psql() -> Path:
     env_path = os.environ.get("LEYLEK_KYC_PSQL_PATH")
     if env_path:

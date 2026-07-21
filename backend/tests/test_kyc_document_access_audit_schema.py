@@ -614,7 +614,20 @@ def test_prohibited_terms_not_in_column_declarations() -> None:
 
 
 def test_phase_5b1_static_tests_remain_importable() -> None:
-    from tests import test_kyc_document_access_persistence_schema as grants_tests  # noqa: WPS433
+    # Load sibling module by path so repo-root pytest cannot resolve the empty
+    # top-level `tests` package instead of backend/tests.
+    import importlib.util
+
+    sibling = Path(__file__).resolve().with_name(
+        "test_kyc_document_access_persistence_schema.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "kyc_document_access_persistence_schema_sibling",
+        sibling,
+    )
+    assert spec is not None and spec.loader is not None
+    grants_tests = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(grants_tests)
 
     assert grants_tests.MIGRATION_PATH.is_file()
 
