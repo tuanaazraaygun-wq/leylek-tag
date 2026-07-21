@@ -951,6 +951,129 @@ def test_terminal_states(runtime_ctx: RuntimeContext, fixture_versions: dict[str
 
 
 @pytest.mark.integration
+def test_grant_revoked_replay_persists_exact_result_snapshot(
+    runtime_ctx: RuntimeContext, fixture_versions: dict[str, str]
+) -> None:
+    rv = fixture_versions["ok"]
+    request_id = "req-revoked-replay-001"
+    expected_grant_id = runtime_ctx.fetchval(
+        f"SELECT id::text FROM public.kyc_document_access_grants "
+        f"WHERE grant_reference_hash = {_sql_literal(GRANT_REVOKED)}"
+    )
+    assert expected_grant_id
+    expected_meta = runtime_ctx.fetchrow(
+        "SELECT application_id::text, document_type, source_binding_hash, "
+        "application_record_version::text "
+        f"FROM public.kyc_document_access_grants WHERE id = {_sql_literal(expected_grant_id)}::uuid"
+    )
+    assert expected_meta and len(expected_meta) == 4
+    before_attempts = runtime_ctx.fetchval(
+        f"SELECT redemption_attempt_count::text FROM public.kyc_document_access_grants "
+        f"WHERE grant_reference_hash = {_sql_literal(GRANT_REVOKED)}"
+    )
+    first = runtime_ctx.redeem(
+        grant_hash=GRANT_REVOKED,
+        actor=ACTOR,
+        request_id=request_id,
+        binding=BINDING_OK,
+        record_version=rv,
+    )
+    runtime_ctx.assert_output_safe(first)
+    assert first.outcome_code == "grant_revoked"
+    assert first.grant_id == expected_grant_id
+    assert first.application_id == expected_meta[0] == APP_OK
+    assert first.document_type == expected_meta[1] == "license"
+    assert first.state == "revoked"
+    assert first.redeemed_at is None
+    assert first.source_binding_hash == expected_meta[2] == BINDING_OK
+    assert first.application_record_version == expected_meta[3]
+
+    after_first_attempts = runtime_ctx.fetchval(
+        f"SELECT redemption_attempt_count::text FROM public.kyc_document_access_grants "
+        f"WHERE grant_reference_hash = {_sql_literal(GRANT_REVOKED)}"
+    )
+    assert int(after_first_attempts) == int(before_attempts) + 1
+
+    ledger = runtime_ctx.fetchrow(
+        "SELECT status, terminal_outcome_code, coalesce(failure_reason_code, ''), "
+        "result_grant_id::text, result_application_id::text, coalesce(result_document_type, ''), "
+        "coalesce(result_state, ''), coalesce(result_redeemed_at::text, ''), "
+        "coalesce(result_source_binding_hash, ''), "
+        "coalesce(result_application_record_version::text, '') "
+        f"FROM public.kyc_document_access_redemption_commands "
+        f"WHERE grant_id = {_sql_literal(expected_grant_id)}::uuid "
+        f"AND actor_admin_id = {_sql_literal(ACTOR)} "
+        f"AND request_id = {_sql_literal(request_id)}"
+    )
+    assert ledger
+    assert ledger[0] == "completed"
+    assert ledger[1] == "grant_revoked"
+    assert ledger[2] == "terminal_state_block"
+    assert ledger[3] == first.grant_id
+    assert ledger[4] == first.application_id
+    assert ledger[5] == first.document_type
+    assert ledger[6] == "revoked"
+    assert ledger[7] == ""
+    assert ledger[8] == first.source_binding_hash
+    assert ledger[9] == first.application_record_version
+
+    ledger_count = runtime_ctx.fetchval(
+        "SELECT count(*)::text FROM public.kyc_document_access_redemption_commands "
+        f"WHERE request_id = {_sql_literal(request_id)}"
+    )
+    assert ledger_count == "1"
+
+    audit_before = runtime_ctx.fetchval(
+        "SELECT count(*)::text FROM public.kyc_document_access_events "
+        f"WHERE request_id = {_sql_literal(request_id)}"
+    )
+
+    replay = runtime_ctx.redeem(
+        grant_hash=GRANT_REVOKED,
+        actor=ACTOR,
+        request_id=request_id,
+        binding=BINDING_OK,
+        record_version=rv,
+    )
+    runtime_ctx.assert_output_safe(replay)
+    assert replay.outcome_code == first.outcome_code
+    assert replay.grant_id == first.grant_id
+    assert replay.application_id == first.application_id
+    assert replay.document_type == first.document_type
+    assert replay.state == first.state
+    assert replay.redeemed_at == first.redeemed_at
+    assert replay.source_binding_hash == first.source_binding_hash
+    assert replay.application_record_version == first.application_record_version
+    assert replay.as_text() == first.as_text()
+
+    attempts_after_replay = runtime_ctx.fetchval(
+        f"SELECT redemption_attempt_count::text FROM public.kyc_document_access_grants "
+        f"WHERE grant_reference_hash = {_sql_literal(GRANT_REVOKED)}"
+    )
+    assert attempts_after_replay == after_first_attempts
+    assert runtime_ctx.fetchval(
+        "SELECT count(*)::text FROM public.kyc_document_access_redemption_commands "
+        f"WHERE request_id = {_sql_literal(request_id)}"
+    ) == "1"
+    assert runtime_ctx.fetchval(
+        "SELECT count(*)::text FROM public.kyc_document_access_events "
+        f"WHERE request_id = {_sql_literal(request_id)}"
+    ) == audit_before
+
+    ledger_blob = runtime_ctx.fetchval(
+        "SELECT string_agg(coalesce(result_grant_id::text, '') || '|' || "
+        "coalesce(result_application_id::text, '') || '|' || "
+        "coalesce(result_document_type, '') || '|' || "
+        "coalesce(result_state, '') || '|' || "
+        "coalesce(result_source_binding_hash, '') || '|' || "
+        "coalesce(result_application_record_version::text, ''), '||') "
+        "FROM public.kyc_document_access_redemption_commands "
+        f"WHERE request_id = {_sql_literal(request_id)}"
+    )
+    assert not FORBIDDEN_OUTPUT_PATTERNS.search(ledger_blob or "")
+
+
+@pytest.mark.integration
 def test_unknown_and_malformed_hash(runtime_ctx: RuntimeContext, fixture_versions: dict[str, str]) -> None:
     rv = fixture_versions["ok"]
     unknown = runtime_ctx.redeem(
