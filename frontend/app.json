@@ -3,7 +3,7 @@
     "name": "Leylek Yolculuk",
     "slug": "leylektag-app",
     "owner": "leylektagappp",
-    "version": "1.0.43",
+    "version": "1.0.44",
     "orientation": "portrait",
     "icon": "./assets/images/leylek-logo-premium.png",
     "scheme": "leylektag",
@@ -36,7 +36,7 @@
     },
     "android": {
       "package": "com.leylektag.app",
-      "versionCode": 50,
+      "versionCode": 51,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
@@ -86,9 +86,9 @@
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
             "largeHeap": true,
-            "enableProguardInReleaseBuilds": false,
+            "enableProguardInReleaseBuilds": true,
             "newArchEnabled": false,
-            "enableMinifyInReleaseBuilds": false,
+            "enableMinifyInReleaseBuilds": true,
             "usesCleartextTraffic": false
           },
           "ios": {

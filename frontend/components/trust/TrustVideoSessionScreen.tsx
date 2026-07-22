@@ -434,7 +434,10 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
       statusBarTranslucent
       onRequestClose={() => void finalizeEnd()}
     >
-      <StatusBar barStyle="light-content" backgroundColor={P.bgDeep} />
+      <StatusBar
+        barStyle="light-content"
+        {...(Platform.OS === 'ios' ? { backgroundColor: P.bgDeep } : {})}
+      />
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <LinearGradient colors={[P.bgDeep, P.bgMid, P.bgElev]} locations={[0, 0.48, 1]} style={StyleSheet.absoluteFill} />
         <View style={styles.header}>

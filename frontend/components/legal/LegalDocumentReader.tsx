@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, ScrollView, StatusBar, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StatusBar, StyleSheet, View, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,7 +51,10 @@ export function LegalDocumentReader({
     <View style={[styles.screen, lt?.container]}>
       <CockpitBackground showGrid={false} />
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-        <StatusBar barStyle={legalUi.statusBarStyle} backgroundColor={legalUi.statusBarBg} />
+        <StatusBar
+          barStyle={legalUi.statusBarStyle}
+          {...(Platform.OS === 'ios' ? { backgroundColor: legalUi.statusBarBg } : {})}
+        />
 
         <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.headerGlass, lt?.header]}>
           <Pressable
