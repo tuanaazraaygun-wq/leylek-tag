@@ -197,6 +197,10 @@ from routes.internal_enterprise_kyc_document_access_stream import (
 # Logger setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
+# Default-on: redact OPS-D7 opaque grant tokens from uvicorn.access path logs.
+from services.uvicorn_access_log_redaction import register_uvicorn_access_log_redaction
+
+register_uvicorn_access_log_redaction()
 _route_http_client: Optional[httpx.AsyncClient] = None
 
 
