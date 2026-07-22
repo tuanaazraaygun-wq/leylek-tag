@@ -14,6 +14,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from services.uvicorn_access_log_redaction import redact_kyc_document_access_stream_path
+
 logger = logging.getLogger("slow_request")
 
 WATCH_PATHS: FrozenSet[str] = frozenset(
@@ -129,6 +131,9 @@ class SlowRequestLoggingMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
+        # Always redact OPS-D7 stream grant tokens before any slow-path decision/log.
+        # Holds even when SLOW_REQUEST_WATCHLIST_ONLY=false.
+        log_path = redact_kyc_document_access_stream_path(path)
         watchlist_only = _env_bool("SLOW_REQUEST_WATCHLIST_ONLY", True)
         if not _should_log_path(path, watchlist_only):
             return await call_next(request)
@@ -150,7 +155,7 @@ class SlowRequestLoggingMiddleware(BaseHTTPMiddleware):
             "log_tag": "SLOW_HTTP",
             "level": level,
             "method": method,
-            "path": path,
+            "path": log_path,
             "status": response.status_code,
             "duration_ms": duration_ms,
             "threshold_ms": threshold_ms,
