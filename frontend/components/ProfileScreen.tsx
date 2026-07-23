@@ -384,7 +384,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   return (
     <View style={styles.screen}>
       <CockpitBackground />
-      <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
         <GlassSurface variant="header" style={styles.headerGlass}>
           <View style={styles.header}>
             <Pressable

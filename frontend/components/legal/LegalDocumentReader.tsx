@@ -50,7 +50,7 @@ export function LegalDocumentReader({
   return (
     <View style={[styles.screen, lt?.container]}>
       <CockpitBackground showGrid={false} />
-      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
         <StatusBar
           barStyle={legalUi.statusBarStyle}
           {...(Platform.OS === 'ios' ? { backgroundColor: legalUi.statusBarBg } : {})}
