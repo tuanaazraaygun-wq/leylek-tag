@@ -13772,10 +13772,11 @@ function PassengerDashboard({
   // IncomingCallScreen, OutgoingCallScreen, DailyCallScreen kaldırıldı
 
   // YOLCU EKRANI - AKTİF TAG VAR (matched veya in_progress)
+  // Bottom inset owned by LiveMapView controls/mapPadding — avoid double bottom SafeArea.
   return (
     <View style={[styles.passengerTripShell, dashLt?.tripShell]}>
     <CockpitBackground />
-    <SafeAreaView style={styles.containerTransparent}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.containerTransparent}>
       {/* 🆕 Eşleşme Sağlanıyor Modal — LiveMap aktifken tek loader (harita overlay) yeterli */}
       <TagMatchTransitionOverlay
         active={
@@ -21515,6 +21516,7 @@ function DriverDashboard({
     );
   }
 
+  // Bottom inset owned by LiveMapView controls/mapPadding — avoid double bottom SafeArea.
   return (
     <View style={styles.driverTripShell}>
     <CockpitBackground />
@@ -21525,7 +21527,7 @@ function DriverDashboard({
         pointerEvents="none"
       />
     ) : null}
-    <SafeAreaView style={styles.containerTransparent}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.containerTransparent}>
       <TagMatchTransitionOverlay
         active={
           driverMatchTransitionVisible &&
