@@ -26,7 +26,7 @@ allprojects {
 // Voice + camera RTC remain via io.agora.rtc:full-sdk (react-native-agora).
 subprojects { proj ->
   proj.configurations.configureEach {
-    exclude group: 'io.agora.rtc', module: 'full-screen-sharing'
+    exclude group: 'io.agora.rtc', module: 'full-screen-sharing-special'
   }
 }
 
