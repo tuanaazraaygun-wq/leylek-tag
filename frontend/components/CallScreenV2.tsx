@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import InCallManager from 'react-native-incall-manager';
 import type { RtcConnection } from 'react-native-agora';
 import { agoraVoiceService } from '../services/agoraVoiceService';
@@ -109,6 +110,12 @@ export default function CallScreenV2({
   skipOutgoingMicPermission = false,
 }: CallScreenV2Props) {
   void _remoteUserId;
+
+  const insets = useSafeAreaInsets();
+  // Android edge-to-edge: keep prior minimum chrome (48/40); expand with system insets.
+  // iOS keeps the previous fixed values (56/40) — no visual drift.
+  const rootPadTop = Platform.OS === 'android' ? Math.max(48, insets.top) : 56;
+  const rootPadBottom = Platform.OS === 'android' ? Math.max(40, insets.bottom) : 40;
 
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [remoteUid, setRemoteUid] = useState(0);
@@ -690,7 +697,7 @@ export default function CallScreenV2({
       <LinearGradient
         colors={[P.bgDeep, P.bgMid, P.bgElev]}
         locations={[0, 0.45, 1]}
-        style={styles.root}
+        style={[styles.root, { paddingTop: rootPadTop, paddingBottom: rootPadBottom }]}
       >
         <View style={styles.top}>
           <Text style={styles.headerType}>{headerLabel}</Text>
@@ -769,8 +776,6 @@ export default function CallScreenV2({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    paddingTop: Platform.OS === 'android' ? 48 : 56,
-    paddingBottom: 40,
   },
   top: {
     paddingHorizontal: 20,

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import InCallManager from 'react-native-incall-manager';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 import { muhabbetAgoraVoiceService } from '../services/muhabbetAgoraVoiceService';
 import { ensureMuhabbetCallMicPermission } from '../utils/muhabbetCallPermissions';
@@ -67,6 +68,12 @@ export default function MuhabbetTripCallScreen({
   onDecline,
   onCancel,
 }: MuhabbetTripCallScreenProps) {
+  const insets = useSafeAreaInsets();
+  // Android edge-to-edge: keep prior minimum chrome (48/42); expand with system insets.
+  // iOS keeps the previous fixed values (58/42) — no visual drift.
+  const rootPadTop = Platform.OS === 'android' ? Math.max(48, insets.top) : 58;
+  const rootPadBottom = Platform.OS === 'android' ? Math.max(42, insets.bottom) : 42;
+
   const pulse = useRef(new Animated.Value(1)).current;
   const joinKeyRef = useRef('');
   const joinInFlightRef = useRef(false);
@@ -398,7 +405,7 @@ export default function MuhabbetTripCallScreen({
 
   return (
     <Modal visible animationType="slide" statusBarTranslucent presentationStyle="fullScreen">
-      <View style={styles.root}>
+      <View style={[styles.root, { paddingTop: rootPadTop, paddingBottom: rootPadBottom }]}>
         <View style={styles.top}>
           <Text style={styles.scopeLabel}>Leylek Muhabbet</Text>
           <Text style={styles.secureLabel}>Muhabbet-only arama</Text>
@@ -474,8 +481,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#111827',
-    paddingTop: Platform.OS === 'android' ? 48 : 58,
-    paddingBottom: 42,
   },
   top: {
     paddingHorizontal: 22,
