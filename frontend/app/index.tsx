@@ -16550,12 +16550,16 @@ function DriverDashboard({
   onDriverOfferGoToRoleSelect,
 }: DriverDashboardProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { waitingShellSurfaces: dwsLt, ui: drvUi, isScopeLight: driverScopeLight } = useDriverTheme();
   const { chromeSurfaces: jLt } = useJourneyBannerTheme();
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
     rawVk === 'motor' || rawVk === 'motorcycle' ? 'motorcycle' : 'car';
   const isMotorDriverUi = driverVehicleKind === 'motorcycle';
+  // Idle offer-ground sits outside top-only SafeArea; Android edge-to-edge needs bottom inset once.
+  const driverIdleOfferGroundPadBottom =
+    Platform.OS === 'android' ? Math.max(0, insets.bottom) : 0;
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const driverActiveTagSnapshotRef = useRef<Tag | null>(null);
@@ -21289,6 +21293,7 @@ function DriverDashboard({
             style={[
               dws.cockpitOfferGround,
               dwsLt?.cockpitOfferGround,
+              { paddingBottom: driverIdleOfferGroundPadBottom },
               driverInviteDeckDimVisible && { opacity: 0.38 },
             ]}
           >
