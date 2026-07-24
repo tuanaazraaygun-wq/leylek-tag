@@ -36,7 +36,7 @@
     },
     "android": {
       "package": "com.leylektag.app",
-      "versionCode": 51,
+      "versionCode": 53,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
